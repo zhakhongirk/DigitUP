@@ -1,2 +1,31 @@
-﻿# Local project docs (architecture, plan) - not pushed
+﻿# Local project docs (architecture, plan, probe notes) - not pushed
 docs/
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Testing
+coverage/
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Uploaded files (local FileStorage)
+storage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
