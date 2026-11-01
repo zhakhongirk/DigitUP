@@ -1,0 +1,1 @@
+ALTER TABLE "business_model_drafts" ADD COLUMN "applied_at" timestamp with time zone;

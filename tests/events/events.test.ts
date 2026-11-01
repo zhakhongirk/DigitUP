@@ -28,11 +28,11 @@ describe("event handlers", () => {
 
   it("acknowledges events that have no consumer yet", async () => {
     const log: string[] = [];
-    await handlers[EVENTS.modelConfirmed](
-      { tenantId: randomUUID(), draftId: randomUUID() },
+    await handlers[EVENTS.conversationMessage](
+      { tenantId: randomUUID(), conversationId: randomUUID(), messageId: randomUUID() },
       { db: testDb(), log: (m) => log.push(m) },
     );
-    expect(log[0]).toMatch(/model\.confirmed/);
+    expect(log[0]).toMatch(/conversation\.message/);
   });
 });
 

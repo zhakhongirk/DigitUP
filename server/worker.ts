@@ -3,9 +3,10 @@
  */
 import "dotenv/config";
 import { createDb } from "@/db/client";
-import { startBoss } from "./events/boss";
-import { handlers } from "./events/handlers";
+import { PgBossEventPublisher, startBoss } from "./events/boss";
+import { handlers, type HandlerDeps } from "./events/handlers";
 import { ALL_EVENTS, type EventName, type EventPayloads } from "./events/types";
+import { createProvisioningService } from "./services/provisioning";
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -13,17 +14,23 @@ async function main() {
 
   const database = createDb(url);
   const boss = await startBoss({ connectionString: url, supervise: true });
-  const log = (message: string) => console.log(message);
+  const deps: HandlerDeps = {
+    db: database.db,
+    log: (message) => console.log(message),
+    provisioning: createProvisioningService({
+      db: database.db,
+      events: new PgBossEventPublisher(boss),
+      defaultModel: process.env.FIREWORKS_MODEL || "unconfigured",
+    }),
+  };
 
   for (const name of ALL_EVENTS) {
+    const handler = handlers[name] as (
+      payload: EventPayloads[EventName],
+      deps: HandlerDeps,
+    ) => Promise<void>;
     await boss.work<EventPayloads[EventName]>(name, async (jobs) => {
-      for (const job of jobs) {
-        const handler = handlers[name] as (
-          payload: EventPayloads[EventName],
-          deps: { db: typeof database.db; log: typeof log },
-        ) => Promise<void>;
-        await handler(job.data, { db: database.db, log });
-      }
+      for (const job of jobs) await handler(job.data, deps);
     });
   }
   console.log(`[worker] started; handling ${ALL_EVENTS.join(", ")}`);

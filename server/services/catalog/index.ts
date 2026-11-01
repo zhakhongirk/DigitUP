@@ -19,6 +19,7 @@ import type { EventPublisher } from "@/server/events/types";
 import { EVENTS } from "@/server/events/types";
 import {
   businessModelSchema,
+  checkLaunchReadiness,
   contactsSchema,
   missingInfoItemSchema,
   policiesSchema,
@@ -325,6 +326,13 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
         if (draft.status === "confirmed") return draft;
         if (draft.status !== "draft") {
           throw new ServiceError("conflict", "This draft was replaced by a newer proposal");
+        }
+        const readiness = checkLaunchReadiness(businessModelSchema.parse(draft.payload));
+        if (!readiness.ready) {
+          throw new ServiceError(
+            "invalid",
+            `The store cannot launch yet. Missing: ${readiness.missing.join("; ")}`,
+          );
         }
         const [confirmed] = await tx
           .update(businessModelDrafts)

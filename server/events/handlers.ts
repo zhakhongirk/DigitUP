@@ -4,11 +4,13 @@
  */
 import type { Db } from "@/db/client";
 import { notifications } from "@/db/schema";
+import type { ProvisioningService } from "@/server/services/provisioning";
 import { EVENTS, type EventName, type EventPayloads } from "./types";
 
 export interface HandlerDeps {
   db: Db;
   log?: (message: string) => void;
+  provisioning?: ProvisioningService;
 }
 
 export type EventHandler<N extends EventName> = (
@@ -42,7 +44,11 @@ export const handlers: EventHandlers = {
     notifyOwner(db, tenantId, "inquiry", inquiryId),
   [EVENTS.fileUploaded]: acknowledgeOnly(EVENTS.fileUploaded),
   [EVENTS.ingestionCompleted]: acknowledgeOnly(EVENTS.ingestionCompleted),
-  [EVENTS.modelConfirmed]: acknowledgeOnly(EVENTS.modelConfirmed),
+  [EVENTS.modelConfirmed]: async ({ tenantId, draftId }, { provisioning, log }) => {
+    if (!provisioning) throw new Error("provisioning is not configured in this worker");
+    const outcome = await provisioning.provision({ tenantId, draftId });
+    log?.(`[worker] model.confirmed: ${outcome.status} /s/${outcome.slug}`);
+  },
   [EVENTS.tenantLive]: acknowledgeOnly(EVENTS.tenantLive),
   [EVENTS.conversationMessage]: acknowledgeOnly(EVENTS.conversationMessage),
 };

@@ -125,6 +125,8 @@ export const businessModelDrafts = pgTable(
     tenantId: tenantId(),
     payload: jsonb("payload").notNull(),
     status: draftStatus("status").notNull().default("draft"),
+    /** Set when provisioning applied this draft to the catalog. */
+    appliedAt: timestamp("applied_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
