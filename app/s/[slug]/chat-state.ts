@@ -1,0 +1,299 @@
+export const MAX_MESSAGE_CHARS = 2000;
+
+export const UNAVAILABLE_NOTICE =
+  "The store assistant is not available yet. You can browse the catalog and contact the store directly.";
+
+export const TOOL_LABELS: Record<string, string> = {
+  search_offers: "Searching the catalog",
+  get_offer_details: "Looking at the offer",
+  check_availability: "Checking availability",
+  compare_offers: "Comparing offers",
+  get_business_info: "Checking store info",
+  create_order: "Preparing your order",
+  submit_inquiry: "Sending your inquiry",
+};
+
+export function toolLabel(name: string): string {
+  return TOOL_LABELS[name] ?? "Working on it";
+}
+
+export type OrderLine = {
+  title: string;
+  quantity: number;
+  unitPrice: number | string;
+  currency: string;
+  lineTotal: number | string;
+};
+
+export type OrderView = {
+  order_id: string;
+  status: string;
+  items: OrderLine[];
+  total: number | string;
+  currency: string;
+  total_label?: string;
+  next_step?: string;
+};
+
+export type StreamEvent =
+  | { type: "tool_call"; id?: string; name: string; arguments?: unknown }
+  | { type: "tool_result"; id?: string; name: string; isError?: boolean; data?: unknown }
+  | { type: "message"; content: string }
+  | { type: "done"; conversationId?: string; stoppedBy?: string }
+  | { type: "error"; message: string };
+
+export type ParseResult = { events: StreamEvent[]; rest: string; invalid: number };
+
+const EVENT_TYPES = new Set(["tool_call", "tool_result", "message", "done", "error"]);
+
+function isStreamEvent(value: unknown): value is StreamEvent {
+  if (typeof value !== "object" || value === null) return false;
+  const type = (value as { type?: unknown }).type;
+  return typeof type === "string" && EVENT_TYPES.has(type);
+}
+
+/**
+ * Feeds a chunk into the line buffer. Complete lines are parsed; the trailing
+ * partial line is returned as `rest` and must be passed back with the next chunk.
+ */
+export function parseNdjsonChunk(buffer: string, chunk: string): ParseResult {
+  const lines = (buffer + chunk).split("\n");
+  const rest = lines.pop() ?? "";
+  const events: StreamEvent[] = [];
+  let invalid = 0;
+  for (const line of lines) {
+    const text = line.trim();
+    if (text === "") continue;
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (isStreamEvent(parsed)) events.push(parsed);
+      else invalid += 1;
+    } catch {
+      invalid += 1;
+    }
+  }
+  return { events, rest, invalid };
+}
+
+/** Parses whatever is left in the buffer once the stream has ended. */
+export function flushNdjson(buffer: string): ParseResult {
+  return parseNdjsonChunk("", buffer.trim() === "" ? "" : `${buffer}\n`);
+}
+
+export type OrderCard = {
+  orderId: string;
+  status: string;
+  items: OrderLine[];
+  total: number | string;
+  currency: string;
+  totalLabel: string | null;
+  nextStep: string | null;
+  confirming: boolean;
+  error: string | null;
+};
+
+export type ChatItem =
+  | { kind: "message"; id: number; role: "user" | "assistant"; content: string }
+  | { kind: "order"; id: number; order: OrderCard }
+  | { kind: "note"; id: number; text: string };
+
+export type ChatError = { message: string; retryable: boolean };
+
+export type ChatState = {
+  loaded: boolean;
+  available: boolean;
+  items: ChatItem[];
+  activity: string | null;
+  sending: boolean;
+  error: ChatError | null;
+  nextId: number;
+};
+
+export const initialChatState: ChatState = {
+  loaded: false,
+  available: true,
+  items: [],
+  activity: null,
+  sending: false,
+  error: null,
+  nextId: 1,
+};
+
+export type ChatAction =
+  | {
+      type: "history_loaded";
+      available: boolean;
+      messages: { role: "user" | "assistant"; content: string }[];
+    }
+  | { type: "history_failed" }
+  | { type: "user_sent"; text: string }
+  | { type: "retry_started" }
+  | { type: "stream_event"; event: StreamEvent }
+  | { type: "stream_failed"; message: string }
+  | { type: "unavailable" }
+  | { type: "confirm_started"; orderId: string }
+  | { type: "confirm_succeeded"; order: OrderView }
+  | { type: "confirm_failed"; orderId: string; message: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+export function toOrderView(data: unknown): OrderView | null {
+  const r = asRecord(data);
+  if (!r || typeof r.order_id !== "string" || typeof r.status !== "string") return null;
+  if (!Array.isArray(r.items)) return null;
+  return {
+    order_id: r.order_id,
+    status: r.status,
+    items: r.items as OrderLine[],
+    total: (r.total as number | string | undefined) ?? 0,
+    currency: typeof r.currency === "string" ? r.currency : "",
+    ...(typeof r.total_label === "string" ? { total_label: r.total_label } : {}),
+    ...(typeof r.next_step === "string" ? { next_step: r.next_step } : {}),
+  };
+}
+
+function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
+  return {
+    orderId: view.order_id,
+    status: view.status,
+    items: view.items,
+    total: view.total,
+    currency: view.currency,
+    totalLabel: view.total_label ?? null,
+    nextStep: view.next_step ?? null,
+    confirming: false,
+    error: previous?.status === view.status ? previous.error : null,
+  };
+}
+
+function upsertOrder(state: ChatState, view: OrderView): ChatState {
+  const index = state.items.findIndex(
+    (item) => item.kind === "order" && item.order.orderId === view.order_id,
+  );
+  if (index >= 0) {
+    const existing = state.items[index];
+    if (existing?.kind !== "order") return state;
+    const items = state.items.slice();
+    items[index] = { ...existing, order: cardFrom(view, existing.order) };
+    return { ...state, items };
+  }
+  const item: ChatItem = { kind: "order", id: state.nextId, order: cardFrom(view) };
+  return { ...state, items: [...state.items, item], nextId: state.nextId + 1 };
+}
+
+function updateOrder(
+  state: ChatState,
+  orderId: string,
+  change: (card: OrderCard) => OrderCard,
+): ChatState {
+  return {
+    ...state,
+    items: state.items.map((item) =>
+      item.kind === "order" && item.order.orderId === orderId
+        ? { ...item, order: change(item.order) }
+        : item,
+    ),
+  };
+}
+
+function appendItem(state: ChatState, build: (id: number) => ChatItem): ChatState {
+  return { ...state, items: [...state.items, build(state.nextId)], nextId: state.nextId + 1 };
+}
+
+function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
+  switch (event.type) {
+    case "tool_call":
+      return { ...state, activity: toolLabel(event.name) };
+    case "tool_result": {
+      const cleared = { ...state, activity: null };
+      if (event.isError) return cleared;
+      if (event.name === "create_order") {
+        const view = toOrderView(event.data);
+        return view ? upsertOrder(cleared, view) : cleared;
+      }
+      if (event.name === "submit_inquiry") {
+        return appendItem(cleared, (id) => ({
+          kind: "note",
+          id,
+          text: "Inquiry sent to the store",
+        }));
+      }
+      return cleared;
+    }
+    case "message":
+      return appendItem({ ...state, activity: null }, (id) => ({
+        kind: "message",
+        id,
+        role: "assistant",
+        content: event.content,
+      }));
+    case "done":
+      return { ...state, sending: false, activity: null };
+    case "error":
+      return {
+        ...state,
+        sending: false,
+        activity: null,
+        error: { message: event.message, retryable: true },
+      };
+  }
+}
+
+export function chatReducer(state: ChatState, action: ChatAction): ChatState {
+  switch (action.type) {
+    case "history_loaded": {
+      let next: ChatState = { ...state, loaded: true, available: action.available, items: [] };
+      for (const m of action.messages) {
+        next = appendItem(next, (id) => ({
+          kind: "message",
+          id,
+          role: m.role,
+          content: m.content,
+        }));
+      }
+      return next;
+    }
+    case "history_failed":
+      return { ...state, loaded: true };
+    case "user_sent":
+      return {
+        ...appendItem(state, (id) => ({
+          kind: "message",
+          id,
+          role: "user",
+          content: action.text,
+        })),
+        sending: true,
+        activity: null,
+        error: null,
+      };
+    case "retry_started":
+      return { ...state, sending: true, activity: null, error: null };
+    case "stream_event":
+      return applyStreamEvent(state, action.event);
+    case "stream_failed":
+      return {
+        ...state,
+        sending: false,
+        activity: null,
+        error: { message: action.message, retryable: true },
+      };
+    case "unavailable":
+      return { ...state, available: false, sending: false, activity: null, error: null };
+    case "confirm_started":
+      return updateOrder(state, action.orderId, (c) => ({ ...c, confirming: true, error: null }));
+    case "confirm_succeeded":
+      return updateOrder(state, action.order.order_id, (c) => ({
+        ...cardFrom(action.order, c),
+        error: null,
+      }));
+    case "confirm_failed":
+      return updateOrder(state, action.orderId, (c) => ({
+        ...c,
+        confirming: false,
+        error: action.message,
+      }));
+  }
+}

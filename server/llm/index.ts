@@ -13,3 +13,9 @@ export function getLlmClient(): LlmClient {
   shared ??= createFireworksClient(readLlmConfig());
   return shared;
 }
+
+/** Like getLlmClient, but returns null when no model is configured. */
+export function getOptionalLlmClient(): LlmClient | null {
+  if (!process.env.FIREWORKS_API_KEY || !process.env.FIREWORKS_MODEL) return null;
+  return getLlmClient();
+}

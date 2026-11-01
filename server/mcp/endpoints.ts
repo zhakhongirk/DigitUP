@@ -3,11 +3,14 @@
  * tenant context is fixed before any tool can run; tools never receive a
  * tenant id from the caller.
  */
+import { createCustomerAgent } from "@/server/agents/customer";
 import type { Services } from "@/server/container";
+import type { LlmClient } from "@/server/llm";
 import type { TenantContext } from "@/server/services/context";
 import { createBusinessMcpServer } from "./business/server";
 import { createCustomerMcpServer } from "./customer/server";
 import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
+import { createPublicMcpServer } from "./public/server";
 
 type Resolved = { ok: true; ctx: TenantContext } | { ok: false; response: Response };
 
@@ -76,6 +79,24 @@ export async function handleCustomerMcp(
     services,
     source: channel === "external_agent" ? "external_agent" : "storefront",
     conversationId,
+  });
+  return serveMcp(request, server);
+}
+
+/** Public endpoint for external AI agents: no credentials, the store comes from the slug. */
+export async function handlePublicMcp(
+  request: Request,
+  slug: string,
+  services: Services,
+  llm: LlmClient | null,
+): Promise<Response> {
+  const ctx = await services.tenancy.contextFromSlug(slug, "customer_agent");
+  if (!ctx) return jsonRpcError(404, "Store not found");
+  const tenant = await services.tenancy.getTenant(ctx);
+  const server = createPublicMcpServer({
+    ctx,
+    storeName: tenant.name,
+    agent: createCustomerAgent({ services, llm }),
   });
   return serveMcp(request, server);
 }

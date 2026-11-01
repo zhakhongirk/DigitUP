@@ -35,6 +35,7 @@ export interface ConversationsService {
       agent?: ConversationAgent;
       channel?: ConversationChannel;
       status?: ConversationStatus;
+      sessionKey?: string;
       limit?: number;
     },
   ): Promise<Conversation[]>;
@@ -149,6 +150,7 @@ export function createConversationsService(deps: {
       if (filter.agent) conditions.push(eq(conversations.agent, filter.agent));
       if (filter.channel) conditions.push(eq(conversations.channel, filter.channel));
       if (filter.status) conditions.push(eq(conversations.status, filter.status));
+      if (filter.sessionKey) conditions.push(eq(conversations.sessionKey, filter.sessionKey));
       return db
         .select()
         .from(conversations)
