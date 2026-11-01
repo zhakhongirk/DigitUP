@@ -169,6 +169,8 @@ export const offers = pgTable(
     priceStatus: priceStatus("price_status").notNull(),
     availability: availability("availability").notNull().default("unknown"),
     status: offerStatus("status").notNull().default("active"),
+    /** Product photo: an https URL or a path under the app's public folder. */
+    imageUrl: text("image_url"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

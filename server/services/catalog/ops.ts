@@ -160,6 +160,7 @@ export async function applyBusinessModelTx(
         priceStatus: offer.price_status,
         availability: offer.availability,
         status: offer.status,
+        imageUrl: offer.image_url,
       })),
     );
   }
@@ -244,6 +245,7 @@ export async function upsertOffersTx(
       priceStatus: item.price_status,
       availability: item.availability,
       status: item.status,
+      imageUrl: item.image_url,
     };
 
     if (item.id) {

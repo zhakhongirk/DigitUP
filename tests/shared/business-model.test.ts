@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  offerSchema,
   businessModelSchema,
   checkLaunchReadiness,
   offerAttributeIssues,
@@ -328,5 +329,35 @@ describe("checkLaunchReadiness", () => {
     const result = checkLaunchReadiness(parse({ profile: { name: "   " } }));
     expect(result.ready).toBe(false);
     expect(result.missing).toHaveLength(3);
+  });
+});
+
+describe("offer image_url", () => {
+  const base = {
+    title: "Boot",
+    offer_type: "shoes",
+    price: null,
+    price_status: "on_request" as const,
+  };
+
+  it("accepts https URLs and site paths", () => {
+    expect(offerSchema.parse({ ...base, image_url: "/demo/boot.jpg" }).image_url).toBe(
+      "/demo/boot.jpg",
+    );
+    expect(
+      offerSchema.parse({ ...base, image_url: "https://cdn.example.com/b.jpg" }).image_url,
+    ).toBe("https://cdn.example.com/b.jpg");
+    expect(offerSchema.parse(base).image_url).toBeNull();
+  });
+
+  it("rejects other schemes and malformed values", () => {
+    for (const value of [
+      "http://example.com/b.jpg",
+      "javascript:alert(1)",
+      "demo/b.jpg",
+      "/a b.jpg",
+    ]) {
+      expect(offerSchema.safeParse({ ...base, image_url: value }).success).toBe(false);
+    }
   });
 });

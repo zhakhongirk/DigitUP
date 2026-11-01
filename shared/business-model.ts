@@ -76,6 +76,13 @@ export const offerSchema = z
     price_status: priceStatusSchema,
     availability: availabilitySchema.default("unknown"),
     status: offerStatusSchema.default("active"),
+    /** Product photo: an https URL or a site path such as /demo/boots.jpg. */
+    image_url: z
+      .string()
+      .max(500)
+      .regex(/^(https:\/\/|\/)\S+$/, "must be an https URL or a path starting with /")
+      .nullable()
+      .default(null),
   })
   .superRefine((offer, ctx) => {
     if (offer.price_status === "confirmed" && offer.price === null) {

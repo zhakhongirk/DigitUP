@@ -32,6 +32,7 @@ export function publicOffer(offer: OfferView) {
     category: offer.category,
     type: offer.offerTypeName,
     attributes: offer.attributes,
+    image_url: offer.imageUrl,
     price: offer.priceStatus === "confirmed" ? offer.price : null,
     currency: offer.priceStatus === "confirmed" ? offer.currency : null,
     price_status: offer.priceStatus,

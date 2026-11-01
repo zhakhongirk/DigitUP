@@ -202,6 +202,7 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
           price_status: offer.priceStatus,
           availability: offer.availability,
           status: offer.status,
+          image_url: offer.imageUrl,
         })),
         policies: policiesSchema.parse(tenant.profile.policies),
         missing_info: missingInfoItemSchema.array().parse(tenant.profile.missingInfo),

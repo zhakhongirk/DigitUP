@@ -15,6 +15,13 @@
       "when": 1793566059659,
       "tag": "0001_draft_applied_at",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793566870086,
+      "tag": "0002_offer_image_url",
+      "breakpoints": true
     }
   ]
 }
