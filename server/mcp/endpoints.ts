@@ -1,0 +1,87 @@
+/**
+ * HTTP entry points of the MCP servers. Authentication happens here and the
+ * tenant context is fixed before any tool can run; tools never receive a
+ * tenant id from the caller.
+ */
+import type { Services } from "@/server/container";
+import type { TenantContext } from "@/server/services/context";
+import { createBusinessMcpServer } from "./business/server";
+import { createCustomerMcpServer } from "./customer/server";
+import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
+
+type Resolved = { ok: true; ctx: TenantContext } | { ok: false; response: Response };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Customer MCP: the Customer Agent's key must belong to the store named by the slug. */
+export async function resolveCustomerContext(
+  request: Request,
+  slug: string,
+  tenancy: Services["tenancy"],
+): Promise<Resolved> {
+  const token = bearerToken(request);
+  if (!token) return { ok: false, response: jsonRpcError(401, "Missing bearer token") };
+
+  const fromKey = await tenancy.contextFromApiKey(token, "customer_agent", "customer_agent");
+  if (!fromKey) return { ok: false, response: jsonRpcError(401, "Invalid API key") };
+
+  const fromSlug = await tenancy.contextFromSlug(slug, "customer_agent");
+  if (!fromSlug) return { ok: false, response: jsonRpcError(404, "Store not found") };
+
+  if (fromKey.tenantId !== fromSlug.tenantId) {
+    return { ok: false, response: jsonRpcError(403, "This key does not belong to this store") };
+  }
+  return { ok: true, ctx: fromSlug };
+}
+
+/**
+ * Business MCP: an owner session acts as the owner; an owner API key is the
+ * Business Agent's credential and acts as the agent, so owner-only operations
+ * (confirming the model, approving change sets) stay with the owner.
+ */
+export async function resolveBusinessContext(
+  request: Request,
+  tenancy: Services["tenancy"],
+): Promise<Resolved> {
+  const session = sessionCookie(request);
+  if (session) {
+    const ctx = await tenancy.contextFromSession(session);
+    if (ctx) return { ok: true, ctx };
+  }
+  const token = bearerToken(request);
+  if (token) {
+    const ctx = await tenancy.contextFromApiKey(token, "owner", "business_agent");
+    if (ctx) return { ok: true, ctx };
+    return { ok: false, response: jsonRpcError(401, "Invalid API key") };
+  }
+  return { ok: false, response: jsonRpcError(401, "Sign in or provide an owner API key") };
+}
+
+export async function handleCustomerMcp(
+  request: Request,
+  slug: string,
+  services: Services,
+): Promise<Response> {
+  const resolved = await resolveCustomerContext(request, slug, services.tenancy);
+  if (!resolved.ok) return resolved.response;
+
+  const channel = request.headers.get("x-storefront-channel");
+  const conversationId = request.headers.get("x-conversation-id") ?? undefined;
+  if (conversationId !== undefined && !UUID.test(conversationId)) {
+    return jsonRpcError(400, "Invalid conversation id");
+  }
+
+  const server = createCustomerMcpServer({
+    ctx: resolved.ctx,
+    services,
+    source: channel === "external_agent" ? "external_agent" : "storefront",
+    conversationId,
+  });
+  return serveMcp(request, server);
+}
+
+export async function handleBusinessMcp(request: Request, services: Services): Promise<Response> {
+  const resolved = await resolveBusinessContext(request, services.tenancy);
+  if (!resolved.ok) return resolved.response;
+  return serveMcp(request, createBusinessMcpServer({ ctx: resolved.ctx, services }));
+}
