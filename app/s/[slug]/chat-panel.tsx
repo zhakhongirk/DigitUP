@@ -13,6 +13,7 @@ import {
   type OrderCard,
   type StreamEvent,
 } from "./chat-state";
+import { formatPrice } from "@/shared/format";
 import "./chat.css";
 
 type Props = { slug: string; storeName: string };
@@ -23,11 +24,19 @@ const GENERIC_ERROR = "Something went wrong. Please try again.";
 function formatMoney(value: number | string, currency: string): string {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return `${value} ${currency}`.trim();
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(amount);
-  } catch {
-    return `${amount} ${currency}`.trim();
-  }
+  return formatPrice(amount, currency);
+}
+
+function initials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((w) => Array.from(w)[0] ?? "")
+      .join("")
+      .toUpperCase() || "S"
+  );
 }
 
 async function errorMessage(res: Response): Promise<string> {
@@ -50,24 +59,31 @@ function OrderSummary({
   const sent = order.status !== "draft";
   return (
     <section className="chat-order" aria-label="Order summary">
+      <div className="chat-order-head">
+        <b>Order summary</b>
+        <span className={sent ? "chip chip-ok" : "chip chip-neutral"}>
+          {sent ? "Submitted" : "Draft"}
+        </span>
+      </div>
       <ul className="chat-order-lines">
         {order.items.map((line, i) => (
           <li key={i}>
             <span>
-              {line.quantity} x {line.title}
+              {line.title}
+              <span className="chat-order-qty"> × {line.quantity}</span>
             </span>
             <span>{formatMoney(line.lineTotal, line.currency || order.currency)}</span>
           </li>
         ))}
+        <li className="chat-order-total">
+          <b>Total</b>
+          <b>{formatMoney(order.total, order.currency)}</b>
+        </li>
       </ul>
-      <p className="chat-order-total">
-        <span>Total</span>
-        <span>{order.totalLabel ?? formatMoney(order.total, order.currency)}</span>
-      </p>
       {sent ? (
-        <p className="chat-order-sent">Order sent to the store</p>
+        <p className="chat-order-sent">Order sent to the store. The store will confirm it.</p>
       ) : (
-        <>
+        <div className="chat-order-actions">
           {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
           {order.error ? (
             <p className="chat-error-text" role="alert">
@@ -76,13 +92,13 @@ function OrderSummary({
           ) : null}
           <button
             type="button"
-            className="chat-button"
+            className="btn chat-confirm"
             disabled={order.confirming}
             onClick={() => onConfirm(order.orderId)}
           >
             {order.confirming ? "Sending..." : "Confirm order"}
           </button>
-        </>
+        </div>
       )}
     </section>
   );
@@ -223,21 +239,41 @@ export function ChatPanel({ slug, storeName }: Props) {
 
   return (
     <div className="chat">
-      {disabled ? (
-        <p className="chat-notice" role="status">
-          {UNAVAILABLE_NOTICE}
-        </p>
-      ) : null}
+      <div className="chat-head">
+        <div className="chat-avatar" aria-hidden="true">
+          {initials(storeName)}
+        </div>
+        <div className="chat-head-text">
+          <h2 className="chat-title">{storeName} Assistant</h2>
+          <span className="chat-sub">Answers only from the store&apos;s catalog</span>
+        </div>
+      </div>
 
       <div className="chat-log" role="log" aria-live="polite" aria-label={`Chat with ${storeName}`}>
+        {disabled ? (
+          <div className="chat-notice" role="status">
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4z" />
+            </svg>
+            <p>{UNAVAILABLE_NOTICE}</p>
+          </div>
+        ) : null}
         {state.loaded && state.items.length === 0 && !disabled ? (
-          <p className="chat-empty">Ask about products, availability or ordering.</p>
+          <p className="chat-note chat-empty">Ask about products, availability or ordering.</p>
         ) : null}
         {state.items.map((item) => {
           if (item.kind === "message") {
             return (
               <div key={item.id} className={`chat-bubble chat-bubble-${item.role}`}>
-                <span className="chat-sr">{item.role === "user" ? "You: " : "Assistant: "}</span>
+                <span className="sr-only">{item.role === "user" ? "You: " : "Assistant: "}</span>
                 {item.content}
               </div>
             );
@@ -253,12 +289,12 @@ export function ChatPanel({ slug, storeName }: Props) {
         })}
         {state.sending ? (
           <div className="chat-typing">
-            <span className="chat-dots" aria-hidden="true">
+            <span className="chat-bubble chat-bubble-assistant chat-dots" aria-hidden="true">
               <i />
               <i />
               <i />
             </span>
-            <span>{state.activity ?? "Typing"}</span>
+            <span className="chat-activity">{state.activity ?? "Typing"}</span>
           </div>
         ) : null}
         {state.error ? (
@@ -275,22 +311,32 @@ export function ChatPanel({ slug, storeName }: Props) {
       </div>
 
       <form className="chat-form" onSubmit={onSubmit}>
-        <label htmlFor="chat-input" className="chat-sr">
+        <label htmlFor="chat-input" className="sr-only">
           Message to the store assistant
         </label>
         <textarea
           id="chat-input"
           className="chat-input"
-          rows={2}
+          rows={1}
           maxLength={MAX_MESSAGE_CHARS}
-          placeholder={disabled ? "Assistant unavailable" : "Type your message"}
+          placeholder={disabled ? "Assistant unavailable" : "Message"}
           value={draft}
           disabled={disabled}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
         />
-        <button type="submit" className="chat-button" disabled={!canSend}>
-          Send
+        <button type="submit" className="chat-send" aria-label="Send" disabled={!canSend}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            aria-hidden="true"
+          >
+            <path d="M12 19V5M5 12l7-7 7 7" />
+          </svg>
         </button>
       </form>
     </div>

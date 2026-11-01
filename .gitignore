@@ -1,5 +1,6 @@
 ﻿# Local project docs (architecture, plan, probe notes) - not pushed
 docs/
+design/
 
 # Dependencies
 node_modules/

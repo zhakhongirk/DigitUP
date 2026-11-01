@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { getServices } from "@/server/container";
 import { loadStore } from "@/server/storefront/data";
 import { ChatPanel } from "./chat-panel";
+import { StoreShell } from "./store-shell";
 import "./storefront.css";
 
 export const dynamic = "force-dynamic";
@@ -27,8 +28,16 @@ const CONTACT_LABELS: [string, string][] = [
   ["telegram", "Telegram"],
   ["instagram", "Instagram"],
   ["website", "Website"],
-  ["address", "Address"],
 ];
+
+function initials(name: string): string {
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => Array.from(w)[0] ?? "");
+  return letters.join("").toUpperCase() || "S";
+}
 
 function contactValue(key: string, value: string): ReactNode {
   if (key === "phone") return <a href={`tel:${value.replace(/[^\d+]/g, "")}`}>{value}</a>;
@@ -47,47 +56,58 @@ export default async function StoreLayout({ children, params }: Props) {
     const value = store.contacts[key as keyof typeof store.contacts];
     return value ? [{ key, label, value }] : [];
   });
+  const address = store.contacts.address;
 
-  return (
-    <div className="sf-root">
-      <header className="sf-header">
-        <div className="sf-header-inner">
-          <h1 className="sf-store-name">
-            <Link href={`/s/${slug}`}>{store.name}</Link>
-          </h1>
-          {store.description ? <p className="sf-store-desc">{store.description}</p> : null}
-          {contacts.length > 0 ? (
-            <ul className="sf-contacts" aria-label="Contacts">
-              {contacts.map((c) => (
-                <li key={c.key}>
-                  <span className="sf-contact-label">{c.label}:</span>{" "}
-                  {contactValue(c.key, c.value)}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-      </header>
-
-      <div className="sf-layout">
-        <main className="sf-content">{children}</main>
-        <aside id="store-chat" className="sf-chat" aria-labelledby="store-chat-title">
-          <h2 id="store-chat-title">Store assistant</h2>
-          <ChatPanel slug={slug} storeName={store.name} />
-        </aside>
-      </div>
-
-      <footer className="sf-footer">
-        <h2>Store policies</h2>
-        <dl className="sf-policies">
+  const policies =
+    store.policies.length > 0 ? (
+      <section className="sf-policies glass" aria-labelledby="sf-policies-title">
+        <h2 id="sf-policies-title">Store policies</h2>
+        <dl>
           {store.policies.map((p) => (
             <div key={p.key} className="sf-policy">
               <dt>{p.label}</dt>
-              <dd>{p.text}</dd>
+              <dd className={p.text === "To be confirmed" ? "sf-policy-tbc" : undefined}>
+                {p.text}
+              </dd>
             </div>
           ))}
         </dl>
-      </footer>
+      </section>
+    ) : null;
+
+  return (
+    <div className="sf-root">
+      <header className="sf-header glass">
+        <Link href={`/s/${slug}`} className="sf-mark" aria-label={`${store.name} home`}>
+          {initials(store.name)}
+        </Link>
+        <div className="sf-brand">
+          <Link href={`/s/${slug}`} className="sf-brand-name">
+            {store.name}
+          </Link>
+          {address ? <span className="sf-brand-sub">{address}</span> : null}
+        </div>
+        {contacts.length > 0 ? (
+          <ul className="sf-contacts" aria-label="Contacts">
+            {contacts.map((c) => (
+              <li key={c.key}>
+                <span className="sr-only">{c.label}: </span>
+                {contactValue(c.key, c.value)}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </header>
+
+      <StoreShell
+        main={
+          <>
+            {children}
+            {policies}
+          </>
+        }
+        chat={<ChatPanel slug={slug} storeName={store.name} />}
+      />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 export default function StoreNotFound() {
   return (
-    <section className="sf-empty">
+    <section className="sf-empty sf-not-found glass">
       <h1>Store not found</h1>
       <p>
         We could not find what you were looking for. The link may be wrong or the store may be

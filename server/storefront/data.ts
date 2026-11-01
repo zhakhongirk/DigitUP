@@ -2,7 +2,13 @@ import type { Services } from "@/server/container";
 import { policiesWithStates, publicOffer } from "@/server/mcp/views";
 import type { OfferView } from "@/server/services/catalog";
 import type { TenantContext } from "@/server/services/context";
-import type { AttributeDefinition, AttributeValue, Contacts } from "@/shared/business-model";
+import type {
+  AttributeDefinition,
+  AttributeValue,
+  Contacts,
+  OfferKind,
+} from "@/shared/business-model";
+import { formatPrice } from "@/shared/format";
 
 export const PAGE_SIZE = 24;
 
@@ -33,9 +39,16 @@ export interface AttributeLine {
 export interface OfferCardData {
   id: string;
   title: string;
+  description: string;
   category: string | null;
   typeName: string;
   attributes: AttributeLine[];
+  imageUrl: string | null;
+  kind: OfferKind;
+  /** Short label for the text tile shown when there is no photo. */
+  tileLabel: string;
+  /** Compact attribute values for card and row meta lines, most telling first. */
+  summary: string[];
   priceLabel: string;
   hasPrice: boolean;
   availability: "in_stock" | "out_of_stock" | "unknown";
@@ -43,9 +56,7 @@ export interface OfferCardData {
   canOrder: boolean;
 }
 
-export interface OfferDetailData extends OfferCardData {
-  description: string;
-}
+export type OfferDetailData = OfferCardData;
 
 export interface CatalogPage {
   items: OfferCardData[];
@@ -69,16 +80,25 @@ function hasValue(value: AttributeValue | undefined): value is AttributeValue {
   return value !== "";
 }
 
-type TypeDefs = Map<string, AttributeDefinition[]>;
+interface TypeDef {
+  kind: OfferKind;
+  attributes: AttributeDefinition[];
+}
+type TypeDefs = Map<string, TypeDef>;
 
 async function loadTypeDefs(services: Services, ctx: TenantContext): Promise<TypeDefs> {
   const types = await services.catalog.listOfferTypes(ctx);
-  return new Map(types.map((t) => [t.key, t.attributeSchema as AttributeDefinition[]]));
+  return new Map(
+    types.map((t) => [
+      t.key,
+      { kind: t.kind, attributes: t.attributeSchema as AttributeDefinition[] },
+    ]),
+  );
 }
 
 function attributeLines(offer: OfferView, defs: TypeDefs): AttributeLine[] {
   const lines: AttributeLine[] = [];
-  for (const def of defs.get(offer.offerTypeKey) ?? []) {
+  for (const def of defs.get(offer.offerTypeKey)?.attributes ?? []) {
     const value = (offer.attributes as Record<string, AttributeValue>)[def.key];
     if (hasValue(value)) {
       lines.push({ key: def.key, label: def.label, value: formatValue(def, value) });
@@ -87,17 +107,78 @@ function attributeLines(offer: OfferView, defs: TypeDefs): AttributeLine[] {
   return lines;
 }
 
+function safeImageUrl(url: string | null): string | null {
+  if (!url) return null;
+  return /^(\/(?!\/)|https?:\/\/)/i.test(url) ? url : null;
+}
+
+function numericRange(values: string[]): string | null {
+  const nums = values.map(Number);
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+  const min = Math.min(...nums);
+  const max = Math.max(...nums);
+  return min === max ? String(min) : `${min}–${max}`;
+}
+
+const humanize = (value: string) => value.replace(/_/g, " ");
+
+/** One compact phrase per attribute, or null when it would not fit on a meta line. */
+function compact(def: AttributeDefinition, value: AttributeValue): string | null {
+  if (Array.isArray(value)) {
+    const range = numericRange(value);
+    if (range) return `${def.label} ${range}`;
+    const shown = value.slice(0, 2).map(humanize).join(", ");
+    return value.length > 2 ? `${shown} +${value.length - 2}` : shown;
+  }
+  if (typeof value === "number") return def.unit ? `${value} ${def.unit}` : `${def.label} ${value}`;
+  if (typeof value === "boolean") return value ? def.label : null;
+  if (def.type === "enum") return humanize(value);
+  return value.length <= 24 ? value : null;
+}
+
+const SUMMARY_ORDER: Record<AttributeDefinition["type"], number> = {
+  number: 0,
+  list: 0,
+  enum: 1,
+  boolean: 2,
+  text: 3,
+};
+
+function summarize(
+  attrs: Record<string, AttributeValue>,
+  defs: AttributeDefinition[],
+  skip?: string,
+) {
+  return defs
+    .filter((def) => def.key !== skip && hasValue(attrs[def.key]))
+    .sort((a, b) => SUMMARY_ORDER[a.type] - SUMMARY_ORDER[b.type])
+    .map((def) => compact(def, attrs[def.key]!))
+    .filter((phrase): phrase is string => phrase !== null);
+}
+
 function toCard(offer: OfferView, defs: TypeDefs, limit?: number): OfferCardData {
   const pub = publicOffer(offer);
   const lines = attributeLines(offer, defs);
+  const attrs = offer.attributes as Record<string, AttributeValue>;
+  const hasPrice = pub.price !== null && !!pub.currency;
+  const type = defs.get(offer.offerTypeKey);
+  const typeAttrs = type?.attributes ?? [];
+  const tileAttr = typeAttrs.find(
+    (def) => def.type === "text" && typeof attrs[def.key] === "string" && attrs[def.key] !== "",
+  );
   return {
     id: offer.id,
     title: offer.title,
+    description: offer.description,
     category: offer.category,
     typeName: offer.offerTypeName,
     attributes: limit === undefined ? lines : lines.slice(0, limit),
-    priceLabel: pub.price_label,
-    hasPrice: pub.price !== null,
+    imageUrl: safeImageUrl(pub.image_url),
+    kind: type?.kind ?? "product",
+    tileLabel: tileAttr ? String(attrs[tileAttr.key]) : offer.title,
+    summary: summarize(attrs, typeAttrs, tileAttr?.key),
+    priceLabel: hasPrice ? formatPrice(Number(pub.price), pub.currency) : "Price on request",
+    hasPrice,
     availability: pub.availability,
     availabilityLabel: pub.availability_label,
     canOrder: pub.can_order,
@@ -169,5 +250,5 @@ export async function loadOffer(
   const offer = await services.catalog.getOffer(ctx, offerId);
   if (!offer || offer.status !== "active") return null;
   const defs = await loadTypeDefs(services, ctx);
-  return { ...toCard(offer, defs), description: offer.description };
+  return toCard(offer, defs);
 }

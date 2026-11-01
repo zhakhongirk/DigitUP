@@ -5,6 +5,7 @@ import { getServices } from "@/server/container";
 import {
   listStoreCategories,
   loadStore,
+  PAGE_SIZE,
   parsePage,
   searchCatalog,
   type OfferCardData,
@@ -34,32 +35,89 @@ function href(slug: string, query: string, category: string | null, page?: numbe
   return text ? `/s/${slug}?${text}` : `/s/${slug}`;
 }
 
+function Media({ offer, className }: { offer: OfferCardData; className: string }) {
+  if (offer.imageUrl) {
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={offer.imageUrl} alt={offer.title} className={className} loading="lazy" />;
+  }
+  return (
+    <div className={`${className} sf-tile`}>
+      <span className="sf-tile-name">{offer.tileLabel}</span>
+      <span className="sf-tile-note">Photo coming soon</span>
+    </div>
+  );
+}
+
+function PriceAndStatus({ offer }: { offer: OfferCardData }) {
+  return (
+    <>
+      <span className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
+        {offer.priceLabel}
+      </span>
+      <span className={`status status-${offer.availability}`}>{offer.availabilityLabel}</span>
+    </>
+  );
+}
+
 function OfferCard({ slug, offer }: { slug: string; offer: OfferCardData }) {
+  const meta = [offer.category, offer.summary[0] ?? null].filter(Boolean).join(" · ");
   return (
     <li className="sf-card">
-      <h3 className="sf-card-title">
-        <Link href={`/s/${slug}/offers/${offer.id}`}>{offer.title}</Link>
-      </h3>
-      {offer.category ? <p className="sf-card-category">{offer.category}</p> : null}
-      {offer.attributes.length > 0 ? (
-        <dl className="sf-attrs">
-          {offer.attributes.map((a) => (
-            <div key={a.key}>
-              <dt>{a.label}</dt>
-              <dd>{a.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      <p className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
-        {offer.priceLabel}
-      </p>
-      <p>
-        <span className={`sf-badge sf-badge-${offer.availability}`}>{offer.availabilityLabel}</span>
-      </p>
-      {offer.canOrder ? null : <p className="sf-hint">Ask the store</p>}
+      <Media offer={offer} className="sf-card-media" />
+      <div className="sf-card-text">
+        <h3 className="sf-card-title">
+          <Link href={`/s/${slug}/offers/${offer.id}`} className="sf-card-link">
+            {offer.title}
+          </Link>
+        </h3>
+        {meta ? <p className="sf-card-meta">{meta}</p> : null}
+      </div>
+      <div className="sf-card-foot">
+        <PriceAndStatus offer={offer} />
+      </div>
     </li>
   );
+}
+
+function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
+  const meta = [...offer.summary.slice(0, 2), offer.category].filter(Boolean).join(" · ");
+  return (
+    <li className="sf-row">
+      <div className="sf-row-text">
+        <h3 className="sf-row-title">
+          <Link href={`/s/${slug}/offers/${offer.id}`}>{offer.title}</Link>
+        </h3>
+        {offer.description ? <p className="sf-row-desc">{offer.description}</p> : null}
+        {meta ? <p className="sf-card-meta">{meta}</p> : null}
+      </div>
+      <span className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
+        {offer.priceLabel}
+      </span>
+      {offer.hasPrice ? (
+        <a href="#store-chat" className="btn btn-sm">
+          Book
+        </a>
+      ) : (
+        <a href="#store-chat" className="btn btn-sm btn-secondary">
+          Ask the shop
+        </a>
+      )}
+    </li>
+  );
+}
+
+function countText(
+  total: number,
+  page: number,
+  shown: number,
+  category: string | null,
+  query: string,
+) {
+  const base =
+    total > shown
+      ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${(page - 1) * PAGE_SIZE + shown} of ${total}`
+      : `${total} ${total === 1 ? "item" : "items"}`;
+  return `${base}${category ? ` in ${category}` : ""}${query ? ` matching "${query}"` : ""}`;
 }
 
 export default async function CatalogPage({ params, searchParams }: Props) {
@@ -78,53 +136,79 @@ export default async function CatalogPage({ params, searchParams }: Props) {
     }),
   ]);
   const { query, category, page, pageCount } = result;
+  const isServices = result.items.some((o) => o.kind === "service");
 
   return (
     <>
+      <section className="sf-hero">
+        <h1>{store.name}</h1>
+        {store.description ? <p>{store.description}</p> : null}
+      </section>
+
       <form method="get" action={`/s/${slug}`} role="search" className="sf-search">
-        <label htmlFor="sf-q">Search the catalog</label>
-        <div className="sf-search-row">
-          <input id="sf-q" name="q" type="search" defaultValue={query} placeholder="Search" />
-          {category ? <input type="hidden" name="category" value={category} /> : null}
-          <button type="submit">Search</button>
-        </div>
+        <label htmlFor="sf-q" className="field">
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7" />
+            <path d="M20 20l-4-4" />
+          </svg>
+          <span className="sr-only">Search the catalog</span>
+          <input
+            id="sf-q"
+            name="q"
+            type="search"
+            defaultValue={query}
+            placeholder="Search the catalog"
+          />
+        </label>
+        {category ? <input type="hidden" name="category" value={category} /> : null}
+        <button type="submit" className="btn btn-sm">
+          Search
+        </button>
       </form>
 
-      {categories.length > 0 ? (
-        <nav aria-label="Categories" className="sf-categories">
-          <ul>
-            <li>
-              <Link href={href(slug, query, null)} aria-current={category ? undefined : "page"}>
-                All
-              </Link>
-            </li>
+      <div className="sf-toolbar">
+        {categories.length > 0 ? (
+          <nav aria-label="Categories" className="segmented">
+            <Link href={href(slug, query, null)} aria-current={category ? undefined : "page"}>
+              All
+            </Link>
             {categories.map((c) => (
-              <li key={c}>
-                <Link
-                  href={href(slug, query, c)}
-                  aria-current={category?.toLowerCase() === c.toLowerCase() ? "page" : undefined}
-                >
-                  {c}
-                </Link>
-              </li>
+              <Link
+                key={c}
+                href={href(slug, query, c)}
+                aria-current={category?.toLowerCase() === c.toLowerCase() ? "page" : undefined}
+              >
+                {c}
+              </Link>
             ))}
-          </ul>
-        </nav>
-      ) : null}
-
-      <h2 className="sf-results-title">
-        {result.total} {result.total === 1 ? "item" : "items"}
-        {category ? ` in ${category}` : ""}
-        {query ? ` matching "${query}"` : ""}
-      </h2>
+          </nav>
+        ) : null}
+        <p className="sf-count" role="status">
+          {countText(result.total, page, result.items.length, category, query)}
+        </p>
+      </div>
 
       {result.items.length === 0 ? (
-        <div className="sf-empty">
+        <div className="sf-empty glass">
           <p>Nothing found. Try a different search or browse all items.</p>
-          <p>
-            <Link href={`/s/${slug}`}>Show everything</Link>
-          </p>
+          <Link href={`/s/${slug}`} className="btn btn-sm btn-secondary">
+            Show everything
+          </Link>
         </div>
+      ) : isServices ? (
+        <ul className="sf-list glass">
+          {result.items.map((offer) => (
+            <ServiceRow key={offer.id} slug={slug} offer={offer} />
+          ))}
+        </ul>
       ) : (
         <ul className="sf-grid">
           {result.items.map((offer) => (
@@ -136,17 +220,25 @@ export default async function CatalogPage({ params, searchParams }: Props) {
       {pageCount > 1 ? (
         <nav aria-label="Pagination" className="sf-pagination">
           {page > 1 ? (
-            <Link href={href(slug, query, category, page - 1)} rel="prev">
+            <Link
+              href={href(slug, query, category, page - 1)}
+              rel="prev"
+              className="btn btn-sm btn-secondary"
+            >
               Previous
             </Link>
           ) : (
             <span aria-hidden="true" />
           )}
-          <span>
+          <span className="sf-count">
             Page {page} of {pageCount}
           </span>
           {page < pageCount ? (
-            <Link href={href(slug, query, category, page + 1)} rel="next">
+            <Link
+              href={href(slug, query, category, page + 1)}
+              rel="next"
+              className="btn btn-sm btn-secondary"
+            >
               Next
             </Link>
           ) : (
