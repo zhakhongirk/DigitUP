@@ -1,0 +1,17 @@
+"use server";
+
+import { getServices } from "@/server/container";
+import { currentOwner } from "@/server/owner/session";
+
+export interface KeyState {
+  key: string | null;
+  error: string | null;
+}
+
+export async function createCustomerKey(): Promise<KeyState> {
+  const services = await getServices();
+  const owner = await currentOwner(services);
+  if (!owner) return { key: null, error: "Your session has expired. Sign in again." };
+  const created = await services.tenancy.createApiKey(owner, "customer_agent");
+  return { key: created.key, error: null };
+}

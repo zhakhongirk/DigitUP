@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
+import { tenants } from "@/db/schema";
 import { ServiceError } from "@/server/services/context";
 import { signSession } from "@/server/services/tenancy";
-import { createTestTenant, TEST_AUTH_SECRET, testTenancy, uniqueSlug } from "../helpers/db";
+import { createTestTenant, TEST_AUTH_SECRET, testDb, testTenancy, uniqueSlug } from "../helpers/db";
 
 async function expectCode(promise: Promise<unknown>, code: string) {
   const error = await promise.then(
@@ -259,5 +261,53 @@ describe("contextFromSlug", () => {
 
   it("returns null for an unknown slug", async () => {
     expect(await testTenancy().contextFromSlug(uniqueSlug("nope"), "customer_agent")).toBeNull();
+  });
+});
+
+describe("signUp", () => {
+  it("creates a draft tenant and a session for its owner", async () => {
+    const tenancy = testTenancy();
+    const address = email();
+    const { tenant, token } = await tenancy.signUp({
+      businessName: `Sign Up ${hex()}`,
+      email: `  ${address.toUpperCase()} `,
+      password: "correct-horse",
+    });
+    expect(tenant.status).toBe("draft");
+    expect(await tenancy.contextFromSession(token)).toMatchObject({
+      tenantId: tenant.id,
+      actor: "owner",
+    });
+    expect(await tenancy.signIn({ email: address, password: "correct-horse" })).toEqual(
+      expect.any(String),
+    );
+  });
+
+  it("rejects a duplicate email and leaves no second tenant", async () => {
+    const tenancy = testTenancy();
+    const address = email();
+    const first = await tenancy.signUp({
+      businessName: `First ${hex()}`,
+      email: address,
+      password: "correct-horse",
+    });
+    const name = `Second ${hex()}`;
+    await expectCode(
+      tenancy.signUp({ businessName: name, email: address, password: "correct-horse" }),
+      "conflict",
+    );
+    const rows = await testDb().select().from(tenants).where(eq(tenants.name, name));
+    expect(rows).toEqual([]);
+    expect(await tenancy.contextFromSession(first.token)).not.toBeNull();
+  });
+
+  it("validates credentials before creating anything", async () => {
+    const name = `Invalid ${hex()}`;
+    await expectCode(
+      testTenancy().signUp({ businessName: name, email: email(), password: "short" }),
+      "invalid",
+    );
+    const rows = await testDb().select().from(tenants).where(eq(tenants.name, name));
+    expect(rows).toEqual([]);
   });
 });

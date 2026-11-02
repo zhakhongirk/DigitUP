@@ -34,6 +34,15 @@ export interface TenancyService {
     tenantId: string,
     input: { email: string; password: string },
   ): Promise<{ userId: string }>;
+  /**
+   * Creates a draft tenant with its owner and returns a session token. The
+   * tenant is removed again when the owner cannot be created.
+   */
+  signUp(input: {
+    businessName: string;
+    email: string;
+    password: string;
+  }): Promise<{ tenant: Tenant; token: string }>;
   /** Returns a session token, or null when the credentials are wrong. */
   signIn(input: { email: string; password: string }): Promise<string | null>;
 
@@ -75,7 +84,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
     return tenant;
   }
 
-  return {
+  const service: TenancyService = {
     async createTenant(input) {
       const name = input.name.trim();
       if (name === "") throw new ServiceError("invalid", "Business name is required");
@@ -133,12 +142,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
 
     async createOwner(tenantId, input) {
       const email = input.email.trim().toLowerCase();
-      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-        throw new ServiceError("invalid", "A valid email is required");
-      }
-      if (input.password.length < 8) {
-        throw new ServiceError("invalid", "Password must be at least 8 characters");
-      }
+      validateCredentials(email, input.password);
       const passwordHash = await bcrypt.hash(input.password, rounds);
       return db.transaction(async (tx) => {
         const [user] = await tx
@@ -154,6 +158,31 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
         );
         return { userId: user.id };
       });
+    },
+
+    async signUp(input) {
+      const email = input.email.trim().toLowerCase();
+      validateCredentials(email, input.password);
+      const [existing] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.email, email));
+      if (existing) throw new ServiceError("conflict", "This email is already registered");
+      const tenant = await service.createTenant({ name: input.businessName });
+      try {
+        const { userId } = await service.createOwner(tenant.id, {
+          email,
+          password: input.password,
+        });
+        const token = signSession(
+          { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) + ttl },
+          options.authSecret,
+        );
+        return { tenant, token };
+      } catch (error) {
+        await db.delete(tenants).where(eq(tenants.id, tenant.id));
+        throw error;
+      }
     },
 
     async signIn(input) {
@@ -251,6 +280,16 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
       return { tenantId: tenant.id, actor };
     },
   };
+  return service;
+}
+
+function validateCredentials(email: string, password: string) {
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    throw new ServiceError("invalid", "A valid email is required");
+  }
+  if (password.length < 8) {
+    throw new ServiceError("invalid", "Password must be at least 8 characters");
+  }
 }
 
 export { slugify, verifySession, signSession, hashApiKey } from "./tokens";
