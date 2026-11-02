@@ -24,6 +24,9 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://storefront:storefront@postgres:5432/storefront
+      STORAGE_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     ports:
       - "3000:3000"
     depends_on:
@@ -39,9 +42,13 @@ services:
         required: false
     environment:
       DATABASE_URL: postgres://storefront:storefront@postgres:5432/storefront
+      STORAGE_DIR: /data/uploads
+    volumes:
+      - uploads:/data/uploads
     depends_on:
       postgres:
         condition: service_healthy
 
 volumes:
   pgdata:
+  uploads:

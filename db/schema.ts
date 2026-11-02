@@ -67,6 +67,12 @@ export const sourceAssetStatus = pgEnum("source_asset_status", [
   "extracted",
   "failed",
 ]);
+export const proposalRunStatus = pgEnum("proposal_run_status", [
+  "pending",
+  "running",
+  "succeeded",
+  "failed",
+]);
 export const changeSetStatus = pgEnum("change_set_status", ["pending", "applied", "rejected"]);
 export const actor = pgEnum("actor", ["owner", "business_agent", "customer_agent", "system"]);
 
@@ -272,6 +278,21 @@ export const sourceAssets = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [index("source_assets_tenant_idx").on(t.tenantId)],
+);
+
+/** One analysis of the uploaded sources that ends with a Business Model draft. */
+export const proposalRuns = pgTable(
+  "proposal_runs",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    status: proposalRunStatus("status").notNull().default("pending"),
+    draftId: uuid("draft_id").references(() => businessModelDrafts.id, { onDelete: "set null" }),
+    error: text("error"),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [index("proposal_runs_tenant_idx").on(t.tenantId)],
 );
 
 export const agentConfigs = pgTable(

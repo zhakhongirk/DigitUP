@@ -4,6 +4,7 @@
  */
 import type { Db } from "@/db/client";
 import { notifications } from "@/db/schema";
+import type { IngestionService } from "@/server/services/ingestion";
 import type { ProvisioningService } from "@/server/services/provisioning";
 import { EVENTS, type EventName, type EventPayloads } from "./types";
 
@@ -11,6 +12,9 @@ export interface HandlerDeps {
   db: Db;
   log?: (message: string) => void;
   provisioning?: ProvisioningService;
+  ingestion?: IngestionService;
+  /** Builds a Business Model draft for a finished ingestion run. */
+  propose?: (input: { tenantId: string; runId: string }) => Promise<void>;
 }
 
 export type EventHandler<N extends EventName> = (
@@ -42,8 +46,17 @@ export const handlers: EventHandlers = {
     notifyOwner(db, tenantId, "order", orderId),
   [EVENTS.inquirySubmitted]: async ({ tenantId, inquiryId }, { db }) =>
     notifyOwner(db, tenantId, "inquiry", inquiryId),
-  [EVENTS.fileUploaded]: acknowledgeOnly(EVENTS.fileUploaded),
-  [EVENTS.ingestionCompleted]: acknowledgeOnly(EVENTS.ingestionCompleted),
+  [EVENTS.fileUploaded]: async ({ tenantId, sourceAssetId }, { ingestion, log }) => {
+    if (!ingestion) throw new Error("ingestion is not configured in this worker");
+    const asset = await ingestion.extractAsset(tenantId, sourceAssetId);
+    log?.(
+      `[worker] file.uploaded: ${asset?.filename ?? sourceAssetId} ${asset?.status ?? "missing"}`,
+    );
+  },
+  [EVENTS.ingestionCompleted]: async (payload, { propose }) => {
+    if (!propose) throw new Error("proposals are not configured in this worker");
+    await propose(payload);
+  },
   [EVENTS.modelConfirmed]: async ({ tenantId, draftId }, { provisioning, log }) => {
     if (!provisioning) throw new Error("provisioning is not configured in this worker");
     const outcome = await provisioning.provision({ tenantId, draftId });

@@ -9,6 +9,7 @@ import { createConversationsService, type ConversationsService } from "./service
 import { createIngestionService, type IngestionService } from "./services/ingestion";
 import { createOrdersService, type OrdersService } from "./services/orders";
 import { createTenancyService, type TenancyService } from "./services/tenancy";
+import { createFileStorage, type FileStorage } from "./storage";
 
 export interface Services {
   tenancy: TenancyService;
@@ -24,9 +25,10 @@ export interface ServiceDeps {
   db: Db;
   events: EventPublisher;
   authSecret: string;
+  storage?: FileStorage;
 }
 
-export function createServices({ db, events, authSecret }: ServiceDeps): Services {
+export function createServices({ db, events, authSecret, storage }: ServiceDeps): Services {
   return {
     tenancy: createTenancyService(db, { authSecret }),
     catalog: createCatalogService({ db, events }),
@@ -34,7 +36,7 @@ export function createServices({ db, events, authSecret }: ServiceDeps): Service
     conversations: createConversationsService({ db, events }),
     approvals: createApprovalsService(db),
     audit: createAuditService(db),
-    ingestion: createIngestionService(db),
+    ingestion: createIngestionService({ db, events, storage: storage ?? createFileStorage() }),
   };
 }
 

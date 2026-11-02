@@ -17,7 +17,7 @@ export const ALL_EVENTS: readonly EventName[] = Object.values(EVENTS);
 
 export interface EventPayloads {
   "file.uploaded": { tenantId: string; sourceAssetId: string };
-  "ingestion.completed": { tenantId: string; sourceAssetIds: string[] };
+  "ingestion.completed": { tenantId: string; runId: string };
   "model.confirmed": { tenantId: string; draftId: string };
   "tenant.live": { tenantId: string };
   "order.submitted": { tenantId: string; orderId: string };
