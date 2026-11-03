@@ -5,6 +5,7 @@
 import type { Db } from "@/db/client";
 import { notifications } from "@/db/schema";
 import type { IngestionService } from "@/server/services/ingestion";
+import type { TelegramService } from "@/server/services/telegram";
 import type { ProvisioningService } from "@/server/services/provisioning";
 import { EVENTS, type EventName, type EventPayloads } from "./types";
 
@@ -13,6 +14,7 @@ export interface HandlerDeps {
   log?: (message: string) => void;
   provisioning?: ProvisioningService;
   ingestion?: IngestionService;
+  telegram?: TelegramService;
   /** Builds a Business Model draft for a finished ingestion run. */
   propose?: (input: { tenantId: string; runId: string }) => Promise<void>;
 }
@@ -25,13 +27,25 @@ export type EventHandler<N extends EventName> = (
 export type EventHandlers = { [N in EventName]: EventHandler<N> };
 
 /** Inserting the same (tenant, kind, ref) twice is a no-op thanks to the unique index. */
-async function notifyOwner(db: Db, tenantId: string, kind: string, refId: string) {
+async function notifyOwner(
+  { db, telegram, log }: HandlerDeps,
+  tenantId: string,
+  kind: string,
+  refId: string,
+) {
   await db
     .insert(notifications)
     .values({ tenantId, kind, refId })
     .onConflictDoNothing({
       target: [notifications.tenantId, notifications.kind, notifications.refId],
     });
+  try {
+    await telegram?.notifyOwner({ tenantId, kind, refId });
+  } catch (error) {
+    log?.(
+      `[worker] telegram notification failed: ${error instanceof Error ? error.message : error}`,
+    );
+  }
 }
 
 /** For events that have no consumer yet: the job is acknowledged so the queue stays clean. */
@@ -45,14 +59,14 @@ function acknowledgeOnly(name: EventName): EventHandler<EventName> {
 export const NOTIFICATION_KINDS = ["order", "inquiry", "change_set", "tenant.live"] as const;
 
 export const handlers: EventHandlers = {
-  [EVENTS.orderSubmitted]: async ({ tenantId, orderId }, { db }) =>
-    notifyOwner(db, tenantId, "order", orderId),
-  [EVENTS.inquirySubmitted]: async ({ tenantId, inquiryId }, { db }) =>
-    notifyOwner(db, tenantId, "inquiry", inquiryId),
-  [EVENTS.changeSetCreated]: async ({ tenantId, changeSetId }, { db }) =>
-    notifyOwner(db, tenantId, "change_set", changeSetId),
-  [EVENTS.tenantLive]: async ({ tenantId }, { db }) =>
-    notifyOwner(db, tenantId, "tenant.live", tenantId),
+  [EVENTS.orderSubmitted]: async ({ tenantId, orderId }, deps) =>
+    notifyOwner(deps, tenantId, "order", orderId),
+  [EVENTS.inquirySubmitted]: async ({ tenantId, inquiryId }, deps) =>
+    notifyOwner(deps, tenantId, "inquiry", inquiryId),
+  [EVENTS.changeSetCreated]: async ({ tenantId, changeSetId }, deps) =>
+    notifyOwner(deps, tenantId, "change_set", changeSetId),
+  [EVENTS.tenantLive]: async ({ tenantId }, deps) =>
+    notifyOwner(deps, tenantId, "tenant.live", tenantId),
   [EVENTS.fileUploaded]: async ({ tenantId, sourceAssetId }, { ingestion, log }) => {
     if (!ingestion) throw new Error("ingestion is not configured in this worker");
     const asset = await ingestion.extractAsset(tenantId, sourceAssetId);

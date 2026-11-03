@@ -82,7 +82,16 @@ export const tenants = pgTable("tenants", {
   slug: text("slug").notNull().unique(),
   name: text("name").notNull(),
   status: tenantStatus("status").notNull().default("draft"),
+  telegramChatId: text("telegram_chat_id"),
+  telegramLinkCode: text("telegram_link_code").unique(),
+  telegramLinkExpiresAt: timestamp("telegram_link_expires_at", { withTimezone: true }),
   createdAt: createdAt(),
+});
+
+export const kv = pgTable("kv", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: updatedAt(),
 });
 
 export const users = pgTable(
@@ -365,6 +374,7 @@ export const notifications = pgTable(
     kind: text("kind").notNull(),
     refId: uuid("ref_id").notNull(),
     readAt: timestamp("read_at", { withTimezone: true }),
+    telegramSentAt: timestamp("telegram_sent_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [

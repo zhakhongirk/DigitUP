@@ -26,6 +26,11 @@ describe("parseProfileForm", () => {
     });
   });
 
+  it("keeps the Kaspi field", () => {
+    const result = parseProfileForm(form({ name: "A", "contact.kaspi": " +7 701 000 00 00 " }));
+    expect(result.contacts).toEqual({ kaspi: "+7 701 000 00 00" });
+  });
+
   it("keeps a category and every contact field", () => {
     const result = parseProfileForm(
       form({ name: "A", category: "Retail", "contact.address": "Main street 1" }),

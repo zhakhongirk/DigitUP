@@ -3,6 +3,7 @@ import {
   offerSchema,
   businessModelSchema,
   checkLaunchReadiness,
+  contactsSchema,
   offerAttributeIssues,
   type BusinessModelInput,
   type OfferType,
@@ -366,5 +367,20 @@ describe("offer image_url protocol-relative paths", () => {
   it("rejects //host paths that browsers resolve as external URLs", () => {
     const base = { title: "Boot", offer_type: "shoes", price_status: "on_request" as const };
     expect(offerSchema.safeParse({ ...base, image_url: "//evil.com/x.png" }).success).toBe(false);
+  });
+});
+
+describe("contacts.kaspi", () => {
+  it("is optional and trimmed", () => {
+    expect(contactsSchema.parse({})).toEqual({});
+    expect(contactsSchema.parse({ kaspi: "  +7 700 123 45 67 " })).toEqual({
+      kaspi: "+7 700 123 45 67",
+    });
+  });
+
+  it("rejects blank and oversized values", () => {
+    expect(contactsSchema.safeParse({ kaspi: "   " }).success).toBe(false);
+    expect(contactsSchema.safeParse({ kaspi: "x".repeat(201) }).success).toBe(false);
+    expect(contactsSchema.safeParse({ kaspi: "x".repeat(200) }).success).toBe(true);
   });
 });

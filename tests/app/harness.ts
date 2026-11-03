@@ -12,6 +12,7 @@ import { createFileStorage } from "@/server/storage";
 import { SESSION_COOKIE } from "@/server/mcp/http";
 import type { TenantContext } from "@/server/services/context";
 import type { BusinessModelInput } from "@/shared/business-model";
+import { createTelegramService } from "@/server/services/telegram";
 import { recordingEvents, TEST_AUTH_SECRET, testDb, uniqueSlug } from "../helpers/db";
 
 export const session = { token: null as string | null, cleared: false };
@@ -32,6 +33,7 @@ export function testServices(): Services {
       audit: createAuditService(db),
       ingestion: createIngestionService({ db, events, storage: createFileStorage() }),
       notifications: createNotificationsService(db),
+      telegram: createTelegramService({ db, client: null, botUsername: null }),
     };
   }
   return services;

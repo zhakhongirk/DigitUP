@@ -2,6 +2,7 @@ import type { Db } from "@/db/client";
 import { getDb } from "@/db/client";
 import { PgBossEventPublisher, startBoss } from "./events/boss";
 import type { EventPublisher } from "./events/types";
+import { log } from "./log";
 import { createApprovalsService, type ApprovalsService } from "./services/approvals";
 import { createAuditService, type AuditService } from "./services/audit";
 import { createCatalogService, type CatalogService } from "./services/catalog";
@@ -9,6 +10,12 @@ import { createConversationsService, type ConversationsService } from "./service
 import { createIngestionService, type IngestionService } from "./services/ingestion";
 import { createNotificationsService, type NotificationsService } from "./services/notifications";
 import { createOrdersService, type OrdersService } from "./services/orders";
+import {
+  createHttpTelegramClient,
+  createTelegramService,
+  telegramConfigFromEnv,
+  type TelegramService,
+} from "./services/telegram";
 import { createTenancyService, type TenancyService } from "./services/tenancy";
 import { createFileStorage, type FileStorage } from "./storage";
 
@@ -21,6 +28,7 @@ export interface Services {
   audit: AuditService;
   ingestion: IngestionService;
   notifications: NotificationsService;
+  telegram: TelegramService;
 }
 
 export interface ServiceDeps {
@@ -28,9 +36,27 @@ export interface ServiceDeps {
   events: EventPublisher;
   authSecret: string;
   storage?: FileStorage;
+  telegram?: TelegramService;
 }
 
-export function createServices({ db, events, authSecret, storage }: ServiceDeps): Services {
+function telegramFromEnv(db: Db): TelegramService {
+  const config = telegramConfigFromEnv();
+  return createTelegramService({
+    db,
+    client: config ? createHttpTelegramClient(config.token) : null,
+    botUsername: config?.botUsername ?? null,
+    appUrl: process.env.APP_URL,
+    log: (message, fields) => log.warn(message, fields),
+  });
+}
+
+export function createServices({
+  db,
+  events,
+  authSecret,
+  storage,
+  telegram,
+}: ServiceDeps): Services {
   return {
     tenancy: createTenancyService(db, { authSecret }),
     catalog: createCatalogService({ db, events }),
@@ -40,6 +66,7 @@ export function createServices({ db, events, authSecret, storage }: ServiceDeps)
     audit: createAuditService(db),
     ingestion: createIngestionService({ db, events, storage: storage ?? createFileStorage() }),
     notifications: createNotificationsService(db),
+    telegram: telegram ?? telegramFromEnv(db),
   };
 }
 

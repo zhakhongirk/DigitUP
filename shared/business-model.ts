@@ -107,6 +107,8 @@ export const contactsSchema = z.object({
   instagram: z.string().min(1).optional(),
   website: z.string().min(1).optional(),
   address: z.string().min(1).optional(),
+  /** Phone number or link customers pay to through Kaspi. */
+  kaspi: z.string().trim().min(1).max(200).optional(),
 });
 
 export type Contacts = z.infer<typeof contactsSchema>;

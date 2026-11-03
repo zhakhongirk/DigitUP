@@ -8,6 +8,7 @@ export const CONTACT_FIELDS = [
   ["instagram", "Instagram"],
   ["website", "Website"],
   ["address", "Address"],
+  ["kaspi", "Kaspi (phone or link)"],
 ] as const satisfies readonly (readonly [keyof Contacts, string])[];
 
 export const POLICY_FIELDS = [

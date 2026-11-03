@@ -46,6 +46,43 @@ export async function savePolicies(_prev: SettingsState, form: FormData): Promis
   return { error: null, saved: true, stamp: Date.now() };
 }
 
+async function telegramAction(
+  run: (
+    owner: NonNullable<Awaited<ReturnType<typeof currentOwner>>>,
+    services: Awaited<ReturnType<typeof getServices>>,
+  ) => Promise<void>,
+): Promise<SettingsState> {
+  const services = await getServices();
+  const owner = await currentOwner(services);
+  if (!owner) redirect("/signin?next=/app/settings");
+  try {
+    await run(owner, services);
+  } catch (error) {
+    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    throw error;
+  }
+  revalidatePath("/app/settings");
+  return { error: null, saved: true, stamp: Date.now() };
+}
+
+export async function connectTelegram(): Promise<SettingsState> {
+  return telegramAction(async (owner, services) => {
+    await services.telegram.issueLinkCode(owner);
+  });
+}
+
+export async function refreshTelegram(): Promise<SettingsState> {
+  return telegramAction(async () => undefined);
+}
+
+export async function disconnectTelegram(): Promise<SettingsState> {
+  return telegramAction((owner, services) => services.telegram.disconnect(owner));
+}
+
+export async function sendTelegramTest(): Promise<SettingsState> {
+  return telegramAction((owner, services) => services.telegram.sendTest(owner));
+}
+
 export async function changePassword(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   const services = await getServices();
   const owner = await currentOwner(services);

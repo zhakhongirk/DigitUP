@@ -57,6 +57,13 @@
       "when": 1793715397989,
       "tag": "0007_order_fulfillment",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793717201045,
+      "tag": "0008_telegram_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -1,12 +1,17 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
 import { Flash } from "../flash";
 import type { BusinessModel } from "@/shared/business-model";
 import { CONTACT_FIELDS, POLICY_FIELDS } from "@/shared/labels";
+import type { TelegramStatus } from "@/server/services/telegram";
 import {
   changePassword,
+  connectTelegram,
+  disconnectTelegram,
+  refreshTelegram,
+  sendTelegramTest,
   saveProfile,
   savePolicies,
   signOutEverywhere,
@@ -169,5 +174,88 @@ export function SignOutEverywhereForm() {
         </button>
       </div>
     </form>
+  );
+}
+
+export function TelegramPanel({
+  status,
+}: {
+  status: Pick<TelegramStatus, "configured" | "connected"> & { linkUrl: string | null };
+}) {
+  const [state, setState] = useActionState(
+    async (_prev: SettingsState, run: () => Promise<SettingsState>) => run(),
+    INITIAL,
+  );
+  const [pending, startTransition] = useTransition();
+  const run = (action: () => Promise<SettingsState>) =>
+    startTransition(() => setState(action));
+
+  return (
+    <section className="st-panel glass" aria-labelledby="st-telegram">
+      <h2 id="st-telegram">Telegram notifications</h2>
+      {!status.configured ? (
+        <p>Telegram notifications are not configured on this server.</p>
+      ) : status.connected ? (
+        <>
+          <p>New orders, questions and approvals are sent to your Telegram chat.</p>
+          <div className="st-actions">
+            <button
+              type="button"
+              className="btn"
+              disabled={pending}
+              onClick={() => run(sendTelegramTest)}
+            >
+              Send test message
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={pending}
+              onClick={() => run(disconnectTelegram)}
+            >
+              Disconnect
+            </button>
+            <Feedback state={state} done="Done" />
+          </div>
+        </>
+      ) : (
+        <>
+          <p>
+            Get a message in Telegram when a customer orders, asks a question or an agent proposes
+            changes.
+          </p>
+          {status.linkUrl ? (
+            <p>
+              Open{" "}
+              <a href={status.linkUrl} target="_blank" rel="noopener noreferrer">
+                {status.linkUrl}
+              </a>{" "}
+              and press Start. The link works for 15 minutes.
+            </p>
+          ) : null}
+          <div className="st-actions">
+            <button
+              type="button"
+              className="btn"
+              disabled={pending}
+              onClick={() => run(connectTelegram)}
+            >
+              {status.linkUrl ? "New link" : "Connect Telegram"}
+            </button>
+            {status.linkUrl ? (
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={pending}
+                onClick={() => run(refreshTelegram)}
+              >
+                I pressed Start
+              </button>
+            ) : null}
+            <Feedback state={state} done="Done" />
+          </div>
+        </>
+      )}
+    </section>
   );
 }

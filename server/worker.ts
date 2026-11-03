@@ -34,6 +34,7 @@ async function main() {
       defaultModel: process.env.FIREWORKS_MODEL || "unconfigured",
     }),
     ingestion: services.ingestion,
+    telegram: services.telegram,
     propose: async (input) => {
       const outcome = await runProposal({ services, llm, log: note }, input);
       note(`ingestion.completed: proposal ${outcome.status}`);
@@ -69,10 +70,21 @@ async function main() {
       }
     });
   }
-  log.info("worker.started", { events: ALL_EVENTS });
+  const polling = new AbortController();
+  const pollLoop = services.telegram.configured
+    ? services.telegram.runPolling(polling.signal, (error) =>
+        log.warn("telegram.poll_failed", { error }),
+      )
+    : Promise.resolve();
+  log.info("worker.started", {
+    events: ALL_EVENTS,
+    telegram: services.telegram.configured ? "polling" : "not configured",
+  });
 
   const shutdown = async (signal: string) => {
     log.info("worker.shutdown", { signal });
+    polling.abort();
+    await pollLoop;
     await boss.stop({ graceful: true });
     await database.close();
     process.exit(0);
