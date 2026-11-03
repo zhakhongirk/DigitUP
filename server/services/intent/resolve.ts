@@ -53,6 +53,8 @@ export interface IntentResult {
   unresolved: string[];
   interpreted: Interpretation[];
   search: SearchArguments;
+  /** Set when a model reading of the phrase produced this result. */
+  interpretedBy?: "fast_model";
 }
 
 export type SearchFn = (args: SearchArguments) => Promise<{ items: OfferView[]; total: number }>;

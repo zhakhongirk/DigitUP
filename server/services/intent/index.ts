@@ -7,7 +7,8 @@ import { recordAudit } from "../audit";
 import type { CatalogService } from "../catalog";
 import { ServiceError, type TenantContext } from "../context";
 import { planIntent } from "./plan";
-import { executePlan, type IntentResult, type SearchArguments } from "./resolve";
+import { planRewrite, type IntentInterpreter } from "./rewrite";
+import { executePlan, type Execution, type IntentResult, type SearchArguments } from "./resolve";
 import { backfillVocabularies, loadVocabulary, refreshVocabulary } from "./store";
 import { summarize } from "./summary";
 import type { StoreVocabulary } from "./vocabulary";
@@ -16,6 +17,12 @@ export * from "./resolve";
 export * from "./sizes";
 export type { Plan } from "./plan";
 export { planIntent } from "./plan";
+export {
+  createModelInterpreter,
+  rewriteSchema,
+  type IntentInterpreter,
+  type Rewrite,
+} from "./rewrite";
 export { deriveVocabulary, type StoreVocabulary } from "./vocabulary";
 
 export const VERDICTS = ["ok", "wrong", "incomplete"] as const;
@@ -76,16 +83,19 @@ const DAY = 24 * 3600 * 1000;
 export function createIntentService({
   db,
   catalog,
+  interpret,
 }: {
   db: Db;
   catalog: Pick<CatalogService, "searchOffers" | "recordSearchMiss">;
+  /** Tried once when the deterministic plan leaves words unresolved or finds nothing. */
+  interpret?: IntentInterpreter;
 }): IntentService {
   return {
     async resolveIntent(ctx, input) {
       const text = input.text.trim().slice(0, 1000);
       const vocabulary = await loadVocabulary(db, ctx.tenantId);
       const plan = planIntent(text, vocabulary, input.lang);
-      const execution = await executePlan(plan, (args: SearchArguments) =>
+      const search = (args: SearchArguments) =>
         catalog.searchOffers(ctx, {
           query: args.query,
           category: args.category,
@@ -95,10 +105,34 @@ export function createIntentService({
           maxPrice: args.max_price,
           limit: args.limit,
           offset: args.offset,
-        }),
-      );
+        });
+      let execution: Execution = await executePlan(plan, search);
+      let interpretedBy: IntentResult["interpretedBy"];
+
+      const found = (e: Execution) => e.total + e.onRequestTotal;
+      const needsReading =
+        found(execution) === 0 || execution.unresolved.some((u) => u.startsWith("unknown word"));
+      if (interpret && text && needsReading) {
+        const rewrite = await interpret(ctx, { text, lang: input.lang, vocabulary });
+        if (rewrite) {
+          const second = await executePlan(
+            planRewrite(plan, rewrite, vocabulary, input.lang),
+            search,
+          );
+          const better =
+            found(second) > found(execution) ||
+            (found(second) > 0 &&
+              found(second) === found(execution) &&
+              second.unresolved.length < execution.unresolved.length);
+          if (better) {
+            execution = second;
+            interpretedBy = "fast_model";
+          }
+        }
+      }
       const result: IntentResult = {
         ...execution,
+        ...(interpretedBy ? { interpretedBy } : {}),
         intentId: randomUUID(),
         summary: summarize(execution),
       };

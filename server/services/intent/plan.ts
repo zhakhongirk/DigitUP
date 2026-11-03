@@ -8,7 +8,7 @@ import type { StoreVocabulary } from "./vocabulary";
 export interface Interpretation {
   from: string;
   to: string;
-  via: "store" | "dictionary" | "sound" | "typo";
+  via: "store" | "dictionary" | "sound" | "typo" | "model";
 }
 
 export interface FacetFilter {

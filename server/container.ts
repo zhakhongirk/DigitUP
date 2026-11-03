@@ -7,7 +7,13 @@ import { createApprovalsService, type ApprovalsService } from "./services/approv
 import { createAuditService, type AuditService } from "./services/audit";
 import { createCatalogService, type CatalogService } from "./services/catalog";
 import { createConversationsService, type ConversationsService } from "./services/conversations";
-import { createIntentService, type IntentService } from "./services/intent";
+import { getOptionalLlmClient } from "./llm";
+import {
+  createIntentService,
+  createModelInterpreter,
+  type IntentInterpreter,
+  type IntentService,
+} from "./services/intent";
 import { createIngestionService, type IngestionService } from "./services/ingestion";
 import { createNotificationsService, type NotificationsService } from "./services/notifications";
 import { createOrdersService, type OrdersService } from "./services/orders";
@@ -41,6 +47,7 @@ export interface ServiceDeps {
   authSecret: string;
   storage?: FileStorage;
   telegram?: TelegramService;
+  interpret?: IntentInterpreter;
 }
 
 function telegramFromEnv(db: Db): TelegramService {
@@ -60,12 +67,13 @@ export function createServices({
   authSecret,
   storage,
   telegram,
+  interpret,
 }: ServiceDeps): Services {
   const catalog = createCatalogService({ db, events });
   return {
     tenancy: createTenancyService(db, { authSecret }),
     catalog,
-    intent: createIntentService({ db, catalog }),
+    intent: createIntentService({ db, catalog, interpret }),
     orders: createOrdersService({ db, events }),
     conversations: createConversationsService({ db, events }),
     approvals: createApprovalsService(db, events),
@@ -76,6 +84,11 @@ export function createServices({
     webhooks: createWebhookService(db),
   };
 }
+
+const fastInterpreter: IntentInterpreter = async (ctx, input) => {
+  const llm = getOptionalLlmClient("fast");
+  return llm ? createModelInterpreter(llm)(ctx, input) : null;
+};
 
 let shared: Promise<Services> | undefined;
 
@@ -90,7 +103,12 @@ export function getServices(): Promise<Services> {
     if (!url) throw new Error("DATABASE_URL is not set");
     if (!authSecret) throw new Error("AUTH_SECRET is not set");
     const boss = await startBoss({ connectionString: url, supervise: false });
-    return createServices({ db: getDb(), events: new PgBossEventPublisher(boss), authSecret });
+    return createServices({
+      db: getDb(),
+      events: new PgBossEventPublisher(boss),
+      authSecret,
+      interpret: fastInterpreter,
+    });
   })().catch((error: unknown) => {
     shared = undefined;
     throw error;
