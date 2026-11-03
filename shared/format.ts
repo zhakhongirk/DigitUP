@@ -13,11 +13,11 @@ function group(amount: number, decimal: string): string {
 export function formatPrice(
   amount: number,
   currency: string | null | undefined,
-  lang: "en" | "ru" = "en",
+  lang: "en" | "ru" | "kk" = "en",
 ): string {
   const code = (currency ?? "").trim().toUpperCase();
   if (!Number.isFinite(amount)) return code ? `${amount} ${code}` : String(amount);
-  const text = group(amount, lang === "ru" ? "," : ".");
+  const text = group(amount, lang === "en" ? "." : ",");
   const prefix = PREFIX[code];
   if (prefix) return text.startsWith("-") ? `-${prefix}${text.slice(1)}` : `${prefix}${text}`;
   const suffix = SUFFIX[code] ?? code;

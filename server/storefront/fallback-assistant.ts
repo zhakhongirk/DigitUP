@@ -6,8 +6,9 @@
  */
 import { randomUUID } from "node:crypto";
 import type { LlmChatRequest, LlmChatResult, LlmClient, LlmMessage } from "@/server/llm";
+import { detectTextLang } from "@/shared/text-lang";
 
-export type Lang = "en" | "ru";
+export type Lang = "en" | "ru" | "kk";
 export type InfoTopic =
   "hours" | "delivery" | "payment" | "returns" | "address" | "contact" | "general";
 export type IntentKind =
@@ -48,35 +49,38 @@ const STOPWORDS = new Set(
     "у вас есть ли покажи покажите показать найди найдите ищу ищем хочу хотел хотела нужен нужна нужно нужны " +
     "сколько стоит стоят цена цены цену какая какой какие какое наличии наличие в на для по и или мне можно " +
     "пожалуйста купить куплю заказать заказ размер размеры это эти та то там что где как не а но с со из " +
-    "от до вы ты мы я он она они их ваш ваши шт штук пара пар спасибо подскажите скажите размера размере размеров"
+    "от до вы ты мы я он она они их ваш ваши шт штук пара пар спасибо подскажите скажите размера размере размеров " +
+    "бар ма ме ба бе па пе сізде сізде менде маған бізге керек қанша бағасы бағасын бағасы баға бағалары тұрады " +
+    "өлшем өлшемі өлшемдері өлшемін қандай қайда және мен үшін болады алғым келеді қалай берші көрсетші көрсетіңіз " +
+    "көрсет көрсетіңізші тауар тауарлар тауарды рахмет сәлем толығырақ айтып беріңіз дана жұп өлшемде немесе да де"
   ).split(/\s+/),
 );
 
 const EMAIL_RE = /[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+/;
 const PHONE_RE = /\+?\d[\d\s().-]{5,}\d/;
 const NAME_RE =
-  /(?<![\p{L}])(?:[Mm]y name is|[Ii]'m|I am|[Мм]еня зовут|[Мм]о[её] имя|[Ээ]то)\s+(\p{Lu}[\p{L}'-]*(?:\s+\p{Lu}[\p{L}'-]*)?)/u;
+  /(?<![\p{L}])(?:[Mm]y name is|[Ii]'m|I am|[Мм]еня зовут|[Мм]о[её] имя|[Ээ]то|[Мм]енің атым|[Аа]тым)\s+(\p{Lu}[\p{L}'-]*(?:\s+\p{Lu}[\p{L}'-]*)?)/u;
 const SIZE_RE =
-  /(?<![\p{L}])(?:(?:size|sz|eu|us|uk|размер)\s*[:#-]?\s*(\d{1,3}(?:[.,]\d)?)|(\d{2}(?:[.,]\d)?)\s*-?\s*(?:го\s+)?(?:размер\p{L}*|size))/iu;
+  /(?<![\p{L}])(?:(?:size|sz|eu|us|uk|размер|өлшем\p{L}*)\s*[:#-]?\s*(\d{1,3}(?:[.,]\d)?)|(\d{2}(?:[.,]\d)?)\s*-?\s*(?:го\s+)?(?:размер\p{L}*|өлшем\p{L}*|size))/iu;
 const BARE_SIZE_RE = /^\s*(\d{2}(?:[.,]5)?)\s*$/;
 const QUANTITY_RES = [
-  /(\d{1,2})\s*(?:pcs|pieces|piece|pairs?|units?|шт|штук|штуки|пар|пары)(?![\p{L}])/iu,
+  /(\d{1,2})\s*(?:pcs|pieces|piece|pairs?|units?|шт|штук|штуки|пар|пары|дана|жұп)(?![\p{L}])/iu,
   /(?:buy|order|take|add|also|plus|купить|заказать|беру|возьму|добав\p{L}*|ещё|еще)\s+(\d{1,2})(?=\s)/iu,
   /(?:^|\s)x\s?(\d{1,2})(?=$|[\s,.!?])/i,
 ];
 const PICKUP_RE =
-  /(?<![\p{L}])(?:pick\s?-?up|collect|self[- ]?pickup|самовывоз\p{L}*|заберу|забрать)/iu;
+  /(?<![\p{L}])(?:pick\s?-?up|collect|self[- ]?pickup|самовывоз\p{L}*|заберу|забрать|өзім\s+алып\s+кет\p{L}*|өзім\s+ал\p{L}*|алып\s+кет\p{L}*)/iu;
 const DELIVERY_RE =
-  /(?<![\p{L}])(?:deliver\p{L}*|ship\p{L}*|courier|доставк\p{L}*|доставьте|курьер\p{L}*|привез\p{L}*)/iu;
+  /(?<![\p{L}])(?:deliver\p{L}*|ship\p{L}*|courier|доставк\p{L}*|доставьте|курьер\p{L}*|привез\p{L}*|жеткіз\p{L}*)/iu;
 const ADDRESS_RE =
-  /(?:(?:deliver\p{L}*|ship\p{L}*)\s+(?:to|at)|(?:доставк\p{L}*|доставьте)\s+(?:на|по|в)|(?<![\p{L}])(?:address|адрес))\s*[:-]?\s*(\S.{3,})$/iu;
-const CITY_RE = /(?:^|[\s,;])(?:city|город)\s*[:-]?\s*(\p{L}[\p{L} .-]{1,59})$/iu;
+  /(?:(?:deliver\p{L}*|ship\p{L}*)\s+(?:to|at)|(?:доставк\p{L}*|доставьте)\s+(?:на|по|в)|(?<![\p{L}])(?:address|адрес|мекенжай\p{L}*))\s*[:-]?\s*(\S.{3,})$/iu;
+const CITY_RE = /(?:^|[\s,;])(?:city|город|қала\p{L}*)\s*[:-]?\s*(\p{L}[\p{L} .-]{1,59})$/iu;
 const ADD_SOURCE =
-  "(?<![\\p{L}])(?:add|adding|also|another|plus|добав\\p{L}*|ещё|еще|плюс|также|заодно|тоже)(?![\\p{L}])";
+  "(?<![\\p{L}])(?:add|adding|also|another|plus|добав\\p{L}*|ещё|еще|плюс|также|заодно|тоже|қос\\p{L}*|тағы|сондай-ақ)(?![\\p{L}])";
 const ADD_RE = new RegExp(ADD_SOURCE, "iu");
-const ADD_MORE_RE = /^\W*(?:add another item|добавить ещё товар)\W*$/iu;
+const ADD_MORE_RE = /^\W*(?:add another item|добавить ещё товар|тағы тауар қосу)\W*$/iu;
 const REMOVE_SOURCE =
-  "(?<![\\p{L}])(?:remove|delete|drop|убери\\p{L}*|убрать|удали\\p{L}*|удалить|без)(?![\\p{L}])";
+  "(?<![\\p{L}])(?:remove|delete|drop|убери\\p{L}*|убрать|удали\\p{L}*|удалить|без|алып\\s+таста\\p{L}*|жой\\p{L}*|өшір\\p{L}*)(?![\\p{L}])";
 const REMOVE_RE = new RegExp(REMOVE_SOURCE, "iu");
 const END = "(?=$|[\\s,.!?])";
 
@@ -85,57 +89,62 @@ function stripWords(text: string, source: string): string {
 }
 
 const YES_RE = new RegExp(
-  `^\\W*(yes|yeah|yep|yup|ok|okay|sure|confirm|confirmed|go ahead|please do|да|ага|угу|ок|окей|давай|давайте|конечно|подтверждаю|подтвердить|оформляй|оформляйте|оформите)${END}`,
+  `^\\W*(yes|yeah|yep|yup|ok|okay|sure|confirm|confirmed|go ahead|please do|да|ага|угу|ок|окей|давай|давайте|конечно|подтверждаю|подтвердить|оформляй|оформляйте|оформите|иә|иа|жарайды|жақсы|келісемін|растаймын|болады)${END}`,
   "i",
 );
 const NO_RE = new RegExp(
-  `^\\W*(no|nope|nah|cancel|not now|нет|не надо|не нужно|отмена|отменить|не сейчас|потом)${END}`,
+  `^\\W*(no|nope|nah|cancel|not now|нет|не надо|не нужно|отмена|отменить|не сейчас|потом|жоқ|керек емес|болмайды|бас тарту|қазір емес)${END}`,
   "i",
 );
 const GREETING_RE = new RegExp(
-  `^\\W*(hi|hello|hey|hola|good (morning|afternoon|evening)|привет|здравствуй|здравствуйте|добрый|салам|сәлем)${END}`,
+  `^\\W*(hi|hello|hey|hola|good (morning|afternoon|evening)|привет|здравствуй|здравствуйте|добрый|салам|сәлем|сәлеметсіз бе|сәлеметсіздер ме|салем|ассалаумағалейкум|амансыз ба|қайырлы (таң|күн|кеш))${END}`,
   "i",
 );
 const HELP_RE =
-  /\b(help|what can you|how does this work)\b|помощь|помоги|что (ты )?умеешь|что можешь/i;
+  /\b(help|what can you|how does this work)\b|помощь|помоги|что (ты )?умеешь|что можешь|көмек|не істей аласыз|не істей аласың/i;
 const HUMAN_RE =
-  /\b(owner|human|real person|talk to a person|manager|operator|staff|someone|seller|representative|call me|contact me)\b|владел|человек|менеджер|оператор|продав|сотрудник|живой|перезвон|свяжитесь|связаться со/i;
+  /\b(owner|human|real person|talk to a person|manager|operator|staff|someone|seller|representative|call me|contact me)\b|владел|человек|менеджер|оператор|продав|сотрудник|живой|перезвон|свяжитесь|связаться со|иесімен|иесі|менеджер|оператор|сатушы|қызметкер|тірі адам|қоңырау шал/i;
 const BUY_RE =
-  /\b(buy|purchase|order|i'll take|ill take|checkout)\b|куп(ить|лю|и)(?![\p{L}])|заказат|оформ|беру|возьму/iu;
-const TRACK_RE = /\b(status|track|tracking)\b|статус|отследить|где мой/i;
+  /\b(buy|purchase|order|i'll take|ill take|checkout)\b|куп(ить|лю|и)(?![\p{L}])|заказат|оформ|беру|возьму|сатып\s+ал|тапсырыс\s+бер|тапсырыс\s+жаса|алғым\s+кел|аламын|алайын|рәсімде/iu;
+const TRACK_RE =
+  /\b(status|track|tracking)\b|статус|отследить|где мой|тапсырысым\s+қайда|тапсырыс\s+күйі|күйі\s+қандай|бақыла/i;
 const PRICE_RE =
-  /\b(how much|price|prices|cost|costs|cheap|cheaper|expensive)\b|сколько|цен[аыуе]|почём|стоим|стоит|стоят/i;
+  /\b(how much|price|prices|cost|costs|cheap|cheaper|expensive)\b|сколько|цен[аыуе]|почём|стоим|стоит|стоят|қанша|баға|құны|тұрады|қымбат|арзан/i;
 const STOCK_RE =
-  /\b(in stock|available|availability|sizes?|left)\b|в налич|наличие|остал|размер|есть ли в/i;
+  /\b(in stock|available|availability|sizes?|left)\b|в налич|наличие|остал|размер|есть ли в|бар\s*ма|қалды\s+ма|қолда\s+бар|қоймада|өлшем/i;
 
 const TOPIC_RES: [InfoTopic, RegExp, RegExp][] = [
   [
     "hours",
-    /\b(opening hours|working hours|business hours|opening times|are you open|open now|open today|when do you (open|close)|when are you open)\b|часы работы|режим работы|график работы|работаете/i,
+    /\b(opening hours|working hours|business hours|opening times|are you open|open now|open today|when do you (open|close)|when are you open)\b|часы работы|режим работы|график работы|работаете|жұмыс\s+(уақыты|кестесі|режимі)|қашан\s+(ашылады|жабылады|ашық)|ашық\s+па|жұмыс\s+істейсіз/i,
     /\b(hours|opening|closing|schedule|working time)\b|режим|график|открыт/i,
   ],
-  ["delivery", /\b(deliver\w*|shipping|ship)\b|доставк|привез|курьер/i, /(?!)/],
+  ["delivery", /\b(deliver\w*|shipping|ship)\b|доставк|привез|курьер|жеткіз|тасымал/i, /(?!)/],
   [
     "payment",
-    /\b(pay|payment|payments|pay by card|by card|card payment|cash|kaspi|installment)\b|оплат|налич(н|ным)|рассрочк/i,
+    /\b(pay|payment|payments|pay by card|by card|card payment|cash|kaspi|installment)\b|оплат|налич(н|ным)|рассрочк|төлем|төлеу|төлей|қолма-қол|бөліп\s+төле/i,
     /карт/i,
   ],
   [
     "returns",
-    /\b(return policy|refunds?)\b|возврат/i,
-    /\b(return|returns|exchange|warranty)\b|обмен|гарант/i,
+    /\b(return policy|refunds?)\b|возврат|қайтару|қайтарым/i,
+    /\b(return|returns|exchange|warranty)\b|обмен|гарант|айырбас|кепілдік/i,
   ],
   [
     "address",
-    /\b(address|where are you|directions)\b|адрес|где наход|как добраться|где вы/i,
+    /\b(address|where are you|directions)\b|адрес|где наход|как добраться|где вы|мекенжай|қайда\s+орналас|қайдасыз|қалай\s+жетем/i,
     /\b(located|location)\b/i,
   ],
   [
     "contact",
-    /\b(phone number|contact details|whatsapp|telegram|instagram|email address)\b|контакты|номер телефона/i,
-    /\b(phone|call|contact|contacts|email)\b|телефон|позвон|номер|контакт|написать/i,
+    /\b(phone number|contact details|whatsapp|telegram|instagram|email address)\b|контакты|номер телефона|байланыс\s+(нөмір|деректер)|телефон\s+нөмір/i,
+    /\b(phone|call|contact|contacts|email)\b|телефон|позвон|номер|контакт|написать|нөмір|байланыс/i,
   ],
-  ["general", /\b(about (the )?(store|shop)|who are you)\b|о магазин|о вас|кто вы/i, /(?!)/],
+  [
+    "general",
+    /\b(about (the )?(store|shop)|who are you)\b|о магазин|о вас|кто вы|дүкен\s+туралы|сіз\s+кімсіз/i,
+    /(?!)/,
+  ],
 ];
 
 function matchTopic(text: string): InfoTopic | null {
@@ -151,7 +160,7 @@ function matchTopic(text: string): InfoTopic | null {
 
 function messageLang(text: string): Lang | null {
   if (!/\p{L}/u.test(text)) return null;
-  return /[а-яё]/i.test(text) ? "ru" : "en";
+  return detectTextLang(text);
 }
 
 function detectLang(text: string): Lang {
@@ -163,8 +172,10 @@ function detectLang(text: string): Lang {
  * numbers, digits, emoji) say nothing about language and are skipped. The
  * dominant language wins; on a tie the latest letter-bearing message decides.
  */
+const LANGS: Lang[] = ["en", "ru", "kk"];
+
 export function conversationLang(texts: string[]): Lang {
-  const counts: Record<Lang, number> = { en: 0, ru: 0 };
+  const counts: Record<Lang, number> = { en: 0, ru: 0, kk: 0 };
   let latest: Lang | null = null;
   for (const text of texts) {
     const lang = messageLang(text);
@@ -172,8 +183,10 @@ export function conversationLang(texts: string[]): Lang {
     counts[lang] += 1;
     latest = lang;
   }
-  if (counts.ru === counts.en) return latest ?? "en";
-  return counts.ru > counts.en ? "ru" : "en";
+  const top = Math.max(counts.en, counts.ru, counts.kk);
+  const leaders = LANGS.filter((lang) => counts[lang] === top);
+  if (leaders.length === 1) return leaders[0] ?? "en";
+  return latest !== null && leaders.includes(latest) ? latest : (leaders[0] ?? "en");
 }
 
 function wordCount(text: string): number {
@@ -235,6 +248,25 @@ const RU_EN: [string, string[]][] = [
   ["розов", ["pink"]],
   ["оранж", ["orange"]],
   ["фиолет", ["purple"]],
+  ["кроссовка", ["sneaker", "shoe"]],
+  ["етік", ["boot"]],
+  ["аяқ киім", ["shoe"]],
+  ["аяқ", ["shoe"]],
+  ["сандал", ["sandal"]],
+  ["балалар", ["kids"]],
+  ["әйелдер", ["women"]],
+  ["ерлер", ["men"]],
+  ["қысқы", ["winter"]],
+  ["жазғы", ["summer"]],
+  ["былғары", ["leather"]],
+  ["сақал", ["beard"]],
+  ["қызыл", ["red"]],
+  ["жасыл", ["green"]],
+  ["сары", ["yellow"]],
+  ["қоңыр", ["brown"]],
+  ["сұр", ["gray"]],
+  ["қара", ["black"]],
+  ["көк", ["blue"]],
 ];
 
 function translateTerm(term: string): string[] | null {
@@ -458,11 +490,72 @@ const COPY = {
     askOwner: "Конечно.",
     askProduct: "О каком товаре речь? Напишите название или что вы ищете.",
   },
+  kk: {
+    help:
+      "Мен тауарларды таба аламын, бағасы мен барын айта аламын, жеткізу, төлем және қайтару туралы жауап беремін " +
+      "немесе сұрағыңызды дүкен иесіне жіберемін. Сізді не қызықтырады?",
+    greeting: "Сәлеметсіз бе! ",
+    noMatch: "Каталогтан бұны таба алмадым.",
+    found: "Мынау табылды:",
+    more: (n: number) => `...және тағы ${n}. Таңдауды тарылту үшін сұрауды нақтылаңыз.`,
+    priceOnRequest: "Бағасы сұраныс бойынша",
+    availability: {
+      in_stock: "бар",
+      out_of_stock: "қалмаған",
+      unknown: "бары нақтылануда",
+    },
+    sizes: (list: string) => `өлшемдері: ${list}`,
+    sizeYes: (size: string) => `${size} өлшемі тізімде бар`,
+    sizeNo: (size: string) => `${size} өлшемі тізімде жоқ`,
+    handoff:
+      "Мұны дүкен иесіне жіберейін бе? Иә деп жауап беріңіз немесе онымен байланысу үшін телефон не пошта жіберіңіз.",
+    inquirySent: "Дайын, сұрағыңыз дүкен иесіне жіберілді. Ол сізге жауап береді.",
+    addContact: "Сізбен тікелей байланысу үшін келесі хабарламада телефон немесе пошта жіберіңіз.",
+    contactSent: "Рахмет, байланыс деректеріңізді дүкен иесіне жібердім.",
+    declined: "Жарайды, жібермеймін. Тағы немен көмектесейін?",
+    topicLabel: {
+      hours: "жұмыс уақыты",
+      delivery: "жеткізу шарттары",
+      payment: "төлем тәсілдері",
+      returns: "қайтару шарттары",
+      address: "мекенжай",
+      contact: "байланыс деректері",
+      general: "дүкен туралы ақпарат",
+    },
+    topicMissing: (label: string) => `Дүкен әлі растаған жоқ: ${label}.`,
+    topicHeading: (label: string) => label.charAt(0).toUpperCase() + label.slice(1),
+    contactsLine: "Дүкенмен мына жерден байланысуға болады",
+    which: "Нақты қай тауарға тапсырыс берейін? Атауын жазыңыз.",
+    notOrderable: (title: string, why: string) =>
+      `${title} қазір онлайн тапсырыс беру мүмкін емес (${why}).`,
+    orderDraft: (lines: string, total: string) =>
+      `Сіздің тапсырысыңыз: ${lines}. Барлығы ${total}. Ол әлі рәсімделген жоқ.`,
+    orderPrompt:
+      "Рәсімдеу үшін төмендегі «Тапсырысты растау» түймесін басыңыз немесе атыңызды, телефоныңызды және өзі алып кету не жеткізу ыңғайлы екенін (мекенжайымен) жазыңыз. Бас тарту үшін жоқ деп жауап беріңіз.",
+    sizeWord: "өлшемі",
+    askCity: "Қай қалаға жеткізу керек?",
+    askAdd: "Қай тауарды қосайын? Атауын жазыңыз.",
+    removeWhich: (titles: string) => `Қай тауарды алып тастайын? ${titles}`,
+    sizeAsk: (list: string) => `Қандай өлшем? Бары: ${list}.`,
+    askName: "Атыңыз кім?",
+    askPhone: "Дүкен сізге қай телефон нөміріне қоңырау шала алады?",
+    askFulfillment: "Өзіңіз алып кетесіз бе, әлде жеткізу керек пе?",
+    askAddress: "Жеткізу мекенжайы қандай?",
+    orderSent: "Тапсырыс дүкенге жіберілді. Иесі растау үшін сізбен байланысады.",
+    orderCancelled: "Жарайды, тапсырыс рәсімделмеді. Ештеңе жіберілген жоқ.",
+    orderError:
+      "Тапсырысты рәсімдеу мүмкін болмады. Ол бұрын жіберілген болуы мүмкін; тапсырыс карточкасын тексеріңіз немесе дүкенмен байланысыңыз.",
+    orderWaiting:
+      "Тапсырысты рәсімдеу үшін деректеріңізді жазыңыз немесе төмендегі «Тапсырысты растау» түймесін басыңыз.",
+    error: "Кешіріңіз, қазір болмады. Қайтадан көріңіз немесе дүкенмен тікелей байланысыңыз.",
+    askOwner: "Әрине.",
+    askProduct: "Қай тауар туралы айтасыз? Атауын немесе нені іздеп жатқаныңызды жазыңыз.",
+  },
 } as const;
 
 type Copy = (typeof COPY)[Lang];
 
-const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть): (.+)\.$/u;
+const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть|Қандай өлшем\? Бары): (.+)\.$/u;
 
 type AskKind = "name" | "phone" | "fulfillment" | "address" | "city";
 type PromptKey =
@@ -485,7 +578,11 @@ const ASKS: [AskKind, PromptKey][] = [
 ];
 
 function endsWithPrompt(text: string, key: PromptKey): boolean {
-  return text.endsWith(COPY.en[key]) || text.endsWith(COPY.ru[key]);
+  return LANGS.some((lang) => text.endsWith(COPY[lang][key]));
+}
+
+function isCopy(text: string, key: "orderSent" | "orderCancelled"): boolean {
+  return LANGS.some((lang) => text === COPY[lang][key]);
 }
 
 function askingOf(text: string): AskKind | null {
@@ -687,8 +784,8 @@ function collectDetails(history: LlmMessage[]): OrderDetails {
       if (!text) continue;
       previous = text;
       if (endsWithPrompt(text, "orderPrompt") || askingOf(text) !== null) inOrder = true;
-      else if (text === COPY.en.orderSent || text === COPY.ru.orderSent) inOrder = false;
-      else if (text === COPY.en.orderCancelled || text === COPY.ru.orderCancelled) inOrder = false;
+      else if (isCopy(text, "orderSent")) inOrder = false;
+      else if (isCopy(text, "orderCancelled")) inOrder = false;
     } else if (message.role === "user") {
       details = mergeDetails(
         details,
@@ -731,7 +828,7 @@ function openDraft(history: LlmMessage[]): Draft | null {
       }
     } else if (message.role === "assistant") {
       const text = messageText(message);
-      if (text === COPY.en.orderCancelled || text === COPY.ru.orderCancelled) draft = null;
+      if (isCopy(text, "orderCancelled")) draft = null;
     }
   }
   return draft;

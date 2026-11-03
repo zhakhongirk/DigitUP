@@ -17,6 +17,7 @@ import type { Db, DbTx } from "@/db/client";
 import { conversations, inquiries, messages, offers, orders } from "@/db/schema";
 import { EVENTS, type EventPublisher } from "@/server/events/types";
 import { recordAudit } from "../audit";
+import { detectTextLang, ORDER_CANCELLED_PREFIX, STORE_ANSWER_PREFIX } from "@/shared/text-lang";
 import { parseOrThrow } from "../catalog/ops";
 import { assertOwner, ServiceError, type TenantContext } from "../context";
 import { inquirySearchCondition, orderSearchCondition, parseSearch } from "./search";
@@ -302,8 +303,7 @@ async function postAnswerToConversation(tx: DbTx, conversationId: string, answer
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.createdAt))
     .limit(1);
-  const russian = /[а-яё]/i.test(lastUser?.content ?? "");
-  const prefix = russian ? "Ответ магазина" : "Answer from the store";
+  const prefix = STORE_ANSWER_PREFIX[detectTextLang(lastUser?.content ?? "")];
   await tx.insert(messages).values({
     conversationId,
     role: "assistant",
@@ -329,8 +329,7 @@ async function postCancellationToConversation(tx: DbTx, conversationId: string, 
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.createdAt))
     .limit(1);
-  const russian = /[а-яё]/i.test(lastUser?.content ?? "");
-  const prefix = russian ? "Заказ отменён магазином" : "Order cancelled by the store";
+  const prefix = ORDER_CANCELLED_PREFIX[detectTextLang(lastUser?.content ?? "")];
   await tx.insert(messages).values({
     conversationId,
     role: "assistant",

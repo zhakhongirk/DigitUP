@@ -64,7 +64,7 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
 
 function money(total: number | null, currency: string | null, lang: Lang): string {
   if (total === null) return tr(lang, "tg.toBeConfirmed");
-  if (lang === "ru") return formatPrice(total, currency, lang);
+  if (lang !== "en") return formatPrice(total, currency, lang);
   return `${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${currency ?? ""}`.trim();
 }
 

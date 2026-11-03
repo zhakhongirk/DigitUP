@@ -26,14 +26,20 @@ type Role = "title" | "price" | "currency" | "category" | "description" | "avail
 const ROLE_PATTERNS: [Role, RegExp][] = [
   [
     "title",
-    /^(name|title|product|item|service|model|наименование|название|товар|услуга|модель)(?![\p{L}\d_])/iu,
+    /^(name|title|product|item|service|model|наименование|название|товар|услуга|модель|атауы|аты|тауар|қызмет)(?![\p{L}\d_])/iu,
   ],
-  ["price", /(price|cost|amount|цена|стоимость|прайс)/i],
+  ["price", /(price|cost|amount|цена|стоимость|прайс|баға|құны|бағасы)/i],
   ["currency", /^(currency|валюта)$/i],
-  ["category", /^(category|categories|section|group|категория|раздел|группа)(?![\p{L}\d_])/iu],
-  ["description", /^(description|details|notes?|описание)(?![\p{L}\d_])/iu],
-  ["availability", /(stock|availability|available|qty|quantity|наличие|остаток|количество)/i],
-  ["image", /^(image|photo|picture|image_url|фото)(?![\p{L}\d_])/iu],
+  [
+    "category",
+    /^(category|categories|section|group|категория|раздел|группа|санат|бөлім|топ)(?![\p{L}\d_])/iu,
+  ],
+  ["description", /^(description|details|notes?|описание|сипаттама)(?![\p{L}\d_])/iu],
+  [
+    "availability",
+    /(stock|availability|available|qty|quantity|наличие|остаток|количество|қалдық|саны|қоймада)/i,
+  ],
+  ["image", /^(image|photo|picture|image_url|фото|сурет)(?![\p{L}\d_])/iu],
 ];
 
 const CURRENCY_HINTS: [RegExp, string][] = [
@@ -44,7 +50,7 @@ const CURRENCY_HINTS: [RegExp, string][] = [
   [/£|\bgbp\b/i, "GBP"],
 ];
 
-const SERVICE_HINT = /(duration|minutes|min\b|длительность|минут|время)/i;
+const SERVICE_HINT = /(duration|minutes|min\b|длительность|минут|время|ұзақтығы|минут|уақыт)/i;
 
 const POLICY_PATTERNS: [keyof PoliciesDraft, RegExp][] = [
   ["delivery", /(deliver|shipping|courier|pickup|pick-up|доставк|курьер|самовывоз)/i],

@@ -33,13 +33,13 @@ export async function generateMetadata({ params }: Pick<Props, "params">): Promi
   return { ...meta, title: { default: store.name, template: `%s | ${store.name}` } };
 }
 
-const CONTACT_LABELS: [string, string, string][] = [
-  ["phone", "Phone", "Телефон"],
-  ["email", "Email", "Email"],
-  ["whatsapp", "WhatsApp", "WhatsApp"],
-  ["telegram", "Telegram", "Telegram"],
-  ["instagram", "Instagram", "Instagram"],
-  ["website", "Website", "Сайт"],
+const CONTACT_LABELS: [string, string, string, string][] = [
+  ["phone", "Phone", "Телефон", "Телефон"],
+  ["email", "Email", "Email", "Email"],
+  ["whatsapp", "WhatsApp", "WhatsApp", "WhatsApp"],
+  ["telegram", "Telegram", "Telegram", "Telegram"],
+  ["instagram", "Instagram", "Instagram", "Instagram"],
+  ["website", "Website", "Сайт", "Сайт"],
 ];
 
 function initials(name: string): string {
@@ -78,9 +78,9 @@ export default async function StoreLayout({ children, params }: Props) {
     );
   }
 
-  const contacts = CONTACT_LABELS.flatMap(([key, en, ru]) => {
+  const contacts = CONTACT_LABELS.flatMap(([key, en, ru, kk]) => {
     const value = store.contacts[key as keyof typeof store.contacts];
-    return value ? [{ key, label: lang === "ru" ? ru : en, value }] : [];
+    return value ? [{ key, label: lang === "ru" ? ru : lang === "kk" ? kk : en, value }] : [];
   });
   const address = store.contacts.address;
   const whatsappHref = whatsappLink(

@@ -1,4 +1,4 @@
-export type Lang = "en" | "ru";
+export type Lang = "en" | "ru" | "kk";
 
 export interface Plural {
   one: string;
@@ -14,18 +14,31 @@ export interface RuPlural {
   other: string;
 }
 
+export interface KkPlural {
+  one: string;
+  other: string;
+}
+
 export type Entry = string | Plural;
 
 type RuEntries<E extends Record<string, Entry>> = {
   [K in keyof E]: E[K] extends string ? string : RuPlural;
 };
 
-/** Both languages for one area; a key missing on either side is a type error. */
-export function pair<const E extends Record<string, Entry>>(en: E, ru: RuEntries<E>) {
-  return { en, ru: ru as Record<keyof E, Entry> };
+type KkEntries<E extends Record<string, Entry>> = {
+  [K in keyof E]: E[K] extends string ? string : KkPlural;
+};
+
+/** All languages for one area; a key missing in any of them is a type error. */
+export function pair<const E extends Record<string, Entry>>(
+  en: E,
+  ru: RuEntries<E>,
+  kk: KkEntries<E>,
+) {
+  return { en, ru: ru as Record<keyof E, Entry>, kk: kk as Record<keyof E, Entry> };
 }
 
-export const LOCALES: Record<Lang, string> = { en: "en-US", ru: "ru-RU" };
+export const LOCALES: Record<Lang, string> = { en: "en-US", ru: "ru-RU", kk: "kk-KZ" };
 
 export function fill(text: string, vars?: Record<string, string | number>): string {
   if (!vars) return text;

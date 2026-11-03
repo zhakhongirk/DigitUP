@@ -1,8 +1,6 @@
-export type Lang = "en" | "ru";
+export type Lang = "en" | "ru" | "kk";
 
-const RUSSIAN_TAGS = new Set(["ru", "kk"]);
-
-/** Picks the storefront language from an Accept-Language header: Russian (or Kazakh) first wins, otherwise English. */
+/** Picks the storefront language from an Accept-Language header: the top-ranked Russian or Kazakh tag wins, otherwise English. */
 export function negotiateLang(header: string | null | undefined): Lang {
   if (!header) return "en";
   const ranked = header
@@ -20,7 +18,7 @@ export function negotiateLang(header: string | null | undefined): Lang {
     .filter((entry) => entry.primary !== "" && entry.weight > 0)
     .sort((a, b) => b.weight - a.weight || a.index - b.index);
   const top = ranked[0];
-  return top && RUSSIAN_TAGS.has(top.primary) ? "ru" : "en";
+  return top?.primary === "ru" || top?.primary === "kk" ? top.primary : "en";
 }
 
 const en = {
@@ -269,7 +267,131 @@ const ru: Record<StringKey, string> = {
   lookupRateLimited: "Слишком много попыток. Попробуйте позже.",
 };
 
-export const DICTIONARIES: Record<Lang, Record<StringKey, string>> = { en, ru };
+const kk: Record<StringKey, string> = {
+  storeNotFound: "Дүкен табылмады",
+  storeNotFoundBody: "Сіз іздеген нәрсе табылмады. Сілтеме қате немесе дүкен жабық болуы мүмкін.",
+  photoSoon: "Фото жақында қосылады",
+  priceOnRequest: "Бағасы сұраныс бойынша",
+  order: "Тапсырыс беру",
+  book: "Жазылу",
+  askShop: "Дүкеннен сұрау",
+  askStore: "Дүкеннен сұрау",
+  searchCatalog: "Каталог бойынша іздеу",
+  search: "Іздеу",
+  categories: "Санаттар",
+  all: "Барлығы",
+  showing: "{total} ішінен {from}–{to} көрсетілді",
+  itemCountOne: "{n} позиция",
+  itemCountMany: "Позиция саны: {n}",
+  inCategory: " {category} санатында",
+  matching: ' "{query}" сұрауы бойынша',
+  nothingFound: "Ештеңе табылмады. Басқа сұрау енгізіп көріңіз немесе бүкіл каталогты қараңыз.",
+  showEverything: "Барлығын көрсету",
+  pagination: "Беттер",
+  previous: "Артқа",
+  next: "Келесі",
+  pageOf: "{total} беттің {page}-беті",
+  backToCatalog: "Каталогқа оралу",
+  cannotOrder: "Бұл позицияны қазір тапсырыс беру мүмкін емес.",
+  noPriceYet: "Дүкен бағасын әлі көрсетпеген.",
+  askConfirm: "Мәліметтерді дүкеннен нақтылаңыз.",
+  details: "Сипаттамалары",
+  storePolicies: "Дүкен ережелері",
+  contacts: "Байланыс",
+  home: "{store}, басты бет",
+  loadingCatalog: "Каталог жүктелуде",
+  assistantTitle: "{store} көмекшісі",
+  subCatalog: "Тек дүкен каталогы бойынша жауап береді",
+  subFallback: "Каталог бойынша жылдам жауаптар",
+  askInHint: "Қазақша сұраңыз · Ask in English or Russian",
+  orderSummary: "Сіздің тапсырысыңыз",
+  submitted: "Жіберілді",
+  draft: "Жоба",
+  total: "Барлығы",
+  orderSent: "Тапсырыс дүкенге жіберілді. Дүкен оны растайды.",
+  tryAgain: "Қайталау",
+  send: "Жіберу",
+  messageLabel: "Дүкен көмекшісіне хабарлама",
+  assistantUnavailable: "Көмекші қолжетімсіз",
+  unavailableNotice:
+    "Дүкен көмекшісі әзірге қолжетімсіз. Каталогты қарап, дүкенмен тікелей байланыса аласыз.",
+  networkError: "Көмекшімен байланысу мүмкін болмады. Байланысты тексеріп, қайталаңыз.",
+  genericError: "Бірдеңе дұрыс болмады. Қайтадан көріңіз.",
+  chatWith: "{store} дүкенімен чат",
+  you: "Сіз: ",
+  assistant: "Көмекші: ",
+  offersFromStore: "Дүкен ұсыныстары",
+  viewOffer: "Ашу",
+  addToOrder: "Тапсырысқа қосу",
+  askAboutOffer: "Сұрау",
+  chatOrderMessage: "Тапсырыс бергім келеді: {title}",
+  chatAskMessage: "Толығырақ айтып беріңіз: {title}",
+  storeAssistant: "Дүкен көмекшісі",
+  storeSections: "Дүкен бөлімдері",
+  tabShop: "Каталог",
+  tabChat: "Чат",
+  orderTitle: "Тапсырыс {number}",
+  orderFor: "{name} үшін",
+  orderProgress: "Тапсырыстың орындалу барысы",
+  orderQuestions:
+    "Сұрағыңыз бар ма? Дүкен көмекшісінен сұраңыз немесе жоғарыдағы байланыстарды пайдаланыңыз.",
+  lastUpdated: "Жаңартылды",
+  items: "Тауарлар",
+  qtyAt: " × {quantity}, бағасы {price}",
+  stepSubmitted: "Жіберілді",
+  stepReceived: "Қабылданды",
+  stepProcessing: "Орындалуда",
+  stepCompleted: "Орындалды",
+  stepCancelled: "Бас тартылды",
+  noteSubmitted: "Тапсырыс жіберілді. Дүкен оны жақында растайды.",
+  noteReceived: "Дүкен тапсырысыңызды қабылдады.",
+  noteProcessing: "Дүкен тапсырысыңызды дайындап жатыр.",
+  noteCompleted: "Тапсырысыңыз орындалды.",
+  noteCancelled: "Тапсырыс бас тартылды. Сұрақтарыңыз болса, дүкенмен байланысыңыз.",
+  orderStatusTitle: "Тапсырыс күйі",
+  cancelledReason: "Бас тартылды: {reason}",
+  payWithKaspi: "Kaspi арқылы төлеу",
+  fulfillmentLabel: "Тапсырысты алу тәсілі",
+  pickup: "Өзі алып кету",
+  delivery: "Жеткізу",
+  fieldName: "Атыңыз",
+  fieldPhone: "Телефон",
+  fieldAddress: "Жеткізу мекенжайы",
+  fieldCity: "Қала",
+  addAnother: "Тағы тауар қосу",
+  addAnotherMessage: "Тағы тауар қосу",
+  removeItem: "Алып тастау: {title}",
+  moreOf: "Көбірек: {title}",
+  lessOf: "Азырақ: {title}",
+  sizeLabel: "Өлшемі {size}",
+  writeWhatsapp: "WhatsApp-қа жазу",
+  whatsappMessage: "Сәлеметсіз бе! {store} интернет-дүкенінен жазып отырмын.",
+  whatsappOrderMessage:
+    "Сәлеметсіз бе! {store} дүкеніндегі {number} тапсырысы бойынша сұрағым бар.",
+
+  fulfillmentGroup: "Өзі алып кету немесе жеткізу",
+  confirmOrder: "Тапсырысты растау",
+  fillRequired:
+    "Атыңызды, телефоныңызды және тапсырысты алу тәсілін көрсетіңіз (жеткізу үшін қала мен мекенжай).",
+  availInStock: "Бар",
+  availOutOfStock: "Қалмаған",
+  availUnknown: "Бары нақтылануда",
+  storeInfo: "Дүкен туралы",
+  searchPlaceholder: "Бренд, модель, материал",
+  policyTbc: "{label}: нақтылануда",
+  toBeConfirmed: "Нақтылануда",
+  myOrder: "Менің тапсырысым",
+  lookupIntro: "Тапсырыс нөмірін және тапсырыста көрсетілген телефонның соңғы 4 санын енгізіңіз.",
+  lookupNumber: "Тапсырыс нөмірі",
+  lookupNumberHint: "мысалы, A1B2C3",
+  lookupPhone: "Телефонның соңғы 4 саны",
+  lookupPhoneHint: "1234",
+  lookupSubmit: "Тапсырысты табу",
+  lookupNotFound: "Мұндай деректермен тапсырыс табылмады.",
+  lookupRateLimited: "Әрекет тым көп. Кейінірек қайталаңыз.",
+};
+
+export const DICTIONARIES: Record<Lang, Record<StringKey, string>> = { en, ru, kk };
 
 export function t(lang: Lang, key: StringKey, vars?: Record<string, string | number>): string {
   const text = DICTIONARIES[lang][key];

@@ -1,12 +1,14 @@
+import { detectTextLang, ORDER_CANCELLED_PREFIX, STORE_ANSWER_PREFIX } from "@/shared/text-lang";
+
 export const MAX_MESSAGE_CHARS = 2000;
 
 export const UNAVAILABLE_NOTICE =
   "The store assistant is not available yet. You can browse the catalog and contact the store directly.";
 
-export type UiLang = "en" | "ru";
+export type UiLang = "en" | "ru" | "kk";
 
 export function detectUiLang(text: string): UiLang {
-  return /[а-яё]/i.test(text) ? "ru" : "en";
+  return detectTextLang(text);
 }
 
 export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
@@ -28,10 +30,25 @@ export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
     create_order: "Готовлю заказ",
     submit_inquiry: "Отправляю вопрос",
   },
+  kk: {
+    search_offers: "Каталогтан іздеп жатырмын",
+    get_offer_details: "Тауарды қарап жатырмын",
+    check_availability: "Барын тексеріп жатырмын",
+    compare_offers: "Тауарларды салыстырып жатырмын",
+    get_business_info: "Дүкен деректерін қарап жатырмын",
+    create_order: "Тапсырысты дайындап жатырмын",
+    submit_inquiry: "Сұрақты жіберіп жатырмын",
+  },
+};
+
+const WORKING: Record<UiLang, string> = {
+  en: "Working on it",
+  ru: "Работаю над этим",
+  kk: "Үстінде жұмыс істеп жатырмын",
 };
 
 export function toolLabel(name: string, lang: UiLang = "en"): string {
-  return TOOL_LABELS[lang][name] ?? (lang === "ru" ? "Работаю над этим" : "Working on it");
+  return TOOL_LABELS[lang][name] ?? WORKING[lang];
 }
 
 export const UI_LABELS = {
@@ -51,12 +68,20 @@ export const UI_LABELS = {
     placeholder: "Сообщение",
     inquirySent: "Вопрос отправлен в магазин",
   },
+  kk: {
+    confirm: "Тапсырысты растау",
+    sending: "Жіберіп жатырмын…",
+    track: "Тапсырысты бақылау",
+    typing: "Жазып жатыр",
+    placeholder: "Хабарлама",
+    inquirySent: "Сұрақ дүкенге жіберілді",
+  },
 } as const;
 
-export const SUGGESTIONS: { en: string; ru: string }[] = [
-  { en: "What's in stock?", ru: "Что есть в наличии?" },
-  { en: "Delivery and payment", ru: "Доставка и оплата" },
-  { en: "Prices", ru: "Цены" },
+export const SUGGESTIONS: { en: string; ru: string; kk: string }[] = [
+  { en: "What's in stock?", ru: "Что есть в наличии?", kk: "Не бар?" },
+  { en: "Delivery and payment", ru: "Доставка и оплата", kk: "Жеткізу және төлем" },
+  { en: "Prices", ru: "Цены", kk: "Бағалары" },
 ];
 
 export type OrderLine = {
@@ -344,8 +369,9 @@ export function lastUserLang(items: ChatItem[], fallback: UiLang = "en"): UiLang
   return fallback;
 }
 
-const STORE_ANSWER =
-  /^(Answer from the store|Ответ магазина|Order cancelled by the store|Заказ отменён магазином): /;
+const STORE_ANSWER = new RegExp(
+  `^(${[...Object.values(STORE_ANSWER_PREFIX), ...Object.values(ORDER_CANCELLED_PREFIX)].join("|")}): `,
+);
 
 /** Appends store answers that arrived while the chat was open and are not shown yet. */
 export function mergeHistory(

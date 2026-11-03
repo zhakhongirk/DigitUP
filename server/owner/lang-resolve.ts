@@ -4,7 +4,7 @@ export const LANG_COOKIE = "lang";
 export const LANG_MAX_AGE = 365 * 24 * 3600;
 
 export function parseLang(value: string | null | undefined): Lang | null {
-  return value === "en" || value === "ru" ? value : null;
+  return value === "en" || value === "ru" || value === "kk" ? value : null;
 }
 
 /** The saved choice wins, then the browser's Accept-Language, then English. */

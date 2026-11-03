@@ -28,6 +28,7 @@ const AREAS = [
 export const OWNER_COPY: Record<Lang, Record<string, Entry>> = {
   en: Object.assign({}, ...AREAS.map((area) => area.en)),
   ru: Object.assign({}, ...AREAS.map((area) => area.ru)),
+  kk: Object.assign({}, ...AREAS.map((area) => area.kk)),
 };
 
 type EnAll = typeof common.en &

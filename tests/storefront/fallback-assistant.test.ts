@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmMessage } from "@/server/llm";
 import { handleChatMessage, newChatSession } from "@/server/storefront/chat";
 import {
+  conversationLang,
   decide,
   englishTerms,
   parseIntent,
@@ -796,5 +797,87 @@ describe("storefront chat without a model", () => {
     const rows = await services.conversations.listMessages(ctx, conversation!.id);
     expect(rows.filter((r) => r.role === "user")).toHaveLength(11);
     expect(rows.filter((r) => r.role === "assistant" && r.content)).toHaveLength(11);
+  });
+});
+
+describe("Kazakh shopper phrases", () => {
+  it.each([
+    ["Сәлем", "greeting"],
+    ["Сәлеметсіз бе", "greeting"],
+    ["Кроссовка бағасы қанша?", "price"],
+    ["Runner қанша тұрады", "price"],
+    ["42 өлшем бар ма?", "stock"],
+    ["Қызыл кроссовка бар ма", "stock"],
+    ["Runner сатып алғым келеді", "buy"],
+    ["Тапсырыс бергім келеді", "buy"],
+    ["иә", "yes"],
+    ["жоқ", "no"],
+    ["Менеджермен сөйлескім келеді", "human"],
+  ])("classifies %j as %s", (text, kind) => {
+    const intent = parseIntent(text);
+    expect(intent.kind).toBe(kind);
+    expect(intent.lang).toBe("kk");
+  });
+
+  it.each([
+    ["Жеткізу бар ма?", "delivery"],
+    ["Төлем қалай жүреді", "payment"],
+    ["Жұмыс уақыты қандай?", "hours"],
+    ["Қайтару шарттары", "returns"],
+    ["Мекенжайыңыз қандай", "address"],
+  ])("detects the info topic of %j", (text, topic) => {
+    const intent = parseIntent(text);
+    expect(intent.kind).toBe("info");
+    expect(intent.topic).toBe(topic);
+    expect(intent.lang).toBe("kk");
+  });
+
+  it("reads size and quantity", () => {
+    const intent = parseIntent("Runner 2 жұп аламын, өлшемі 42");
+    expect(intent.size).toBe("42");
+    expect(intent.quantity).toBe(2);
+  });
+
+  it("replies in Kazakh to a Kazakh question", () => {
+    const messages = [
+      user("Runner бағасы қанша"),
+      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+    ];
+    expect(reply(decide(messages, "k"))).toBe("Мынау табылды:\n- Runner: 100 KZT");
+  });
+
+  it("greets and explains in Kazakh", () => {
+    expect(reply(decide([user("Сәлем")], "k"))).toContain("Сәлеметсіз бе!");
+  });
+
+  it("answers the size question in Kazakh", () => {
+    const messages = [
+      user("Runner 43 өлшем бар ма"),
+      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+    ];
+    expect(reply(decide(messages, "k"))).toContain("43 өлшемі тізімде жоқ");
+  });
+
+  it("asks for the size and offers the owner in Kazakh", () => {
+    const buy = [
+      user("Runner сатып алғым келеді"),
+      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+    ];
+    expect(reply(decide(buy, "k"))).toBe("Қандай өлшем? Бары: 41, 42.");
+    const none = [
+      user("Палатка бар ма"),
+      ...toolTurn("search_offers", {}, { total: 0, offers: [] }),
+    ];
+    expect(reply(decide(none, "k"))).toContain("таба алмадым");
+  });
+
+  it("falls back to Russian when the Cyrillic text is not clearly Kazakh", () => {
+    expect(parseIntent("сколько стоит").lang).toBe("ru");
+    expect(parseIntent("Runner").lang).toBe("en");
+  });
+
+  it("keeps Kazakh when a later message has no letters", () => {
+    expect(conversationLang(["Сәлем", "+7 701 000 11 22"])).toBe("kk");
+    expect(conversationLang(["Привет", "Сәлем", "Бағасы қанша"])).toBe("kk");
   });
 });

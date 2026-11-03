@@ -4,6 +4,7 @@ import { setLanguage } from "./lang-actions";
 const OPTIONS = [
   ["en", "lang.en"],
   ["ru", "lang.ru"],
+  ["kk", "lang.kk"],
 ] as const;
 
 export function LangSwitch({ lang, className }: { lang: Lang; className?: string }) {

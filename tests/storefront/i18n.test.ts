@@ -15,8 +15,11 @@ describe("negotiateLang", () => {
     expect(negotiateLang("en;q=0.5,ru;q=0.9")).toBe("ru");
   });
 
-  it("treats Kazakh as Russian", () => {
-    expect(negotiateLang("kk-KZ,kk;q=0.9")).toBe("ru");
+  it("picks Kazakh for kk and kk-KZ", () => {
+    expect(negotiateLang("kk")).toBe("kk");
+    expect(negotiateLang("kk-KZ,kk;q=0.9")).toBe("kk");
+    expect(negotiateLang("ru;q=0.8,kk-KZ;q=0.9")).toBe("kk");
+    expect(negotiateLang("en-US,kk;q=0.5")).toBe("en");
   });
 
   it("keeps English when it ranks above Russian", () => {
@@ -26,8 +29,9 @@ describe("negotiateLang", () => {
 });
 
 describe("dictionaries", () => {
-  it("define the same keys in both languages", () => {
+  it("define the same keys in every language", () => {
     expect(Object.keys(DICTIONARIES.ru).sort()).toEqual(Object.keys(DICTIONARIES.en).sort());
+    expect(Object.keys(DICTIONARIES.kk).sort()).toEqual(Object.keys(DICTIONARIES.en).sort());
   });
 
   it("have no empty strings and matching placeholders", () => {
@@ -36,11 +40,15 @@ describe("dictionaries", () => {
       expect(DICTIONARIES.en[key]).not.toBe("");
       expect(DICTIONARIES.ru[key]).not.toBe("");
       expect(vars(DICTIONARIES.ru[key])).toEqual(vars(DICTIONARIES.en[key]));
+      expect(DICTIONARIES.kk[key]).not.toBe("");
+      expect(vars(DICTIONARIES.kk[key])).toEqual(vars(DICTIONARIES.en[key]));
+      expect(DICTIONARIES.kk[key]).not.toContain(String.fromCharCode(0x2014));
     }
   });
 
   it("interpolates variables", () => {
     expect(t("en", "pageOf", { page: 2, total: 5 })).toBe("Page 2 of 5");
     expect(t("ru", "pageOf", { page: 2, total: 5 })).toBe("Страница 2 из 5");
+    expect(t("kk", "pageOf", { page: 2, total: 5 })).toBe("5 беттің 2-беті");
   });
 });

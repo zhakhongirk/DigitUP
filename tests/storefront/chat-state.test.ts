@@ -211,6 +211,14 @@ describe("interface language", () => {
     expect(UI_LABELS.ru.confirm).toBe("Подтвердить заказ");
   });
 
+  it("detects Kazakh text", () => {
+    expect(detectUiLang("Тапсырыс бергім келеді")).toBe("kk");
+    expect(detectUiLang("Бағасы қанша?")).toBe("kk");
+    expect(detectUiLang("Иә")).toBe("kk");
+    expect(detectUiLang("Привет")).toBe("ru");
+    expect(UI_LABELS.kk.confirm).toBe("Тапсырысты растау");
+  });
+
   it("labels activity from the last user message", () => {
     const s = run([
       { type: "user_sent", text: "Есть кроссовки?" },

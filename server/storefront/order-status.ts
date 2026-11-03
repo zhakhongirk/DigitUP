@@ -92,6 +92,8 @@ function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+const ITEM_FALLBACK: Record<Lang, string> = { en: "Item", ru: "Товар", kk: "Тауар" };
+
 function linesOf(order: Order, lang: Lang): OrderStatusLine[] {
   if (!Array.isArray(order.items)) return [];
   return order.items.flatMap((raw: unknown) => {
@@ -100,7 +102,7 @@ function linesOf(order: Order, lang: Lang): OrderStatusLine[] {
     const currency = typeof item.currency === "string" ? item.currency : (order.currency ?? "");
     return [
       {
-        title: typeof item.title === "string" ? item.title : lang === "ru" ? "Товар" : "Item",
+        title: typeof item.title === "string" ? item.title : ITEM_FALLBACK[lang],
         quantity: num(item.quantity),
         unitPriceLabel: formatPrice(num(item.unitPrice), currency),
         lineTotalLabel: formatPrice(num(item.lineTotal), currency),

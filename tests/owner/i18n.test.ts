@@ -15,8 +15,26 @@ const placeholders = (text: string) => (text.match(/\{\w+\}/g) ?? []).sort();
 describe("owner dictionaries", () => {
   const keys = Object.keys(OWNER_COPY.en);
 
-  it("define the same keys in both languages", () => {
+  it("define the same keys in every language", () => {
     expect(Object.keys(OWNER_COPY.ru).sort()).toEqual([...keys].sort());
+    expect(Object.keys(OWNER_COPY.kk).sort()).toEqual([...keys].sort());
+  });
+
+  it("keep placeholders and plural forms in Kazakh", () => {
+    for (const key of keys) {
+      const en = OWNER_COPY.en[key]!;
+      const kk = OWNER_COPY.kk[key]!;
+      expect(typeof kk, key).toBe(typeof en);
+      if (typeof en === "string" && typeof kk === "string") {
+        expect(placeholders(kk), key).toEqual(placeholders(en));
+        expect(kk.trim(), key).not.toBe("");
+      } else if (typeof en === "object" && typeof kk === "object") {
+        for (const form of ["one", "other"] as const) {
+          expect(kk[form], `${key}.${form}`).toBeTruthy();
+          expect(placeholders(kk[form] ?? ""), `${key}.${form}`).toEqual(placeholders(en.other));
+        }
+      }
+    }
   });
 
   it("keep the same shape and placeholders for every key", () => {
@@ -37,8 +55,8 @@ describe("owner dictionaries", () => {
   });
 
   it("use no em dashes", () => {
-    for (const lang of ["en", "ru"] as Lang[]) {
-      expect(JSON.stringify(OWNER_COPY[lang])).not.toContain("—");
+    for (const lang of ["en", "ru", "kk"] as Lang[]) {
+      expect(JSON.stringify(OWNER_COPY[lang])).not.toContain(String.fromCharCode(0x2014));
     }
   });
 });
@@ -49,9 +67,11 @@ describe("language resolution", () => {
     expect(resolveLang("ru", "en-US")).toBe("ru");
   });
 
-  it("falls back to Accept-Language, treating Kazakh as Russian", () => {
+  it("falls back to Accept-Language", () => {
     expect(resolveLang(undefined, "ru-RU,ru;q=0.9,en;q=0.8")).toBe("ru");
-    expect(resolveLang(null, "kk-KZ")).toBe("ru");
+    expect(resolveLang(null, "kk-KZ")).toBe("kk");
+    expect(resolveLang("kk", "en-US")).toBe("kk");
+    expect(resolveLang(undefined, "kk")).toBe("kk");
     expect(resolveLang("garbage", "ru")).toBe("ru");
   });
 
@@ -197,5 +217,26 @@ describe("Russian owner copy", () => {
   it("keeps English strings unchanged", () => {
     expect(tr("en", "ib.markReceived")).toBe("Mark received");
     expect(tr("ru", "ib.markReceived")).toBe("Принять заказ");
+  });
+});
+
+describe("Kazakh owner copy", () => {
+  it("renders plurals and placeholders", () => {
+    expect(trn("kk", "n.order", 1)).toBe("1 тапсырыс");
+    expect(trn("kk", "n.order", 5)).toBe("5 тапсырыс");
+    expect(tr("kk", "nav.badgeNew", { n: 3 })).toBe("Жаңа: 3");
+    expect(tr("kk", "lang.kk")).toBe("Қазақша");
+  });
+
+  it("localizes server messages and statuses", () => {
+    expect(localizeMessage("kk", "Order not found")).toBe("Тапсырыс табылмады");
+    expect(localizeMessage("kk", "Order is already completed")).toBe(
+      "Тапсырыс қазірдің өзінде «орындалды» күйінде",
+    );
+  });
+
+  it("formats prices like Russian", () => {
+    expect(formatPrice(42000, "KZT", "kk")).toBe("42 000 ₸");
+    expect(formatPrice(1250.5, "KZT", "kk")).toBe("1 250,50 ₸");
   });
 });
