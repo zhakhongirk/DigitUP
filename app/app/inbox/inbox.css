@@ -1,0 +1,30 @@
+.ib-search {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.ib-back {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .ib-grid {
+    display: block;
+  }
+
+  .ib-grid[data-view="detail"] .ib-list,
+  .ib-grid[data-view="list"] .ib-detail {
+    display: none;
+  }
+
+  .ib-grid .ib-list {
+    max-width: none;
+    max-height: none;
+  }
+
+  .ib-back {
+    display: inline-flex;
+    align-self: flex-start;
+    margin-bottom: 12px;
+  }
+}

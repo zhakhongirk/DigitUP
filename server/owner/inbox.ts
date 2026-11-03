@@ -386,20 +386,30 @@ export function bucketCounts(
 export async function loadInbox(
   services: Services,
   ctx: TenantContext,
-  options: { filter: InboxFilter; selected?: string; page?: number; before?: ListCursor | null },
+  options: {
+    filter: InboxFilter;
+    selected?: string;
+    page?: number;
+    before?: ListCursor | null;
+    search?: string;
+  },
 ): Promise<InboxView> {
-  const [orderTotals, inquiryTotals] = await Promise.all([
+  const search = options.search?.trim() || undefined;
+  const [orderTotals, inquiryTotals, foundOrders, foundInquiries] = await Promise.all([
     services.orders.countOrdersByStatus(ctx),
     services.orders.countInquiriesByStatus(ctx),
+    search ? services.orders.countOrdersByStatus(ctx, { search }) : null,
+    search ? services.orders.countInquiriesByStatus(ctx, { search }) : null,
   ]);
   const counts = bucketCounts(orderTotals, inquiryTotals);
-  const pageCount = pageCountOf(counts[options.filter]);
+  const found = foundOrders && foundInquiries ? bucketCounts(foundOrders, foundInquiries) : counts;
+  const pageCount = pageCountOf(found[options.filter]);
   const before = options.before ?? undefined;
   const page = before ? Math.min(Math.max(options.page ?? 2, 2), pageCount) : 1;
 
   const orderStatuses = statusesFor(ORDER_STATUSES, options.filter, orderBucket);
   const inquiryStatuses = statusesFor(INQUIRY_STATUSES, options.filter, inquiryBucket);
-  const query = { limit: INBOX_PAGE_SIZE + 1, order: "shown" as const, before };
+  const query = { limit: INBOX_PAGE_SIZE + 1, order: "shown" as const, before, search };
   const [orders, inquiries, conversations] = await Promise.all([
     orderStatuses.length > 0
       ? services.orders.listOrders(ctx, { ...query, status: orderStatuses })

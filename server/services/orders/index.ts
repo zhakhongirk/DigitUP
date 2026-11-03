@@ -18,6 +18,7 @@ import { EVENTS, type EventPublisher } from "@/server/events/types";
 import { recordAudit } from "../audit";
 import { parseOrThrow } from "../catalog/ops";
 import { assertOwner, ServiceError, type TenantContext } from "../context";
+import { inquirySearchCondition, orderSearchCondition, parseSearch } from "./search";
 
 export type Order = typeof orders.$inferSelect;
 export type OrderStatus = Order["status"];
@@ -167,9 +168,14 @@ export interface OrdersService {
       order?: "created" | "shown";
       /** With `order: "shown"`, only rows strictly after this position. */
       before?: ListCursor;
+      /** Customer name, phone or order number; see `parseSearch`. */
+      search?: string;
     },
   ): Promise<Order[]>;
-  countOrdersByStatus(ctx: TenantContext): Promise<Record<OrderStatus, number>>;
+  countOrdersByStatus(
+    ctx: TenantContext,
+    options?: { search?: string },
+  ): Promise<Record<OrderStatus, number>>;
   /**
    * A cancellation reason is stored on the order and, when the order belongs to
    * a conversation, posted there as a store message.
@@ -202,9 +208,14 @@ export interface OrdersService {
       offset?: number;
       order?: "created" | "shown";
       before?: ListCursor;
+      /** Customer name, phone or order number; see `parseSearch`. */
+      search?: string;
     },
   ): Promise<Inquiry[]>;
-  countInquiriesByStatus(ctx: TenantContext): Promise<Record<InquiryStatus, number>>;
+  countInquiriesByStatus(
+    ctx: TenantContext,
+    options?: { search?: string },
+  ): Promise<Record<InquiryStatus, number>>;
   updateInquiryStatus(
     ctx: TenantContext,
     inquiryId: string,
@@ -562,6 +573,9 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
     async listOrders(ctx, filter = {}) {
       const conditions = [eq(orders.tenantId, ctx.tenantId)];
+      const search = parseSearch(filter.search);
+      if (search)
+        conditions.push(orderSearchCondition({ id: orders.id, contact: orders.contact }, search));
       if (filter.status) conditions.push(inArray(orders.status, asList(filter.status)));
       const shown = filter.order === "shown";
       const at = truncMs(sql`coalesce(${orders.submittedAt}, ${orders.createdAt})`);
@@ -577,11 +591,19 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         .offset(clampOffset(filter.offset));
     },
 
-    async countOrdersByStatus(ctx) {
+    async countOrdersByStatus(ctx, options = {}) {
+      const search = parseSearch(options.search);
       const rows = await db
         .select({ status: orders.status, total: count() })
         .from(orders)
-        .where(eq(orders.tenantId, ctx.tenantId))
+        .where(
+          and(
+            eq(orders.tenantId, ctx.tenantId),
+            search
+              ? orderSearchCondition({ id: orders.id, contact: orders.contact }, search)
+              : undefined,
+          ),
+        )
         .groupBy(orders.status);
       const result: Record<OrderStatus, number> = {
         draft: 0,
@@ -774,6 +796,8 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
     async listInquiries(ctx, filter = {}) {
       const conditions = [eq(inquiries.tenantId, ctx.tenantId)];
+      const search = parseSearch(filter.search);
+      if (search) conditions.push(inquirySearchCondition(inquiries.contact, search));
       if (filter.status) conditions.push(inArray(inquiries.status, asList(filter.status)));
       const shown = filter.order === "shown";
       const at = truncMs(inquiries.createdAt);
@@ -791,11 +815,17 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         .offset(clampOffset(filter.offset));
     },
 
-    async countInquiriesByStatus(ctx) {
+    async countInquiriesByStatus(ctx, options = {}) {
+      const search = parseSearch(options.search);
       const rows = await db
         .select({ status: inquiries.status, total: count() })
         .from(inquiries)
-        .where(eq(inquiries.tenantId, ctx.tenantId))
+        .where(
+          and(
+            eq(inquiries.tenantId, ctx.tenantId),
+            search ? inquirySearchCondition(inquiries.contact, search) : undefined,
+          ),
+        )
         .groupBy(inquiries.status);
       const result: Record<InquiryStatus, number> = { new: 0, in_progress: 0, completed: 0 };
       for (const row of rows) result[row.status] = row.total;

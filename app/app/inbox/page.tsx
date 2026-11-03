@@ -15,14 +15,22 @@ import {
 } from "@/server/owner/inbox";
 import { currentOwner } from "@/server/owner/session";
 import { Pager } from "../pager";
+import "./inbox.css";
 import { ReplyForm } from "./reply-form";
+import { SearchBox } from "./search-box";
 import { StatusActions } from "./status-actions";
 
 export const metadata: Metadata = { title: "Inbox" };
 
 const FILTER_LABELS: Record<InboxFilter, string> = { all: "All", ...BUCKET_LABELS };
 
-function href(filter: InboxFilter, item?: string, before?: string | null, page = 1): string {
+function href(
+  filter: InboxFilter,
+  item?: string,
+  before?: string | null,
+  page = 1,
+  q?: string,
+): string {
   const params = new URLSearchParams();
   if (filter !== "all") params.set("filter", filter);
   if (before) {
@@ -30,6 +38,7 @@ function href(filter: InboxFilter, item?: string, before?: string | null, page =
     params.set("page", String(page));
   }
   if (item) params.set("item", item);
+  if (q) params.set("q", q);
   const query = params.toString();
   return query ? `/app/inbox?${query}` : "/app/inbox";
 }
@@ -53,16 +62,21 @@ function contactLinks(value: string) {
 function Detail({
   item,
   conversation,
+  back,
   now,
 }: {
   item: InboxItem;
   conversation: Awaited<ReturnType<typeof loadInbox>>["conversation"];
+  back: string;
   now: Date;
 }) {
   const external = item.source === "External agent";
   return (
     <section id="detail" className="ib-detail glass" aria-labelledby="ib-detail-title">
       <header className="ib-detail-head">
+        <Link className="btn btn-secondary btn-sm ib-back" href={back}>
+          Back to inbox
+        </Link>
         <div className="ib-detail-title">
           <div>
             <span className="ib-meta">
@@ -177,6 +191,7 @@ export default async function InboxPage({
   const selectedKey = typeof params.item === "string" ? params.item : undefined;
   const before = parseCursor(params.before);
   const requestedPage = parsePage(params.page);
+  const search = typeof params.q === "string" ? params.q.trim().slice(0, 80) : "";
 
   const services = await getServices();
   const owner = await currentOwner(services);
@@ -186,6 +201,7 @@ export default async function InboxPage({
     filter,
     selected: selectedKey,
     page: requestedPage,
+    search,
     before,
   });
   const current = before ? (typeof params.before === "string" ? params.before : null) : null;
@@ -197,7 +213,11 @@ export default async function InboxPage({
         <h1>Inbox</h1>
         <div className="segmented segmented-sm" role="group" aria-label="Status">
           {INBOX_FILTERS.map((f) => (
-            <Link key={f} href={href(f)} aria-current={f === filter ? "page" : undefined}>
+            <Link
+              key={f}
+              href={href(f, undefined, null, 1, search)}
+              aria-current={f === filter ? "page" : undefined}
+            >
               {FILTER_LABELS[f]}
               {f !== "all" && view.counts[f] > 0 ? (
                 <span className="ib-count">{view.counts[f]}</span>
@@ -216,15 +236,16 @@ export default async function InboxPage({
           </p>
         </section>
       ) : (
-        <div className="ib-grid">
+        <div className="ib-grid" data-view={selectedKey ? "detail" : "list"}>
           <div className="ib-list glass">
+            <SearchBox initial={search} filter={filter} />
             {view.items.length === 0 ? (
-              <p className="ib-list-empty">Nothing here.</p>
+              <p className="ib-list-empty">{search ? "No matches." : "Nothing here."}</p>
             ) : (
               view.items.map((item) => (
                 <Link
                   key={item.key}
-                  href={`${href(filter, item.key, current, view.page)}#detail`}
+                  href={`${href(filter, item.key, current, view.page, search)}#detail`}
                   className="ib-item"
                   aria-current={item.key === view.selected?.key ? "true" : undefined}
                 >
@@ -245,12 +266,19 @@ export default async function InboxPage({
             <Pager
               page={view.page}
               pageCount={view.pageCount}
-              newerHref={view.page > 1 ? href(filter) : null}
-              olderHref={view.next ? href(filter, undefined, view.next, view.page + 1) : null}
+              newerHref={view.page > 1 ? href(filter, undefined, null, 1, search) : null}
+              olderHref={
+                view.next ? href(filter, undefined, view.next, view.page + 1, search) : null
+              }
             />
           </div>
           {view.selected ? (
-            <Detail item={view.selected} conversation={view.conversation} now={now} />
+            <Detail
+              item={view.selected}
+              conversation={view.conversation}
+              back={href(filter, undefined, current, view.page, search)}
+              now={now}
+            />
           ) : null}
         </div>
       )}
