@@ -1,0 +1,150 @@
+.an-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.an-period {
+  font-size: 14px;
+  color: var(--text-3);
+}
+
+.an-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
+}
+
+.an-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 18px;
+  border-radius: 24px;
+}
+
+.an-kpi-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+
+.an-kpi-value {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+}
+
+.an-kpi-note {
+  font-size: 13px;
+  color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+
+.an-warn {
+  color: var(--warn-text);
+}
+
+.an-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.an-card {
+  display: flex;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 20px;
+}
+
+.an-card h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.an-empty {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.an-bar-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.an-bar-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.an-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.an-num {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.an-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--fill);
+}
+
+.an-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.an-fill-external {
+  background: #5e5ce6;
+}
+
+.an-facts {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font-size: 14px;
+}
+
+.an-facts div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.an-facts div:first-child {
+  border-top: 0;
+}
+
+.an-facts dt {
+  min-width: 0;
+}
+
+.an-facts dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.an-link {
+  align-self: flex-start;
+  font-size: 14px;
+  font-weight: 600;
+}

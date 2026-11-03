@@ -1,0 +1,19 @@
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 12px 0;
+}
+
+.pager [aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
+.pager-status {
+  color: var(--text-secondary, var(--text));
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}

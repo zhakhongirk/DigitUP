@@ -3,19 +3,19 @@
   --veil: rgba(246, 247, 250, 0.45);
   --text: #1d1d1f;
   --text-2: #515154;
-  --text-3: #6e6e73;
-  --text-4: #8e8e93;
-  --accent: #007aff;
-  --accent-hover: #0062cc;
+  --text-3: #636366;
+  --text-4: #6e6e73;
+  --accent: #0072ef;
+  --accent-hover: #005ec4;
   --accent-tint: rgba(0, 122, 255, 0.12);
   --ok-dot: #34c759;
-  --ok-text: #1f7a34;
+  --ok-text: #1d7231;
   --ok-tint: rgba(52, 199, 89, 0.16);
   --warn-dot: #ff9500;
   --warn-text: #a84500;
   --warn-tint: rgba(255, 149, 0, 0.16);
   --danger: #ff3b30;
-  --danger-text: #c9302c;
+  --danger-text: #b32a26;
   --danger-tint: rgba(255, 59, 48, 0.12);
   --muted-dot: #aeaeb2;
   --fill: rgba(118, 118, 128, 0.12);
@@ -65,11 +65,11 @@ p {
 }
 
 a {
-  color: var(--accent);
+  color: #0066cc;
 }
 
 a:hover {
-  color: var(--accent-hover);
+  color: #004fa3;
 }
 
 button,
@@ -302,6 +302,27 @@ textarea {
 
 .field input::placeholder {
   color: var(--text-3);
+}
+
+.skip-link {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--accent-hover);
+  color: #fff;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+  color: #fff;
+}
+
+#main:focus {
+  outline: none;
 }
 
 .sr-only {

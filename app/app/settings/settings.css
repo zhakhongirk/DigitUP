@@ -1,0 +1,116 @@
+.st-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 880px;
+}
+
+.st-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  min-width: 0;
+}
+
+.st-panel h2 {
+  font-size: 20px;
+}
+
+.st-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.st-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.st-input,
+.st-textarea {
+  width: 100%;
+  border: 0;
+  border-radius: 14px;
+  background: var(--fill);
+  color: var(--text);
+  font-weight: 400;
+}
+
+.st-input {
+  height: 46px;
+  padding: 0 14px;
+  font-size: 16px;
+}
+
+.st-textarea {
+  padding: 12px 14px;
+  font-size: 15px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.st-input:focus,
+.st-textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.st-policy {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: start;
+  gap: 12px;
+}
+
+.st-policy b {
+  padding-top: 10px;
+  font-size: 14px;
+}
+
+.st-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.st-actions .btn {
+  height: 46px;
+}
+
+.st-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.st-error {
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--danger-tint);
+  color: var(--danger-text);
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .st-panel {
+    padding: 16px;
+  }
+
+  .st-policy {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .st-actions .btn {
+    width: 100%;
+  }
+}

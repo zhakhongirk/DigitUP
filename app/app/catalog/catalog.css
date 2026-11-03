@@ -1,0 +1,291 @@
+.ct-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ct-list {
+  display: flex;
+  flex: 999 1 460px;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.ct-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ct-search {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.ct-select,
+.ct-label input,
+.ct-label select,
+.ct-label textarea {
+  min-width: 0;
+  border: 0;
+  border-radius: 14px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+}
+
+.ct-select {
+  height: 40px;
+  max-width: 100%;
+  padding: 0 14px;
+}
+
+.ct-status {
+  align-self: flex-start;
+}
+
+.ct-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.ct-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.ct-table th {
+  padding: 8px 12px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ct-table td {
+  padding: 11px 12px;
+  border-top: 1px solid var(--hairline-soft);
+  vertical-align: middle;
+}
+
+.ct-table tr[aria-selected="true"] td {
+  background: rgba(0, 122, 255, 0.1);
+}
+
+.ct-table .ct-num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.ct-title {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.ct-title:hover {
+  color: var(--accent);
+}
+
+.ct-muted {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.ct-chip {
+  display: inline-flex;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ct-chip-active {
+  background: var(--ok-tint);
+  color: var(--ok-text);
+}
+
+.ct-chip-draft {
+  background: var(--warn-tint);
+  color: var(--warn-text);
+}
+
+.ct-none {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 20px 8px;
+}
+
+.ct-none h2 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.ct-none p {
+  margin: 0;
+  color: var(--text-3);
+}
+
+.ct-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ct-panel {
+  display: flex;
+  flex: 1 1 340px;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 20px;
+}
+
+.ct-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ct-panel-head h2 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.ct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ct-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ct-wide {
+  grid-column: 1 / -1;
+}
+
+.ct-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-3);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.ct-label input,
+.ct-label select {
+  height: 40px;
+  padding: 0 14px;
+}
+
+.ct-label textarea {
+  padding: 10px 14px;
+  resize: vertical;
+}
+
+.ct-label input:disabled {
+  opacity: 0.5;
+}
+
+.ct-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ct-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ct-saved {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--ok-tint);
+  color: var(--ok-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.ct-add {
+  margin: 0;
+}
+
+.ct-filter-select {
+  height: 40px;
+  max-width: 100%;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--fill);
+  color: var(--text);
+  font: inherit;
+}
+
+.ct-check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  font-size: 14px;
+}
+
+.ct-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 13.5px;
+}
+
+.ct-archive {
+  padding-top: 14px;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+@media (max-width: 720px) {
+  .ct-wide {
+    display: none;
+  }
+
+  .ct-table {
+    min-width: 0;
+  }
+
+  .ct-table th,
+  .ct-table td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .ct-table td:not(:first-child) {
+    white-space: nowrap;
+  }
+}
+
+.ct-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 
+const appUrl = process.env.APP_URL;
+
 export const metadata: Metadata = {
+  metadataBase: appUrl ? new URL(appUrl) : undefined,
   title: "Agentic Storefront",
   description: "AI commerce infrastructure for small businesses",
 };
