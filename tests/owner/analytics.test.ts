@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentOutcome,
   channelCounts,
+  dailySeries,
   orderValue,
   parseRange,
   topQueries,
@@ -75,5 +76,24 @@ describe("analytics", () => {
       "Do you deliver?",
     ]);
     expect(queries).toEqual([{ text: "Do you deliver?", count: 1 }]);
+  });
+
+  it("fills every day of the range and keeps zero days", () => {
+    const now = new Date("2026-11-03T10:00:00Z");
+    const series = dailySeries(
+      now,
+      3,
+      {
+        conversations: [{ day: "2026-11-03", count: 2 }],
+        orders: [{ day: "2026-11-01", count: 1 }],
+        inquiries: [],
+      },
+      "UTC",
+    );
+    expect(series).toEqual([
+      { day: "2026-11-01", conversations: 0, orders: 1, inquiries: 0 },
+      { day: "2026-11-02", conversations: 0, orders: 0, inquiries: 0 },
+      { day: "2026-11-03", conversations: 2, orders: 0, inquiries: 0 },
+    ]);
   });
 });

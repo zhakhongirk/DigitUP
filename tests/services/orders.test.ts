@@ -772,6 +772,43 @@ describe("stats", () => {
   });
 });
 
+describe("daily counts", () => {
+  it("groups placed orders and inquiries by day and skips drafts", async () => {
+    const s = await setup();
+    const make = async (submit: boolean) => {
+      const { order } = await s.orders.createOrder(s.ctx, {
+        idempotencyKey: key(),
+        source: "storefront",
+        items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      });
+      if (submit) await s.orders.submitOrder(s.ctx, order.id);
+      return order;
+    };
+    const old = await make(true);
+    await make(true);
+    await make(false);
+    const inquiry = await s.orders.createInquiry(s.ctx, { subject: "Q" });
+    await s.orders.createInquiry(s.ctx, { subject: "Q2" });
+    const past = new Date("2026-11-01T12:00:00Z");
+    await s.db
+      .update(orders)
+      .set({ submittedAt: past, createdAt: past })
+      .where(eq(orders.id, old.id));
+    await s.db.update(inquiries).set({ createdAt: past }).where(eq(inquiries.id, inquiry.id));
+
+    const since = new Date("2026-10-30T00:00:00Z");
+    const daily = await s.orders.dailyCounts(s.ctx, { since, timeZone: "UTC" });
+    expect(daily.orders[0]).toEqual({ day: "2026-11-01", count: 1 });
+    expect(daily.orders.reduce((n, row) => n + row.count, 0)).toBe(2);
+    expect(daily.inquiries[0]).toEqual({ day: "2026-11-01", count: 1 });
+    expect(daily.inquiries.reduce((n, row) => n + row.count, 0)).toBe(2);
+    await expectCode(
+      s.orders.dailyCounts({ ...s.ctx, actor: "customer_agent" }, { since, timeZone: "UTC" }),
+      "forbidden",
+    );
+  });
+});
+
 describe("paging and counts", () => {
   it("pages orders and inquiries without overlap and scopes by tenant", async () => {
     const s = await setup();

@@ -292,3 +292,36 @@ describe("firstUserMessages", () => {
     ).rejects.toMatchObject({ code: "forbidden" });
   });
 });
+
+describe("conversation daily counts", () => {
+  it("groups customer conversations by day in the time zone", async () => {
+    const { db, service } = setup();
+    const ctx = await createTestTenant();
+    const early = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const late = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await service.getOrCreate(ctx, { agent: "business", channel: "workspace" });
+    await db
+      .update(conversations)
+      .set({ createdAt: new Date("2026-11-01T22:30:00Z") })
+      .where(eq(conversations.id, early.id));
+    await db
+      .update(conversations)
+      .set({ createdAt: new Date("2026-11-02T01:00:00Z") })
+      .where(eq(conversations.id, late.id));
+    const since = new Date("2026-10-30T00:00:00Z");
+
+    const utc = await service.dailyCounts(ctx, { since, timeZone: "UTC" });
+    expect(utc.filter((row) => row.day < "2026-11-03")).toEqual([
+      { day: "2026-11-01", count: 1 },
+      { day: "2026-11-02", count: 1 },
+    ]);
+    const almaty = await service.dailyCounts(ctx, { since, timeZone: "Asia/Almaty" });
+    expect(almaty.filter((row) => row.day < "2026-11-03")).toEqual([
+      { day: "2026-11-02", count: 2 },
+    ]);
+    await expect(
+      service.dailyCounts({ ...ctx, actor: "customer_agent" }, { since, timeZone: "UTC" }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+  });
+});

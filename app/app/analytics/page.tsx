@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { ANALYTICS_RANGES, loadAnalytics, parseRange } from "@/server/owner/analytics";
+import {
+  ANALYTICS_RANGES,
+  loadAnalytics,
+  parseRange,
+  type DayPoint,
+} from "@/server/owner/analytics";
 import { currentOwner } from "@/server/owner/session";
 import { formatDay } from "@/server/time";
 import "./analytics.css";
@@ -17,12 +22,65 @@ function period(since: Date, until: Date): string {
   return `${formatDay(since)} to ${formatDay(until)}`;
 }
 
+function dayLabel(day: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    timeZone: "UTC",
+  }).format(new Date(`${day}T12:00:00Z`));
+}
+
+const SERIES = [
+  { key: "conversations", label: "Conversations", className: "an-s-conv" },
+  { key: "orders", label: "Orders", className: "an-s-order" },
+  { key: "inquiries", label: "Questions", className: "an-s-question" },
+] as const;
+
+function DailyChart({ days }: { days: DayPoint[] }) {
+  const max = Math.max(1, ...days.flatMap((d) => SERIES.map((s) => d[s.key])));
+  const step = days.length > 14 ? 5 : 1;
+  const minWidth = Math.max(560, days.length * 34);
+  return (
+    <div className="an-chart-scroll">
+      <div
+        className="an-chart"
+        style={{ minWidth }}
+        role="img"
+        aria-label="Conversations, orders and questions per day"
+      >
+        {days.map((d) => (
+          <div
+            key={d.day}
+            className="an-day"
+            title={`${dayLabel(d.day)}: ${d.conversations} conversations, ${d.orders} orders, ${d.inquiries} questions`}
+          >
+            {SERIES.map((series) => (
+              <div
+                key={series.key}
+                className={`an-col ${series.className}`}
+                style={{
+                  height: `${(d[series.key] / max) * 100}%`,
+                  minHeight: d[series.key] > 0 ? 3 : 0,
+                }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="an-axis" style={{ minWidth }}>
+        {days.map((d, i) => (
+          <span key={d.day}>{i % step === 0 || i === days.length - 1 ? dayLabel(d.day) : ""}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface BarItem {
   key: string;
   label: string;
   value: string;
   share: number;
-  tone?: string;
 }
 
 function Bars({ items }: { items: BarItem[] }) {
@@ -33,7 +91,7 @@ function Bars({ items }: { items: BarItem[] }) {
         <span className="an-num">{item.value}</span>
       </div>
       <div className="an-track">
-        <div className={`an-fill ${item.tone ?? ""}`} style={{ width: `${item.share * 100}%` }} />
+        <div className="an-fill" style={{ width: `${item.share * 100}%` }} />
       </div>
     </div>
   ));
@@ -53,9 +111,8 @@ export default async function AnalyticsPage({
 
   const view = await loadAnalytics(services, owner, range);
   const { outcome } = view;
-  const maxChannel = Math.max(1, ...view.channels.map((c) => c.count));
-  const maxOffer = Math.max(1, ...view.offers.map((o) => o.quantity));
   const maxQuery = Math.max(1, ...view.queries.map((q) => q.count));
+  const hasActivity = view.days.some((d) => d.conversations + d.orders + d.inquiries > 0);
 
   return (
     <>
@@ -66,20 +123,26 @@ export default async function AnalyticsPage({
             Last {range} days · {period(view.since, view.until)}
           </span>
         </div>
-        <div className="segmented" role="group" aria-label="Period">
-          {ANALYTICS_RANGES.map((r) => (
-            <Link
-              key={r}
-              href={`/app/analytics?range=${r}`}
-              aria-current={r === range ? "page" : undefined}
-            >
-              {r} days
-            </Link>
-          ))}
+        <div className="an-actions">
+          <div className="segmented segmented-sm" role="group" aria-label="Period">
+            {ANALYTICS_RANGES.map((r) => (
+              <Link
+                key={r}
+                href={`/app/analytics?range=${r}`}
+                aria-current={r === range ? "page" : undefined}
+              >
+                {r} days
+              </Link>
+            ))}
+          </div>
+          <a
+            className="btn btn-sm btn-secondary"
+            href={`/app/export/orders?range=${range}`}
+            download
+          >
+            Export orders (CSV)
+          </a>
         </div>
-        <a className="an-link" href={`/app/export/orders?range=${range}`} download>
-          Export orders (CSV)
-        </a>
       </div>
 
       <div className="an-kpis">
@@ -109,21 +172,83 @@ export default async function AnalyticsPage({
         </div>
       </div>
 
+      <section className="an-card an-wide glass" aria-labelledby="an-daily">
+        <div className="an-card-head">
+          <h2 id="an-daily">Activity by day</h2>
+          <div className="an-legend">
+            {SERIES.map((series) => (
+              <span key={series.key}>
+                <i className={series.className} />
+                {series.label}
+              </span>
+            ))}
+          </div>
+        </div>
+        {hasActivity ? (
+          <DailyChart days={view.days} />
+        ) : (
+          <p className="an-empty">No activity in this period.</p>
+        )}
+      </section>
+
       <div className="an-row">
-        <section className="an-card glass" aria-labelledby="an-channels">
-          <h2 id="an-channels">Conversations by channel</h2>
-          {view.conversations === 0 ? (
-            <p className="an-empty">No conversations in this period.</p>
+        <section className="an-card glass" aria-labelledby="an-queries">
+          <h2 id="an-queries">What shoppers ask first</h2>
+          {view.queries.length === 0 ? (
+            <p className="an-empty">No shopper questions in this period.</p>
           ) : (
             <Bars
-              items={view.channels.map((c) => ({
-                key: c.channel,
-                label: c.label,
-                value: String(c.count),
-                share: c.count / maxChannel,
-                tone: c.channel === "external_agent" ? "an-fill-external" : undefined,
+              items={view.queries.map((q) => ({
+                key: q.text,
+                label: q.text,
+                value: String(q.count),
+                share: q.count / maxQuery,
               }))}
             />
+          )}
+        </section>
+
+        <section className="an-card an-list glass" aria-labelledby="an-offers">
+          <h2 id="an-offers">Top offers</h2>
+          {view.offers.length === 0 ? (
+            <p className="an-empty">No orders in this period.</p>
+          ) : (
+            <>
+              <div className="an-list-head">
+                <span>Offer</span>
+                <span>Ordered</span>
+              </div>
+              {view.offers.map((o) => (
+                <div key={o.offerId} className="an-list-row">
+                  <span className="an-text">{o.title}</span>
+                  <span className="an-num">{o.quantity}</span>
+                </div>
+              ))}
+            </>
+          )}
+        </section>
+      </div>
+
+      <div className="an-row">
+        <section className="an-card an-list glass" aria-labelledby="an-open">
+          <div className="an-card-head">
+            <h2 id="an-open">Unanswered questions</h2>
+            {outcome.unresolved > 0 ? <span className="an-count">{outcome.unresolved}</span> : null}
+          </div>
+          {view.openQuestions.length === 0 ? (
+            <p className="an-empty">Nothing is waiting for your answer.</p>
+          ) : (
+            view.openQuestions.map((q) => (
+              <div key={q.id} className="an-list-row">
+                <span className="an-q">
+                  <span className="an-text">{q.subject}</span>
+                  <span className="an-q-meta">Asked {formatDay(q.createdAt)}</span>
+                </span>
+                <Link className="an-answer" href={`/app/inbox?filter=new&item=inquiry:${q.id}`}>
+                  Answer
+                </Link>
+              </div>
+            ))
           )}
         </section>
 
@@ -152,40 +277,6 @@ export default async function AnalyticsPage({
               Open the inbox
             </Link>
           ) : null}
-        </section>
-      </div>
-
-      <div className="an-row">
-        <section className="an-card glass" aria-labelledby="an-offers">
-          <h2 id="an-offers">Top offers</h2>
-          {view.offers.length === 0 ? (
-            <p className="an-empty">No orders in this period.</p>
-          ) : (
-            <Bars
-              items={view.offers.map((o) => ({
-                key: o.offerId,
-                label: o.title,
-                value: `${o.quantity} ordered`,
-                share: o.quantity / maxOffer,
-              }))}
-            />
-          )}
-        </section>
-
-        <section className="an-card glass" aria-labelledby="an-queries">
-          <h2 id="an-queries">What shoppers ask first</h2>
-          {view.queries.length === 0 ? (
-            <p className="an-empty">No shopper questions in this period.</p>
-          ) : (
-            <Bars
-              items={view.queries.map((q) => ({
-                key: q.text,
-                label: q.text,
-                value: String(q.count),
-                share: q.count / maxQuery,
-              }))}
-            />
-          )}
         </section>
       </div>
     </>

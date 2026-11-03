@@ -29,6 +29,12 @@ export interface ConversationStats {
   withOutcome: number;
 }
 
+export interface DayCount {
+  /** Calendar day in the requested time zone, YYYY-MM-DD. */
+  day: string;
+  count: number;
+}
+
 export interface FirstUserMessage {
   conversationId: string;
   content: string;
@@ -72,6 +78,8 @@ export interface ConversationsService {
   ): Promise<Conversation>;
   /** Owner-only aggregates over customer conversations created since the given moment. */
   stats(ctx: TenantContext, options: { since: Date }): Promise<ConversationStats>;
+  /** Owner-only. Customer conversations created since the given moment, per calendar day. */
+  dailyCounts(ctx: TenantContext, options: { since: Date; timeZone: string }): Promise<DayCount[]>;
   /**
    * Owner-only. The earliest non-empty user message of each customer
    * conversation created since the given moment, newest conversations first.
@@ -287,6 +295,23 @@ export function createConversationsService(deps: {
         stats.withOutcome += row.withOutcome;
       }
       return stats;
+    },
+
+    async dailyCounts(ctx, { since, timeZone }) {
+      assertOwner(ctx);
+      const day = sql<string>`to_char(${conversations.createdAt} at time zone ${timeZone}, 'YYYY-MM-DD')`;
+      return db
+        .select({ day, count: count() })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.tenantId, ctx.tenantId),
+            eq(conversations.agent, "customer"),
+            gte(conversations.createdAt, since),
+          ),
+        )
+        .groupBy(sql`1`)
+        .orderBy(sql`1`);
     },
 
     async firstUserMessages(ctx, { since, limit }) {

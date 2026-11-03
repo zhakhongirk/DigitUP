@@ -1,7 +1,8 @@
 import type { Services } from "@/server/container";
 import type { TenantContext } from "@/server/services/context";
-import type { Conversation, ConversationStats } from "@/server/services/conversations";
-import type { OrderStats } from "@/server/services/orders";
+import type { Conversation, ConversationStats, DayCount } from "@/server/services/conversations";
+import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
+import { appTimeZone } from "@/server/time";
 import { formatPrice } from "@/shared/format";
 
 export const ANALYTICS_RANGES = [7, 30] as const;
@@ -91,6 +92,60 @@ export function topQueries(firstMessages: string[], limit = 6): TopQuery[] {
     .slice(0, limit);
 }
 
+export interface DayPoint {
+  day: string;
+  conversations: number;
+  orders: number;
+  inquiries: number;
+}
+
+function dayKey(at: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+}
+
+export function dailySeries(
+  now: Date,
+  range: number,
+  counts: {
+    conversations: DayCount[];
+    orders: DailyOrderCounts["orders"];
+    inquiries: DailyOrderCounts["inquiries"];
+  },
+  timeZone: string,
+): DayPoint[] {
+  const lookup = (rows: DayCount[]) => new Map(rows.map((row) => [row.day, row.count]));
+  const conversations = lookup(counts.conversations);
+  const orders = lookup(counts.orders);
+  const inquiries = lookup(counts.inquiries);
+  const points: DayPoint[] = [];
+  for (let i = range - 1; i >= 0; i--) {
+    const day = dayKey(new Date(now.getTime() - i * DAY), timeZone);
+    if (points.at(-1)?.day === day) continue;
+    points.push({
+      day,
+      conversations: conversations.get(day) ?? 0,
+      orders: orders.get(day) ?? 0,
+      inquiries: inquiries.get(day) ?? 0,
+    });
+  }
+  return points;
+}
+
+export interface OpenQuestion {
+  id: string;
+  subject: string;
+  createdAt: Date;
+}
+
+export function openQuestions(rows: Inquiry[]): OpenQuestion[] {
+  return rows.map((row) => ({ id: row.id, subject: row.subject, createdAt: row.createdAt }));
+}
+
 export interface AnalyticsView {
   range: AnalyticsRange;
   since: Date;
@@ -103,9 +158,12 @@ export interface AnalyticsView {
   outcome: AgentOutcome;
   offers: TopOffer[];
   queries: TopQuery[];
+  days: DayPoint[];
+  openQuestions: OpenQuestion[];
 }
 
 const QUERIES_SAMPLE = 200;
+const OPEN_QUESTIONS = 4;
 
 export async function loadAnalytics(
   services: Services,
@@ -114,11 +172,16 @@ export async function loadAnalytics(
   now = new Date(),
 ): Promise<AnalyticsView> {
   const since = new Date(now.getTime() - range * DAY);
-  const [conversations, orders, firstMessages] = await Promise.all([
-    services.conversations.stats(ctx, { since }),
-    services.orders.stats(ctx, { since }),
-    services.conversations.firstUserMessages(ctx, { since, limit: QUERIES_SAMPLE }),
-  ]);
+  const timeZone = appTimeZone();
+  const [conversations, orders, firstMessages, dailyConversations, daily, unresolved] =
+    await Promise.all([
+      services.conversations.stats(ctx, { since }),
+      services.orders.stats(ctx, { since }),
+      services.conversations.firstUserMessages(ctx, { since, limit: QUERIES_SAMPLE }),
+      services.conversations.dailyCounts(ctx, { since, timeZone }),
+      services.orders.dailyCounts(ctx, { since, timeZone }),
+      services.orders.listInquiries(ctx, { status: "new", limit: OPEN_QUESTIONS }),
+    ]);
   const placed = Object.entries(orders.byStatus).reduce(
     (sum, [status, n]) => (status === "draft" ? sum : sum + n),
     0,
@@ -136,5 +199,12 @@ export async function loadAnalytics(
     outcome: agentOutcome(conversations, orders.inquiries),
     offers: orders.topOffers,
     queries: topQueries(firstMessages.map((m) => m.content)),
+    days: dailySeries(
+      now,
+      range,
+      { conversations: dailyConversations, orders: daily.orders, inquiries: daily.inquiries },
+      timeZone,
+    ),
+    openQuestions: openQuestions(unresolved),
   };
 }

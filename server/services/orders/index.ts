@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   inArray,
+  ne,
   notInArray,
   sql,
   type AnyColumn,
@@ -40,6 +41,12 @@ export interface OrderStats {
   value: { currency: string; total: number }[];
   topOffers: { offerId: string; title: string; quantity: number; orders: number }[];
   inquiries: { total: number; new: number };
+}
+
+export interface DailyOrderCounts {
+  /** Submitted orders (not drafts) per calendar day, YYYY-MM-DD. */
+  orders: { day: string; count: number }[];
+  inquiries: { day: string; count: number }[];
 }
 
 export const orderContactSchema = z
@@ -123,6 +130,12 @@ export interface OrdersService {
    * for drafts) and inquiries created since the given moment.
    */
   stats(ctx: TenantContext, options: { since: Date; offersLimit?: number }): Promise<OrderStats>;
+
+  /** Owner-only. Placed orders and inquiries since the given moment, per calendar day. */
+  dailyCounts(
+    ctx: TenantContext,
+    options: { since: Date; timeZone: string },
+  ): Promise<DailyOrderCounts>;
 
   createInquiry(ctx: TenantContext, input: CreateInquiryInput): Promise<Inquiry>;
   getInquiry(ctx: TenantContext, inquiryId: string): Promise<Inquiry | null>;
@@ -517,6 +530,34 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         topOffers: offerRows.rows,
         inquiries: { total: inquiry?.total ?? 0, new: inquiry?.fresh ?? 0 },
       };
+    },
+
+    async dailyCounts(ctx, { since, timeZone }) {
+      assertOwner(ctx);
+      const placedAt = sql`coalesce(${orders.submittedAt}, ${orders.createdAt})`;
+      const orderDay = sql<string>`to_char(${placedAt} at time zone ${timeZone}, 'YYYY-MM-DD')`;
+      const inquiryDay = sql<string>`to_char(${inquiries.createdAt} at time zone ${timeZone}, 'YYYY-MM-DD')`;
+      const [orderRows, inquiryRows] = await Promise.all([
+        db
+          .select({ day: orderDay, count: count() })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.tenantId, ctx.tenantId),
+              sql`${placedAt} >= ${since}`,
+              ne(orders.status, "draft"),
+            ),
+          )
+          .groupBy(sql`1`)
+          .orderBy(sql`1`),
+        db
+          .select({ day: inquiryDay, count: count() })
+          .from(inquiries)
+          .where(and(eq(inquiries.tenantId, ctx.tenantId), gte(inquiries.createdAt, since)))
+          .groupBy(sql`1`)
+          .orderBy(sql`1`),
+      ]);
+      return { orders: orderRows, inquiries: inquiryRows };
     },
 
     async createInquiry(ctx, rawInput) {
