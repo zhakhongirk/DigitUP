@@ -130,7 +130,8 @@ async function main() {
   const native = build("native");
   const jsonTools = (jsonResponseFormat: boolean): LlmClient => build("json", jsonResponseFormat);
 
-  console.log(`Probing ${config.model} at ${config.baseURL}\n`);
+  console.log(`Probing ${config.model} at ${config.baseURL} (reasoning_effort=${config.reasoningEffort ?? "default"}, headroom=${config.reasoningTokens})
+`);
 
   const plain = await runCheck("Plain chat", 1, async () => {
     const reply = await native.chat({
@@ -276,6 +277,8 @@ async function main() {
   ].join("\n");
 
   mkdirSync(dirname(REPORT_PATH), { recursive: true });
+  console.log(`
+Completion tokens: ${completionTokens}, reasoning tokens: ${reasoningTokens}`);
   writeFileSync(REPORT_PATH, report);
   console.log(`\nRecommendation:\n${recommendation}\n\nReport written to ${REPORT_PATH}`);
 }
