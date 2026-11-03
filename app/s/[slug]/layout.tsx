@@ -4,8 +4,10 @@ import type { ReactNode } from "react";
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { loadStore } from "@/server/storefront/data";
+import { t } from "@/server/storefront/i18n";
 import { buildPageMeta, storePath } from "@/server/storefront/seo";
 import { ChatPanel } from "./chat-panel";
+import { storefrontLang } from "./lang";
 import { stripPolicyLabel } from "./policy";
 import { StoreShell } from "./store-shell";
 import "./storefront.css";
@@ -28,13 +30,13 @@ export async function generateMetadata({ params }: Pick<Props, "params">): Promi
   return { ...meta, title: { default: store.name, template: `%s | ${store.name}` } };
 }
 
-const CONTACT_LABELS: [string, string][] = [
-  ["phone", "Phone"],
-  ["email", "Email"],
-  ["whatsapp", "WhatsApp"],
-  ["telegram", "Telegram"],
-  ["instagram", "Instagram"],
-  ["website", "Website"],
+const CONTACT_LABELS: [string, string, string][] = [
+  ["phone", "Phone", "Телефон"],
+  ["email", "Email", "Email"],
+  ["whatsapp", "WhatsApp", "WhatsApp"],
+  ["telegram", "Telegram", "Telegram"],
+  ["instagram", "Instagram", "Instagram"],
+  ["website", "Website", "Сайт"],
 ];
 
 function initials(name: string): string {
@@ -55,20 +57,27 @@ function contactValue(key: string, value: string): ReactNode {
 
 export default async function StoreLayout({ children, params }: Props) {
   const { slug } = await params;
+  const lang = await storefrontLang();
   const store = await loadStore(await getServices(), slug);
   // Unknown store: render the child (which calls notFound) without store chrome.
-  if (!store) return <div className="sf-root">{children}</div>;
+  if (!store) {
+    return (
+      <div className="sf-root" lang={lang}>
+        {children}
+      </div>
+    );
+  }
 
-  const contacts = CONTACT_LABELS.flatMap(([key, label]) => {
+  const contacts = CONTACT_LABELS.flatMap(([key, en, ru]) => {
     const value = store.contacts[key as keyof typeof store.contacts];
-    return value ? [{ key, label, value }] : [];
+    return value ? [{ key, label: lang === "ru" ? ru : en, value }] : [];
   });
   const address = store.contacts.address;
 
   const policies =
     store.policies.length > 0 ? (
       <section className="sf-policies glass" aria-labelledby="sf-policies-title">
-        <h2 id="sf-policies-title">Store policies</h2>
+        <h2 id="sf-policies-title">{t(lang, "storePolicies")}</h2>
         <dl>
           {store.policies.map((p) => (
             <div key={p.key} className="sf-policy">
@@ -83,9 +92,13 @@ export default async function StoreLayout({ children, params }: Props) {
     ) : null;
 
   return (
-    <div className="sf-root">
+    <div className="sf-root" lang={lang}>
       <header className="sf-header glass">
-        <Link href={`/s/${slug}`} className="sf-mark" aria-label={`${store.name} home`}>
+        <Link
+          href={`/s/${slug}`}
+          className="sf-mark"
+          aria-label={t(lang, "home", { store: store.name })}
+        >
           {initials(store.name)}
         </Link>
         <div className="sf-brand">
@@ -95,7 +108,7 @@ export default async function StoreLayout({ children, params }: Props) {
           {address ? <span className="sf-brand-sub">{address}</span> : null}
         </div>
         {contacts.length > 0 ? (
-          <ul className="sf-contacts" aria-label="Contacts">
+          <ul className="sf-contacts" aria-label={t(lang, "contacts")}>
             {contacts.map((c) => (
               <li key={c.key}>
                 <span className="sr-only">{c.label}: </span>
@@ -107,13 +120,14 @@ export default async function StoreLayout({ children, params }: Props) {
       </header>
 
       <StoreShell
+        lang={lang}
         main={
           <>
             {children}
             {policies}
           </>
         }
-        chat={<ChatPanel slug={slug} storeName={store.name} />}
+        chat={<ChatPanel slug={slug} storeName={store.name} lang={lang} />}
       />
     </div>
   );

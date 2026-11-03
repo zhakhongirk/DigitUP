@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { t, type Lang } from "@/server/storefront/i18n";
 import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 
-type Props = { main: ReactNode; chat: ReactNode };
+type Props = { main: ReactNode; chat: ReactNode; lang: Lang };
 
-export function StoreShell({ main, chat }: Props) {
+export function StoreShell({ main, chat, lang }: Props) {
   const [tab, setTab] = useState<"shop" | "chat">("shop");
 
   // Links to the chat switch to it on narrow screens and focus the message box.
@@ -36,11 +37,11 @@ export function StoreShell({ main, chat }: Props) {
     <>
       <div className="sf-body" data-tab={tab}>
         <div className="sf-main">{main}</div>
-        <aside id="store-chat" className="sf-chat glass" aria-label="Store assistant">
+        <aside id="store-chat" className="sf-chat glass" aria-label={t(lang, "storeAssistant")}>
           {chat}
         </aside>
       </div>
-      <nav className="sf-tabbar glass" aria-label="Store sections">
+      <nav className="sf-tabbar glass" aria-label={t(lang, "storeSections")}>
         <button
           type="button"
           className="sf-tab"
@@ -61,7 +62,7 @@ export function StoreShell({ main, chat }: Props) {
             <rect x="4" y="13" width="7" height="7" rx="2" />
             <rect x="13" y="13" width="7" height="7" rx="2" />
           </svg>
-          Shop
+          {t(lang, "tabShop")}
         </button>
         <button
           type="button"
@@ -80,7 +81,7 @@ export function StoreShell({ main, chat }: Props) {
           >
             <path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4z" />
           </svg>
-          Chat
+          {t(lang, "tabChat")}
         </button>
       </nav>
     </>

@@ -11,8 +11,10 @@ import {
   searchCatalog,
   type OfferCardData,
 } from "@/server/storefront/data";
+import { t, type Lang } from "@/server/storefront/i18n";
 import { buildPageMeta, jsonLdString, storeJsonLd, storePath } from "@/server/storefront/seo";
 import { orderMessage, questionDraft } from "./chat-bridge";
+import { storefrontLang } from "./lang";
 import { OfferImage } from "./offer-image";
 
 export const dynamic = "force-dynamic";
@@ -51,7 +53,9 @@ function Media({
   offer,
   className,
   priority,
+  lang,
 }: {
+  lang: Lang;
   offer: OfferCardData;
   className: string;
   priority?: boolean;
@@ -71,16 +75,16 @@ function Media({
   return (
     <div className={`${className} sf-tile`}>
       <span className="sf-tile-name">{offer.tileLabel}</span>
-      <span className="sf-tile-note">Photo coming soon</span>
+      <span className="sf-tile-note">{t(lang, "photoSoon")}</span>
     </div>
   );
 }
 
-function PriceAndStatus({ offer }: { offer: OfferCardData }) {
+function PriceAndStatus({ offer, lang }: { offer: OfferCardData; lang: Lang }) {
   return (
     <>
       <span className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
-        {offer.priceLabel}
+        {offer.hasPrice ? offer.priceLabel : t(lang, "priceOnRequest")}
       </span>
       <span className={`status status-${offer.availability}`}>{offer.availabilityLabel}</span>
     </>
@@ -91,7 +95,9 @@ function OfferCard({
   slug,
   offer,
   priority,
+  lang,
 }: {
+  lang: Lang;
   slug: string;
   offer: OfferCardData;
   priority?: boolean;
@@ -99,7 +105,7 @@ function OfferCard({
   const meta = [offer.category, offer.summary[0] ?? null].filter(Boolean).join(" · ");
   return (
     <li className="sf-card">
-      <Media offer={offer} className="sf-card-media" priority={priority} />
+      <Media offer={offer} className="sf-card-media" priority={priority} lang={lang} />
       <div className="sf-card-text">
         <h3 className="sf-card-title">
           <Link href={`/s/${slug}/offers/${offer.id}`} className="sf-card-link">
@@ -109,7 +115,7 @@ function OfferCard({
         {meta ? <p className="sf-card-meta">{meta}</p> : null}
       </div>
       <div className="sf-card-foot">
-        <PriceAndStatus offer={offer} />
+        <PriceAndStatus offer={offer} lang={lang} />
       </div>
       {offer.canOrder ? (
         <a
@@ -117,14 +123,14 @@ function OfferCard({
           className="btn btn-sm sf-card-order"
           data-chat-send={orderMessage(offer.title, "order")}
         >
-          Order
+          {t(lang, "order")}
         </a>
       ) : null}
     </li>
   );
 }
 
-function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
+function ServiceRow({ slug, offer, lang }: { slug: string; offer: OfferCardData; lang: Lang }) {
   const meta = [...offer.summary.slice(0, 2), offer.category].filter(Boolean).join(" · ");
   return (
     <li className="sf-row">
@@ -136,7 +142,7 @@ function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
         {meta ? <p className="sf-card-meta">{meta}</p> : null}
       </div>
       <span className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
-        {offer.priceLabel}
+        {offer.hasPrice ? offer.priceLabel : t(lang, "priceOnRequest")}
       </span>
       {offer.hasPrice ? (
         <a
@@ -144,7 +150,7 @@ function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
           className="btn btn-sm"
           data-chat-send={orderMessage(offer.title, "book")}
         >
-          Book
+          {t(lang, "book")}
         </a>
       ) : (
         <a
@@ -152,7 +158,7 @@ function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
           className="btn btn-sm btn-secondary"
           data-chat-draft={questionDraft(offer.title)}
         >
-          Ask the shop
+          {t(lang, "askShop")}
         </a>
       )}
     </li>
@@ -160,6 +166,7 @@ function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
 }
 
 function countText(
+  lang: Lang,
   total: number,
   page: number,
   shown: number,
@@ -168,14 +175,21 @@ function countText(
 ) {
   const base =
     total > shown
-      ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${(page - 1) * PAGE_SIZE + shown} of ${total}`
-      : `${total} ${total === 1 ? "item" : "items"}`;
-  return `${base}${category ? ` in ${category}` : ""}${query ? ` matching "${query}"` : ""}`;
+      ? t(lang, "showing", {
+          from: (page - 1) * PAGE_SIZE + 1,
+          to: (page - 1) * PAGE_SIZE + shown,
+          total,
+        })
+      : t(lang, total === 1 ? "itemCountOne" : "itemCountMany", { n: total });
+  const inCategory = category ? t(lang, "inCategory", { category }) : "";
+  const matching = query ? t(lang, "matching", { query }) : "";
+  return `${base}${inCategory}${matching}`;
 }
 
 export default async function CatalogPage({ params, searchParams }: Props) {
   const { slug } = await params;
   const sp = await searchParams;
+  const lang = await storefrontLang();
   const services = await getServices();
   const store = await loadStore(services, slug);
   if (!store) notFound();
@@ -221,26 +235,26 @@ export default async function CatalogPage({ params, searchParams }: Props) {
             <circle cx="11" cy="11" r="7" />
             <path d="M20 20l-4-4" />
           </svg>
-          <span className="sr-only">Search the catalog</span>
+          <span className="sr-only">{t(lang, "searchCatalog")}</span>
           <input
             id="sf-q"
             name="q"
             type="search"
             defaultValue={query}
-            placeholder="Search the catalog"
+            placeholder={t(lang, "searchCatalog")}
           />
         </label>
         {category ? <input type="hidden" name="category" value={category} /> : null}
         <button type="submit" className="btn btn-sm">
-          Search
+          {t(lang, "search")}
         </button>
       </form>
 
       <div className="sf-toolbar">
         {categories.length > 0 ? (
-          <nav aria-label="Categories" className="segmented">
+          <nav aria-label={t(lang, "categories")} className="segmented">
             <Link href={href(slug, query, null)} aria-current={category ? undefined : "page"}>
-              All
+              {t(lang, "all")}
             </Link>
             {categories.map((c) => (
               <Link
@@ -254,54 +268,52 @@ export default async function CatalogPage({ params, searchParams }: Props) {
           </nav>
         ) : null}
         <p className="sf-count" role="status">
-          {countText(result.total, page, result.items.length, category, query)}
+          {countText(lang, result.total, page, result.items.length, category, query)}
         </p>
       </div>
 
       {result.items.length === 0 ? (
         <div className="sf-empty glass">
-          <p>Nothing found. Try a different search or browse all items.</p>
+          <p>{t(lang, "nothingFound")}</p>
           <Link href={`/s/${slug}`} className="btn btn-sm btn-secondary">
-            Show everything
+            {t(lang, "showEverything")}
           </Link>
         </div>
       ) : isServices ? (
         <ul className="sf-list glass">
           {result.items.map((offer) => (
-            <ServiceRow key={offer.id} slug={slug} offer={offer} />
+            <ServiceRow key={offer.id} slug={slug} offer={offer} lang={lang} />
           ))}
         </ul>
       ) : (
         <ul className="sf-grid">
           {result.items.map((offer, i) => (
-            <OfferCard key={offer.id} slug={slug} offer={offer} priority={i < 4} />
+            <OfferCard key={offer.id} slug={slug} offer={offer} priority={i < 4} lang={lang} />
           ))}
         </ul>
       )}
 
       {pageCount > 1 ? (
-        <nav aria-label="Pagination" className="sf-pagination">
+        <nav aria-label={t(lang, "pagination")} className="sf-pagination">
           {page > 1 ? (
             <Link
               href={href(slug, query, category, page - 1)}
               rel="prev"
               className="btn btn-sm btn-secondary"
             >
-              Previous
+              {t(lang, "previous")}
             </Link>
           ) : (
             <span aria-hidden="true" />
           )}
-          <span className="sf-count">
-            Page {page} of {pageCount}
-          </span>
+          <span className="sf-count">{t(lang, "pageOf", { page, total: pageCount })}</span>
           {page < pageCount ? (
             <Link
               href={href(slug, query, category, page + 1)}
               rel="next"
               className="btn btn-sm btn-secondary"
             >
-              Next
+              {t(lang, "next")}
             </Link>
           ) : (
             <span aria-hidden="true" />

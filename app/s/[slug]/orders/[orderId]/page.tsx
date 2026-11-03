@@ -3,7 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServices } from "@/server/container";
 import { formatDateTime } from "@/server/time";
+import { t } from "@/server/storefront/i18n";
 import { loadOrderStatus } from "@/server/storefront/order-status";
+import { storefrontLang } from "../../lang";
 import "./order-status.css";
 
 export const dynamic = "force-dynamic";
@@ -14,7 +16,8 @@ export const metadata: Metadata = { title: "Order status", robots: { index: fals
 
 export default async function OrderStatusPage({ params }: Props) {
   const { slug, orderId } = await params;
-  const view = await loadOrderStatus(await getServices(), slug, orderId);
+  const lang = await storefrontLang();
+  const view = await loadOrderStatus(await getServices(), slug, orderId, lang);
   if (!view) notFound();
 
   return (
@@ -31,7 +34,7 @@ export default async function OrderStatusPage({ params }: Props) {
         >
           <path d="M15 5l-7 7 7 7" />
         </svg>
-        Back to catalog
+        {t(lang, "backToCatalog")}
       </Link>
 
       <section className="os-panel glass" aria-labelledby="os-title">
@@ -39,9 +42,11 @@ export default async function OrderStatusPage({ params }: Props) {
           <div>
             <p className="sf-card-meta">{view.storeName}</p>
             <h1 id="os-title" className="os-title">
-              Order {view.number}
+              {t(lang, "orderTitle", { number: view.number })}
             </h1>
-            {view.firstName ? <p className="os-meta">For {view.firstName}</p> : null}
+            {view.firstName ? (
+              <p className="os-meta">{t(lang, "orderFor", { name: view.firstName })}</p>
+            ) : null}
           </div>
           <span className={view.cancelled ? "chip chip-warn" : "chip chip-ok"}>
             {view.statusLabel}
@@ -49,7 +54,7 @@ export default async function OrderStatusPage({ params }: Props) {
         </header>
 
         {view.cancelled ? null : (
-          <ol className="os-steps" aria-label="Order progress">
+          <ol className="os-steps" aria-label={t(lang, "orderProgress")}>
             {view.steps.map((step) => (
               <li
                 key={step.key}
@@ -64,23 +69,22 @@ export default async function OrderStatusPage({ params }: Props) {
         )}
 
         <p className="os-note">{view.note}</p>
-        <p className="os-meta">Questions? Ask the store assistant or use the contacts above.</p>
+        <p className="os-meta">{t(lang, "orderQuestions")}</p>
         <p className="os-meta">
-          Last updated{" "}
+          {t(lang, "lastUpdated")}{" "}
           <time dateTime={view.updatedAt.toISOString()}>{formatDateTime(view.updatedAt)}</time>
         </p>
       </section>
 
       <section className="os-panel glass" aria-labelledby="os-items-title">
-        <h2 id="os-items-title">Items</h2>
+        <h2 id="os-items-title">{t(lang, "items")}</h2>
         <ul className="os-lines">
           {view.lines.map((line, i) => (
             <li key={i}>
               <span>
                 {line.title}
                 <span className="os-qty">
-                  {" "}
-                  × {line.quantity} at {line.unitPriceLabel}
+                  {t(lang, "qtyAt", { quantity: line.quantity, price: line.unitPriceLabel })}
                 </span>
               </span>
               <span>{line.lineTotalLabel}</span>
@@ -88,7 +92,7 @@ export default async function OrderStatusPage({ params }: Props) {
           ))}
           {view.totalLabel ? (
             <li className="os-total">
-              <b>Total</b>
+              <b>{t(lang, "total")}</b>
               <b>{view.totalLabel}</b>
             </li>
           ) : null}

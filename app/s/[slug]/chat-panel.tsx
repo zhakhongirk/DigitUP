@@ -5,7 +5,6 @@ import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import {
   MAX_MESSAGE_CHARS,
-  UNAVAILABLE_NOTICE,
   SUGGESTIONS,
   UI_LABELS,
   chatReducer,
@@ -19,14 +18,14 @@ import {
   type StreamEvent,
   type UiLang,
 } from "./chat-state";
+import { t, type Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
 import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 import "./chat.css";
 
-type Props = { slug: string; storeName: string };
+type Props = { slug: string; storeName: string; lang: Lang };
 
-const NETWORK_ERROR = "Could not reach the store assistant. Check your connection and try again.";
-const GENERIC_ERROR = "Something went wrong. Please try again.";
+const POLL_INTERVAL_MS = 15000;
 
 function formatMoney(value: number | string, currency: string): string {
   const amount = Number(value);
@@ -46,36 +45,38 @@ function initials(name: string): string {
   );
 }
 
-async function errorMessage(res: Response): Promise<string> {
+async function errorMessage(res: Response, fallback: string): Promise<string> {
   try {
     const body = (await res.json()) as { message?: unknown };
     if (typeof body.message === "string" && body.message) return body.message;
   } catch {
     // Fall through to the generic text.
   }
-  return GENERIC_ERROR;
+  return fallback;
 }
 
 function OrderSummary({
   slug,
   order,
   lang,
+  uiLang,
   onConfirm,
 }: {
   slug: string;
   order: OrderCard;
   lang: UiLang;
+  uiLang: Lang;
   onConfirm: (orderId: string, phone: string) => void;
 }) {
   const sent = order.status !== "draft";
   const labels = UI_LABELS[lang];
   const [phone, setPhone] = useState("");
   return (
-    <section className="chat-order" aria-label="Order summary">
+    <section className="chat-order" aria-label={t(uiLang, "orderSummary")}>
       <div className="chat-order-head">
-        <b>Order summary</b>
+        <b>{t(uiLang, "orderSummary")}</b>
         <span className={sent ? "chip chip-ok" : "chip chip-neutral"}>
-          {sent ? "Submitted" : "Draft"}
+          {sent ? t(uiLang, "submitted") : t(uiLang, "draft")}
         </span>
       </div>
       <ul className="chat-order-lines">
@@ -89,13 +90,13 @@ function OrderSummary({
           </li>
         ))}
         <li className="chat-order-total">
-          <b>Total</b>
+          <b>{t(uiLang, "total")}</b>
           <b>{formatMoney(order.total, order.currency)}</b>
         </li>
       </ul>
       {sent ? (
         <p className="chat-order-sent">
-          Order sent to the store. The store will confirm it.{" "}
+          {t(uiLang, "orderSent")}{" "}
           <Link href={`/s/${encodeURIComponent(slug)}/orders/${order.orderId}`}>
             {labels.track}
           </Link>
@@ -135,9 +136,9 @@ function OrderSummary({
   );
 }
 
-function OfferCards({ slug, offers }: { slug: string; offers: OfferChip[] }) {
+function OfferCards({ slug, offers, lang }: { slug: string; offers: OfferChip[]; lang: Lang }) {
   return (
-    <ul className="chat-offers" aria-label="Offers from the store">
+    <ul className="chat-offers" aria-label={t(lang, "offersFromStore")}>
       {offers.map((o) => (
         <li key={o.id}>
           <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer">
@@ -153,7 +154,7 @@ function OfferCards({ slug, offers }: { slug: string; offers: OfferChip[] }) {
   );
 }
 
-export function ChatPanel({ slug, storeName }: Props) {
+export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [draft, setDraft] = useState("");
   const [fallback, setFallback] = useState(false);
@@ -161,6 +162,8 @@ export function ChatPanel({ slug, storeName }: Props) {
   const lastMessageRef = useRef("");
   const endRef = useRef<HTMLDivElement>(null);
   const base = `/api/s/${encodeURIComponent(slug)}/chat`;
+  const networkError = t(uiLang, "networkError");
+  const genericError = t(uiLang, "genericError");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -186,6 +189,33 @@ export function ChatPanel({ slug, storeName }: Props) {
     return () => controller.abort();
   }, [base]);
 
+  const loaded = state.loaded;
+  useEffect(() => {
+    if (!loaded) return;
+    let controller: AbortController | null = null;
+    const poll = async () => {
+      if (document.visibilityState === "hidden" || sendingRef.current) return;
+      controller = new AbortController();
+      try {
+        const res = await fetch(base, { signal: controller.signal });
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          messages?: { role: "user" | "assistant"; content: string }[];
+        };
+        if (!sendingRef.current && body.messages) {
+          dispatch({ type: "history_polled", messages: body.messages });
+        }
+      } catch {
+        // The next tick tries again.
+      }
+    };
+    const timer = setInterval(() => void poll(), POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [base, loaded]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView?.({ block: "nearest" });
   }, [state.items.length, state.activity, state.sending, state.error]);
@@ -204,7 +234,7 @@ export function ChatPanel({ slug, storeName }: Props) {
           return;
         }
         if (!res.ok || !res.body) {
-          dispatch({ type: "stream_failed", message: await errorMessage(res) });
+          dispatch({ type: "stream_failed", message: await errorMessage(res, genericError) });
           return;
         }
         const reader = res.body.getReader();
@@ -225,14 +255,14 @@ export function ChatPanel({ slug, storeName }: Props) {
           handle(parsed.events);
         }
         handle(flushNdjson(buffer + decoder.decode()).events);
-        if (!finished) dispatch({ type: "stream_failed", message: NETWORK_ERROR });
+        if (!finished) dispatch({ type: "stream_failed", message: networkError });
       } catch {
-        dispatch({ type: "stream_failed", message: NETWORK_ERROR });
+        dispatch({ type: "stream_failed", message: networkError });
       } finally {
         sendingRef.current = false;
       }
     },
-    [base],
+    [base, genericError, networkError],
   );
 
   const sendText = useCallback(
@@ -285,17 +315,21 @@ export function ChatPanel({ slug, storeName }: Props) {
           },
         );
         if (!res.ok) {
-          dispatch({ type: "confirm_failed", orderId, message: await errorMessage(res) });
+          dispatch({
+            type: "confirm_failed",
+            orderId,
+            message: await errorMessage(res, genericError),
+          });
           return;
         }
         const view = toOrderView(await res.json());
         if (view) dispatch({ type: "confirm_succeeded", order: view });
-        else dispatch({ type: "confirm_failed", orderId, message: GENERIC_ERROR });
+        else dispatch({ type: "confirm_failed", orderId, message: genericError });
       } catch {
-        dispatch({ type: "confirm_failed", orderId, message: NETWORK_ERROR });
+        dispatch({ type: "confirm_failed", orderId, message: networkError });
       }
     },
-    [slug],
+    [slug, genericError, networkError],
   );
 
   const onSubmit = (e: FormEvent) => {
@@ -311,7 +345,7 @@ export function ChatPanel({ slug, storeName }: Props) {
   };
 
   const disabled = !state.available;
-  const lang = lastUserLang(state.items);
+  const lang = lastUserLang(state.items, uiLang);
   const canSend = !disabled && !state.sending && draft.trim() !== "";
 
   return (
@@ -321,14 +355,17 @@ export function ChatPanel({ slug, storeName }: Props) {
           {initials(storeName)}
         </div>
         <div className="chat-head-text">
-          <h2 className="chat-title">{storeName} Assistant</h2>
-          <span className="chat-sub">
-            {fallback ? "Quick answers from the catalog" : "Answers only from the store's catalog"}
-          </span>
+          <h2 className="chat-title">{t(uiLang, "assistantTitle", { store: storeName })}</h2>
+          <span className="chat-sub">{t(uiLang, fallback ? "subFallback" : "subCatalog")}</span>
         </div>
       </div>
 
-      <div className="chat-log" role="log" aria-live="polite" aria-label={`Chat with ${storeName}`}>
+      <div
+        className="chat-log"
+        role="log"
+        aria-live="polite"
+        aria-label={t(uiLang, "chatWith", { store: storeName })}
+      >
         {disabled ? (
           <div className="chat-notice" role="status">
             <svg
@@ -342,12 +379,12 @@ export function ChatPanel({ slug, storeName }: Props) {
             >
               <path d="M4 6a2 2 0 012-2h12a2 2 0 012 2v9a2 2 0 01-2 2H9l-5 4z" />
             </svg>
-            <p>{UNAVAILABLE_NOTICE}</p>
+            <p>{t(uiLang, "unavailableNotice")}</p>
           </div>
         ) : null}
         {state.loaded && state.items.length === 0 && !disabled ? (
           <div className="chat-empty">
-            <p className="chat-note">Ask in English or Russian · Спрашивайте по-русски</p>
+            <p className="chat-note">{t(uiLang, "askInHint")}</p>
             <div className="chat-chips">
               {SUGGESTIONS.map((s) => (
                 <button
@@ -355,9 +392,9 @@ export function ChatPanel({ slug, storeName }: Props) {
                   type="button"
                   className="chat-chip"
                   disabled={state.sending}
-                  onClick={() => sendText(s.en)}
+                  onClick={() => sendText(s[uiLang])}
                 >
-                  {s.en} · {s.ru}
+                  {s[uiLang]}
                 </button>
               ))}
             </div>
@@ -367,13 +404,15 @@ export function ChatPanel({ slug, storeName }: Props) {
           if (item.kind === "message") {
             return (
               <div key={item.id} className={`chat-bubble chat-bubble-${item.role}`}>
-                <span className="sr-only">{item.role === "user" ? "You: " : "Assistant: "}</span>
+                <span className="sr-only">
+                  {item.role === "user" ? t(uiLang, "you") : t(uiLang, "assistant")}
+                </span>
                 {item.content}
               </div>
             );
           }
           if (item.kind === "offers") {
-            return <OfferCards key={item.id} slug={slug} offers={item.offers} />;
+            return <OfferCards key={item.id} slug={slug} offers={item.offers} lang={uiLang} />;
           }
           if (item.kind === "order") {
             return (
@@ -382,6 +421,7 @@ export function ChatPanel({ slug, storeName }: Props) {
                 slug={slug}
                 order={item.order}
                 lang={lang}
+                uiLang={uiLang}
                 onConfirm={confirm}
               />
             );
@@ -407,7 +447,7 @@ export function ChatPanel({ slug, storeName }: Props) {
             <span>{state.error.message}</span>
             {state.error.retryable ? (
               <button type="button" className="chat-link" onClick={retry}>
-                Try again
+                {t(uiLang, "tryAgain")}
               </button>
             ) : null}
           </p>
@@ -417,20 +457,25 @@ export function ChatPanel({ slug, storeName }: Props) {
 
       <form className="chat-form" onSubmit={onSubmit}>
         <label htmlFor="chat-input" className="sr-only">
-          Message to the store assistant
+          {t(uiLang, "messageLabel")}
         </label>
         <textarea
           id="chat-input"
           className="chat-input"
           rows={1}
           maxLength={MAX_MESSAGE_CHARS}
-          placeholder={disabled ? "Assistant unavailable" : UI_LABELS[lang].placeholder}
+          placeholder={disabled ? t(uiLang, "assistantUnavailable") : UI_LABELS[lang].placeholder}
           value={draft}
           disabled={disabled}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
         />
-        <button type="submit" className="chat-send" aria-label="Send" disabled={!canSend}>
+        <button
+          type="submit"
+          className="chat-send"
+          aria-label={t(uiLang, "send")}
+          disabled={!canSend}
+        >
           <svg
             width="16"
             height="16"

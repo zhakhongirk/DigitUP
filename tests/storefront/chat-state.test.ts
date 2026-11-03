@@ -187,3 +187,55 @@ describe("interface language", () => {
     expect(s.activity).toBe("Ищу в каталоге");
   });
 });
+
+describe("history polling", () => {
+  const loaded = run([
+    { type: "history_loaded", available: true, messages: [{ role: "user", content: "Hi" }] },
+  ]);
+
+  it("appends a new store answer once", () => {
+    const messages = [
+      { role: "user" as const, content: "Hi" },
+      { role: "assistant" as const, content: "Answer from the store: Yes" },
+    ];
+    const once = run([{ type: "history_polled", messages }], loaded);
+    const twice = run([{ type: "history_polled", messages }], once);
+    expect(twice.items.map((i) => (i.kind === "message" ? i.content : i.kind))).toEqual([
+      "Hi",
+      "Answer from the store: Yes",
+    ]);
+  });
+
+  it("ignores other assistant messages and skips while sending", () => {
+    const other = run(
+      [{ type: "history_polled", messages: [{ role: "assistant", content: "Sure" }] }],
+      loaded,
+    );
+    expect(other.items).toHaveLength(1);
+    const busy = run([{ type: "user_sent", text: "Q" }], loaded);
+    const polled = run(
+      [
+        {
+          type: "history_polled",
+          messages: [{ role: "assistant", content: "Ответ магазина: Да" }],
+        },
+      ],
+      busy,
+    );
+    expect(polled.items).toHaveLength(2);
+  });
+
+  it("keeps order cards in place", () => {
+    const withCard = run([ev({ type: "tool_result", name: "create_order", data: draft })], loaded);
+    const next = run(
+      [
+        {
+          type: "history_polled",
+          messages: [{ role: "assistant", content: "Ответ магазина: Да" }],
+        },
+      ],
+      withCard,
+    );
+    expect(next.items.map((i) => i.kind)).toEqual(["message", "order", "message"]);
+  });
+});

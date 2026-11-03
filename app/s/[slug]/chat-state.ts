@@ -203,6 +203,7 @@ export type ChatAction =
       available: boolean;
       messages: { role: "user" | "assistant"; content: string }[];
     }
+  | { type: "history_polled"; messages: { role: "user" | "assistant"; content: string }[] }
   | { type: "history_failed" }
   | { type: "user_sent"; text: string }
   | { type: "retry_started" }
@@ -286,12 +287,37 @@ function flushOffers(state: ChatState): ChatState {
   return appendItem({ ...state, pendingOffers: [] }, (id) => ({ kind: "offers", id, offers }));
 }
 
-export function lastUserLang(items: ChatItem[]): UiLang {
+export function lastUserLang(items: ChatItem[], fallback: UiLang = "en"): UiLang {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
     if (item?.kind === "message" && item.role === "user") return detectUiLang(item.content);
   }
-  return "en";
+  return fallback;
+}
+
+const STORE_ANSWER = /^(Answer from the store|Ответ магазина): /;
+
+/** Appends store answers that arrived while the chat was open and are not shown yet. */
+export function mergeHistory(
+  state: ChatState,
+  messages: { role: "user" | "assistant"; content: string }[],
+): ChatState {
+  const shown = new Map<string, number>();
+  for (const item of state.items) {
+    if (item.kind !== "message" || item.role !== "assistant") continue;
+    shown.set(item.content, (shown.get(item.content) ?? 0) + 1);
+  }
+  let next = state;
+  for (const m of messages) {
+    if (m.role !== "assistant" || !STORE_ANSWER.test(m.content)) continue;
+    const left = shown.get(m.content) ?? 0;
+    if (left > 0) {
+      shown.set(m.content, left - 1);
+      continue;
+    }
+    next = appendItem(next, (id) => ({ kind: "message", id, role: m.role, content: m.content }));
+  }
+  return next;
 }
 
 function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
@@ -356,6 +382,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       return next;
     }
+    case "history_polled":
+      return state.sending ? state : mergeHistory(state, action.messages);
     case "history_failed":
       return { ...state, loaded: true };
     case "user_sent":

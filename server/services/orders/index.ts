@@ -12,7 +12,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import type { Db, DbTx } from "@/db/client";
-import { conversations, inquiries, offers, orders } from "@/db/schema";
+import { conversations, inquiries, messages, offers, orders } from "@/db/schema";
 import { EVENTS, type EventPublisher } from "@/server/events/types";
 import { recordAudit } from "../audit";
 import { parseOrThrow } from "../catalog/ops";
@@ -161,6 +161,33 @@ const asList = <T>(value: T | T[]): T[] => (Array.isArray(value) ? value : [valu
 
 function assertUuid(id: string, message: string) {
   if (!z.uuid().safeParse(id).success) throw new ServiceError("not_found", message);
+}
+
+async function postAnswerToConversation(tx: DbTx, conversationId: string, answer: string) {
+  const [lastUser] = await tx
+    .select({ content: messages.content })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.role, "user")))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  const [last] = await tx
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  const russian = /[а-яё]/i.test(lastUser?.content ?? "");
+  const prefix = russian ? "Ответ магазина" : "Answer from the store";
+  await tx.insert(messages).values({
+    conversationId,
+    role: "assistant",
+    content: `${prefix}: ${answer}`,
+    createdAt: new Date(Math.max(Date.now(), last ? last.createdAt.getTime() + 1 : 0)),
+  });
+  await tx
+    .update(conversations)
+    .set({ updatedAt: sql`now()` })
+    .where(eq(conversations.id, conversationId));
 }
 
 async function assertConversation(tx: DbTx, ctx: TenantContext, conversationId?: string) {
@@ -624,6 +651,9 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           before: { status: before.status, answer: before.answer },
           after: { status: updated!.status, answer },
         });
+        if (before.conversationId && before.answer !== answer) {
+          await postAnswerToConversation(tx, before.conversationId, answer);
+        }
         return updated!;
       });
     },

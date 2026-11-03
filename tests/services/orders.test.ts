@@ -563,6 +563,41 @@ describe("inquiries", () => {
     expect(entry?.after).toEqual({ status: "completed", answer: "Yes, in stock." });
   });
 
+  it("posts the answer into the linked conversation once", async () => {
+    const { orders, ctx, db, events } = await setup();
+    const conversations = createConversationsService({ db, events });
+    const conv = await conversations.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await conversations.appendMessages(ctx, conv.id, [{ role: "user", content: "Hello" }]);
+    const inquiry = await orders.createInquiry(ctx, { subject: "Q", conversationId: conv.id });
+    await orders.answerInquiry(ctx, inquiry.id, "Yes");
+    await orders.answerInquiry(ctx, inquiry.id, "Yes");
+    const rows = await conversations.listMessages(ctx, conv.id);
+    expect(rows.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Hello"],
+      ["assistant", "Answer from the store: Yes"],
+    ]);
+  });
+
+  it("answers in Russian when the shopper wrote in Russian", async () => {
+    const { orders, ctx, db, events } = await setup();
+    const conversations = createConversationsService({ db, events });
+    const conv = await conversations.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await conversations.appendMessages(ctx, conv.id, [{ role: "user", content: "Привет" }]);
+    const inquiry = await orders.createInquiry(ctx, { subject: "Q", conversationId: conv.id });
+    await orders.answerInquiry(ctx, inquiry.id, "Да");
+    const rows = await conversations.listMessages(ctx, conv.id);
+    expect(rows.at(-1)?.content).toBe("Ответ магазина: Да");
+  });
+
+  it("adds no message for an inquiry without a conversation", async () => {
+    const { orders, ctx, db, events } = await setup();
+    const conversations = createConversationsService({ db, events });
+    const conv = await conversations.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const inquiry = await orders.createInquiry(ctx, { subject: "Q" });
+    await orders.answerInquiry(ctx, inquiry.id, "Yes");
+    expect(await conversations.listMessages(ctx, conv.id)).toEqual([]);
+  });
+
   it("rejects empty or oversized answers, non-owners and other tenants", async () => {
     const a = await setup();
     const b = await setup();

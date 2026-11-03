@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { loadOffer, loadStore } from "@/server/storefront/data";
+import { t } from "@/server/storefront/i18n";
 import {
   absoluteImageUrl,
   buildPageMeta,
@@ -12,6 +13,7 @@ import {
   productJsonLd,
 } from "@/server/storefront/seo";
 import { orderMessage, questionDraft } from "../../chat-bridge";
+import { storefrontLang } from "../../lang";
 import { OfferImage } from "../../offer-image";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +41,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function OfferPage({ params }: Props) {
   const { slug, offerId } = await params;
+  const lang = await storefrontLang();
   const services = await getServices();
   const store = await loadStore(services, slug);
   if (!store) notFound();
@@ -77,7 +80,7 @@ export default async function OfferPage({ params }: Props) {
         >
           <path d="M15 5l-7 7 7 7" />
         </svg>
-        Back to catalog
+        {t(lang, "backToCatalog")}
       </Link>
 
       <div className="sf-detail-panel glass">
@@ -93,7 +96,7 @@ export default async function OfferPage({ params }: Props) {
         ) : (
           <div className="sf-detail-media sf-tile">
             <span className="sf-tile-name">{offer.tileLabel}</span>
-            <span className="sf-tile-note">Photo coming soon</span>
+            <span className="sf-tile-note">{t(lang, "photoSoon")}</span>
           </div>
         )}
 
@@ -110,7 +113,7 @@ export default async function OfferPage({ params }: Props) {
                   : "sf-price sf-price-large sf-price-missing"
               }
             >
-              {offer.priceLabel}
+              {offer.hasPrice ? offer.priceLabel : t(lang, "priceOnRequest")}
             </span>
             <span className={`status status-${offer.availability}`}>{offer.availabilityLabel}</span>
           </div>
@@ -124,7 +127,7 @@ export default async function OfferPage({ params }: Props) {
                 className="btn"
                 data-chat-send={orderMessage(offer.title, bookable ? "book" : "order")}
               >
-                {bookable ? "Book" : "Order"}
+                {t(lang, bookable ? "book" : "order")}
               </a>
             ) : null}
             <a
@@ -132,14 +135,11 @@ export default async function OfferPage({ params }: Props) {
               className="btn btn-secondary"
               data-chat-draft={questionDraft(offer.title)}
             >
-              Ask the store
+              {t(lang, "askStore")}
             </a>
             {bookable || offer.canOrder ? null : (
               <p className="sf-hint">
-                {offer.hasPrice
-                  ? "This item cannot be ordered right now."
-                  : "The store has not set a price yet."}{" "}
-                Ask the store to confirm details.
+                {t(lang, offer.hasPrice ? "cannotOrder" : "noPriceYet")} {t(lang, "askConfirm")}
               </p>
             )}
           </div>
@@ -148,7 +148,7 @@ export default async function OfferPage({ params }: Props) {
 
       {offer.attributes.length > 0 ? (
         <section className="sf-attrs-panel glass" aria-labelledby="sf-details-title">
-          <h2 id="sf-details-title">Details</h2>
+          <h2 id="sf-details-title">{t(lang, "details")}</h2>
           <dl className="sf-attr-table">
             {offer.attributes.map((a) => (
               <div key={a.key}>
