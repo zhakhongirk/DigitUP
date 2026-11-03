@@ -8,13 +8,14 @@ import { z } from "zod";
 import type { Services } from "@/server/container";
 import { offerUpsertSchema, policiesPatchSchema } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
+import { answerInquirySchema } from "@/server/services/orders";
 import { businessModelSchema, offerTypeSchema } from "@/shared/business-model";
 import { runTool } from "../tools";
 import { inquiryView, orderView, ownerOffer } from "../views";
 
 export interface BusinessMcpOptions {
   ctx: TenantContext;
-  services: Pick<Services, "catalog" | "orders" | "approvals" | "ingestion">;
+  services: Pick<Services, "catalog" | "orders" | "approvals" | "ingestion" | "conversations">;
 }
 
 export const BUSINESS_TOOLS = [
@@ -31,10 +32,18 @@ export const BUSINESS_TOOLS = [
   "list_orders",
   "get_order",
   "update_order_status",
+  "list_inquiries",
+  "get_inquiry",
+  "answer_inquiry",
+  "update_inquiry_status",
+  "list_conversations",
+  "get_conversation",
   "list_change_sets",
   "approve_change_set",
   "reject_change_set",
 ] as const;
+
+const inquiryStatusSchema = z.enum(["new", "in_progress", "completed"]);
 
 const reasonSchema = z
   .string()
@@ -52,7 +61,7 @@ function pendingApproval(changeSetId: string, summary: string) {
 }
 
 export function createBusinessMcpServer({ ctx, services }: BusinessMcpOptions): McpServer {
-  const { catalog, orders, approvals, ingestion } = services;
+  const { catalog, orders, approvals, ingestion, conversations } = services;
 
   const server = new McpServer(
     { name: "storefront-business", version: "1.0.0" },
@@ -337,6 +346,142 @@ export function createBusinessMcpServer({ ctx, services }: BusinessMcpOptions): 
       runTool("update_order_status", async () =>
         orderView(await orders.updateOrderStatus(ctx, order_id, status)),
       ),
+  );
+
+  server.registerTool(
+    "list_inquiries",
+    {
+      description: "Customer questions (inquiries), newest first.",
+      inputSchema: {
+        status: inquiryStatusSchema.optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+        offset: z.number().int().min(0).default(0),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    (args) =>
+      runTool("list_inquiries", async () => {
+        const rows = await orders.listInquiries(ctx, {
+          status: args.status,
+          limit: args.limit,
+          offset: args.offset,
+        });
+        return rows.map((row) => ({
+          inquiry_id: row.id,
+          subject: row.subject,
+          status: row.status,
+          contact_name: (row.contact as { name?: string }).name ?? null,
+          created_at: row.createdAt.toISOString(),
+          answered: row.answeredAt !== null,
+        }));
+      }),
+  );
+
+  server.registerTool(
+    "get_inquiry",
+    {
+      description:
+        "One inquiry in full: details, contact, answer and the conversation it came from.",
+      inputSchema: { inquiry_id: z.uuid() },
+      annotations: { readOnlyHint: true },
+    },
+    ({ inquiry_id }) =>
+      runTool("get_inquiry", async () => {
+        const inquiry = await orders.getInquiry(ctx, inquiry_id);
+        if (!inquiry) throw new ServiceError("not_found", "Inquiry not found");
+        return {
+          ...inquiryView(inquiry),
+          answer: inquiry.answer,
+          answered_at: inquiry.answeredAt?.toISOString() ?? null,
+          updated_at: inquiry.updatedAt.toISOString(),
+        };
+      }),
+  );
+
+  if (ctx.actor === "owner") {
+    server.registerTool(
+      "answer_inquiry",
+      {
+        description:
+          "Store the owner's reply to an inquiry and complete it. Available in owner sessions only.",
+        inputSchema: { inquiry_id: z.uuid(), answer: answerInquirySchema },
+      },
+      ({ inquiry_id, answer }) =>
+        runTool("answer_inquiry", async () => {
+          const inquiry = await orders.answerInquiry(ctx, inquiry_id, answer);
+          return {
+            ...inquiryView(inquiry),
+            answer: inquiry.answer,
+            answered_at: inquiry.answeredAt?.toISOString() ?? null,
+          };
+        }),
+    );
+  }
+
+  server.registerTool(
+    "update_inquiry_status",
+    {
+      description: "Move an inquiry between new, in_progress and completed.",
+      inputSchema: { inquiry_id: z.uuid(), status: inquiryStatusSchema },
+    },
+    ({ inquiry_id, status }) =>
+      runTool("update_inquiry_status", async () =>
+        inquiryView(await orders.updateInquiryStatus(ctx, inquiry_id, status)),
+      ),
+  );
+
+  server.registerTool(
+    "list_conversations",
+    {
+      description: "Recent conversations, most recently active first.",
+      inputSchema: {
+        channel: z.enum(["workspace", "storefront", "external_agent"]).optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ channel, limit }) =>
+      runTool("list_conversations", async () => {
+        const rows = await conversations.list(ctx, { channel, limit });
+        return rows.map((row) => ({
+          conversation_id: row.id,
+          agent: row.agent,
+          channel: row.channel,
+          status: row.status,
+          created_at: row.createdAt.toISOString(),
+          updated_at: row.updatedAt.toISOString(),
+        }));
+      }),
+  );
+
+  server.registerTool(
+    "get_conversation",
+    {
+      description: "The latest user and assistant messages of one conversation, oldest first.",
+      inputSchema: {
+        conversation_id: z.uuid(),
+        limit: z.number().int().min(1).max(200).default(50),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    ({ conversation_id, limit }) =>
+      runTool("get_conversation", async () => {
+        const conversation = await conversations.get(ctx, conversation_id);
+        if (!conversation) throw new ServiceError("not_found", "Conversation not found");
+        const rows = await conversations.listMessages(ctx, conversation_id, { limit });
+        return {
+          conversation_id: conversation.id,
+          channel: conversation.channel,
+          status: conversation.status,
+          messages: rows
+            .filter((m) => (m.role === "user" || m.role === "assistant") && m.content)
+            .map((m) => ({
+              role: m.role,
+              text: m.content,
+              created_at: m.createdAt.toISOString(),
+            })),
+        };
+      }),
   );
 
   server.registerTool(

@@ -116,7 +116,7 @@ describe("customer MCP endpoint", () => {
     expect(response.status).toBe(200);
     const names = (await rpc(response)).result?.tools?.map((t) => t.name).sort();
     expect(names).toEqual([...CUSTOMER_TOOLS].sort());
-    expect(names).toHaveLength(7);
+    expect(names).toHaveLength(8);
   });
 
   it("runs search_offers through HTTP", async () => {

@@ -512,6 +512,165 @@ describe("business MCP tools", () => {
       await mcp.close();
     });
   });
+
+  describe("inquiries and conversations", () => {
+    const customer = (owner: { tenantId: string }) =>
+      ({ tenantId: owner.tenantId, actor: "customer_agent" }) as const;
+
+    it("lists inquiries with a status filter and paging", async () => {
+      const owner = await setupTenant();
+      const first = await services.orders.createInquiry(customer(owner), {
+        subject: "First",
+        contact: { name: "Aigerim" },
+      });
+      const second = await createInquiry(owner);
+      await services.orders.updateInquiryStatus(owner, second.id, "in_progress");
+      const mcp = await openAs(owner, "business_agent");
+
+      type Row = { inquiry_id: string; contact_name: string | null; answered: boolean };
+      const all = (await mcp.call("list_inquiries")).data as Row[];
+      expect(all.map((r) => r.inquiry_id).sort()).toEqual([first.id, second.id].sort());
+      expect(all.find((r) => r.inquiry_id === first.id)).toMatchObject({
+        contact_name: "Aigerim",
+        answered: false,
+      });
+
+      const filtered = (await mcp.call("list_inquiries", { status: "in_progress" })).data as Row[];
+      expect(filtered.map((r) => r.inquiry_id)).toEqual([second.id]);
+
+      const page = (await mcp.call("list_inquiries", { limit: 1, offset: 1 })).data as Row[];
+      expect(page).toHaveLength(1);
+      await mcp.close();
+    });
+
+    it("returns one inquiry in full and not_found for unknown ids", async () => {
+      const owner = await setupTenant();
+      const conversation = await services.conversations.getOrCreate(customer(owner), {
+        agent: "customer",
+        channel: "storefront",
+        sessionKey: "inq-session",
+      });
+      const inquiry = await services.orders.createInquiry(customer(owner), {
+        subject: "Size 50?",
+        details: "Need wide fit",
+        contact: { name: "Dana", phone: "+77001112233" },
+        conversationId: conversation.id,
+      });
+      const mcp = await openAs(owner, "business_agent");
+
+      const got = await mcp.call("get_inquiry", { inquiry_id: inquiry.id });
+      expect(got.data).toMatchObject({
+        inquiry_id: inquiry.id,
+        details: "Need wide fit",
+        contact: { name: "Dana", phone: "+77001112233" },
+        conversation_id: conversation.id,
+        answer: null,
+        answered_at: null,
+      });
+
+      const missing = await mcp.call("get_inquiry", { inquiry_id: crypto.randomUUID() });
+      expect(missing.isError).toBe(true);
+      expect(missing.text).toMatch(/^not_found/);
+      await mcp.close();
+    });
+
+    it("lets an owner session answer an inquiry", async () => {
+      const owner = await setupTenant();
+      const inquiry = await createInquiry(owner);
+      const mcp = await openAs(owner, "owner");
+
+      const answered = await mcp.call("answer_inquiry", {
+        inquiry_id: inquiry.id,
+        answer: "Yes, size 50 is in stock.",
+      });
+      expect(answered.data).toMatchObject({
+        status: "completed",
+        answer: "Yes, size 50 is in stock.",
+      });
+      const got = await mcp.call("get_inquiry", { inquiry_id: inquiry.id });
+      expect((got.data as { answered_at: string | null }).answered_at).not.toBeNull();
+
+      const empty = await mcp.call("answer_inquiry", { inquiry_id: inquiry.id, answer: "  " });
+      expect(empty.isError).toBe(true);
+      await mcp.close();
+    });
+
+    it("does not offer answer_inquiry to the business agent", async () => {
+      const owner = await setupTenant();
+      const inquiry = await createInquiry(owner);
+      const agent = await openAs(owner, "business_agent");
+      expect(await agent.toolNames()).not.toContain("answer_inquiry");
+      const call = await agent.call("answer_inquiry", { inquiry_id: inquiry.id, answer: "Hi" });
+      expect(call.isError).toBe(true);
+      const unchanged = await services.orders.getInquiry(owner, inquiry.id);
+      expect(unchanged).toMatchObject({ answer: null, status: "new" });
+      await agent.close();
+    });
+
+    it("updates the inquiry status", async () => {
+      const owner = await setupTenant();
+      const inquiry = await createInquiry(owner);
+      const mcp = await openAs(owner, "business_agent");
+
+      const moved = await mcp.call("update_inquiry_status", {
+        inquiry_id: inquiry.id,
+        status: "in_progress",
+      });
+      expect(moved.data).toMatchObject({ inquiry_id: inquiry.id, status: "in_progress" });
+
+      const bad = await mcp.call("update_inquiry_status", { inquiry_id: inquiry.id, status: "x" });
+      expect(bad.isError).toBe(true);
+      const missing = await mcp.call("update_inquiry_status", {
+        inquiry_id: crypto.randomUUID(),
+        status: "completed",
+      });
+      expect(missing.text).toMatch(/^not_found/);
+      await mcp.close();
+    });
+
+    it("lists conversations by channel and reads user and assistant messages only", async () => {
+      const owner = await setupTenant();
+      const shop = await services.conversations.getOrCreate(customer(owner), {
+        agent: "customer",
+        channel: "storefront",
+        sessionKey: "s1",
+      });
+      await services.conversations.getOrCreate(customer(owner), {
+        agent: "customer",
+        channel: "external_agent",
+        sessionKey: "s2",
+      });
+      await services.conversations.appendMessages(customer(owner), shop.id, [
+        { role: "system", content: "secret prompt" },
+        { role: "user", content: "Hello" },
+        { role: "assistant", content: null, toolCalls: [{ name: "search_offers" }] },
+        { role: "tool", content: "{}" },
+        { role: "assistant", content: "Hi there" },
+      ]);
+      const mcp = await openAs(owner, "business_agent");
+
+      const all = (await mcp.call("list_conversations")).data as { channel: string }[];
+      expect(all).toHaveLength(2);
+      const filtered = (await mcp.call("list_conversations", { channel: "storefront" })).data as {
+        conversation_id: string;
+      }[];
+      expect(filtered.map((c) => c.conversation_id)).toEqual([shop.id]);
+
+      const got = (await mcp.call("get_conversation", { conversation_id: shop.id })).data as {
+        channel: string;
+        messages: { role: string; text: string }[];
+      };
+      expect(got.channel).toBe("storefront");
+      expect(got.messages.map((m) => [m.role, m.text])).toEqual([
+        ["user", "Hello"],
+        ["assistant", "Hi there"],
+      ]);
+
+      const missing = await mcp.call("get_conversation", { conversation_id: crypto.randomUUID() });
+      expect(missing.text).toMatch(/^not_found/);
+      await mcp.close();
+    });
+  });
 });
 
 describe("business MCP tenant isolation", () => {
@@ -532,7 +691,21 @@ describe("business MCP tenant isolation", () => {
       draft_id: string;
     };
     await agentA.close();
-    return { a, b, runner, boot, order, inquiry, changeSetId: changeSet.change_set_id, draft };
+    const conversation = await services.conversations.getOrCreate(
+      { tenantId: a.tenantId, actor: "customer_agent" },
+      { agent: "customer", channel: "storefront", sessionKey: "iso" },
+    );
+    return {
+      a,
+      b,
+      runner,
+      boot,
+      order,
+      inquiry,
+      conversation,
+      changeSetId: changeSet.change_set_id,
+      draft,
+    };
   }
 
   it("does not show another tenant's data", async () => {
@@ -555,6 +728,22 @@ describe("business MCP tenant isolation", () => {
     expect(list.inquiries).toEqual([]);
 
     expect((await mcp.call("list_change_sets")).data).toEqual([]);
+    expect((await mcp.call("list_inquiries")).data).toEqual([]);
+    expect((await mcp.call("list_conversations")).data).toEqual([]);
+
+    const inquiry = await mcp.call("get_inquiry", { inquiry_id: t.inquiry.id });
+    expect(inquiry.text).toMatch(/^not_found/);
+    const conversation = await mcp.call("get_conversation", {
+      conversation_id: t.conversation.id,
+    });
+    expect(conversation.text).toMatch(/^not_found/);
+    const status = await mcp.call("update_inquiry_status", {
+      inquiry_id: t.inquiry.id,
+      status: "completed",
+    });
+    expect(status.text).toMatch(/^not_found/);
+    const answer = await mcp.call("answer_inquiry", { inquiry_id: t.inquiry.id, answer: "x" });
+    expect(answer.text).toMatch(/^not_found/);
 
     for (const id of [t.order.id, t.inquiry.id]) {
       const got = await mcp.call("get_order", { id });

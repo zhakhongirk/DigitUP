@@ -302,6 +302,26 @@ describe("create_order", () => {
     expect(mine()).toEqual([{ tenantId: ctx.tenantId, orderId: d.order_id }]);
   });
 
+  it("takes contact details from the confirming call", async () => {
+    const { ctx, offers } = await seededTenant();
+    const offer = pick(offers, orderable);
+    const mcp = await customer(ctx);
+    const idempotency_key = key();
+    const items = [{ offer_id: offer.id, quantity: 1 }];
+
+    await mcp.call("create_order", { idempotency_key, items });
+    const res = await mcp.call("create_order", {
+      idempotency_key,
+      items,
+      submit: true,
+      contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+    });
+    const data = res.data as { order_id: string; status: string };
+    expect(data.status).toBe("submitted");
+    const order = await services.orders.getOrder(ctx, data.order_id);
+    expect(order?.contact).toMatchObject({ name: "Aidar", phone: "+7 701 000 11 22" });
+  });
+
   it("records the source given to the server on the order", async () => {
     const { ctx, offers } = await seededTenant();
     const offer = pick(offers, orderable);
@@ -374,6 +394,46 @@ describe("submit_inquiry", () => {
       .ofType("inquiry.submitted")
       .filter((e) => e.tenantId === ctx.tenantId);
     expect(events).toEqual([{ tenantId: ctx.tenantId, inquiryId: data.inquiry_id }]);
+  });
+});
+
+describe("get_inquiry", () => {
+  it("returns the status and the owner's answer", async () => {
+    const { ctx } = await seededTenant();
+    const mcp = await customer(ctx);
+    const created = await mcp.call("submit_inquiry", { subject: "Price question" });
+    const { inquiry_id } = created.data as { inquiry_id: string };
+
+    const pending = await mcp.call("get_inquiry", { inquiry_id });
+    expect(pending.isError).toBe(false);
+    expect(pending.data).toEqual({
+      inquiry_id,
+      subject: "Price question",
+      status: "new",
+      answer: null,
+      answered_at: null,
+    });
+
+    await services.orders.answerInquiry({ ...ctx, actor: "owner" }, inquiry_id, "It costs 10.");
+    const answered = (await mcp.call("get_inquiry", { inquiry_id })).data as {
+      status: string;
+      answer: string;
+      answered_at: string;
+    };
+    expect(answered).toMatchObject({ status: "completed", answer: "It costs 10." });
+    expect(Number.isNaN(Date.parse(answered.answered_at))).toBe(false);
+  });
+
+  it("does not expose another tenant's inquiry", async () => {
+    const a = await seededTenant();
+    const b = await seededTenant();
+    const mcpA = await customer(a.ctx);
+    const { inquiry_id } = (await mcpA.call("submit_inquiry", { subject: "Q" })).data as {
+      inquiry_id: string;
+    };
+    const res = await (await customer(b.ctx)).call("get_inquiry", { inquiry_id });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("not_found");
   });
 });
 

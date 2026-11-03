@@ -4,7 +4,7 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { AgentUnavailableError, type CustomerAgent } from "@/server/agents/customer";
+import type { CustomerAgent } from "@/server/agents/customer";
 import type { TenantContext } from "@/server/services/context";
 import { errorResult, jsonResult } from "../tools";
 
@@ -49,9 +49,6 @@ export function createPublicMcpServer({ ctx, storeName, agent }: PublicMcpOption
         });
         return jsonResult({ reply: result.reply, session_id });
       } catch (error) {
-        if (error instanceof AgentUnavailableError) {
-          return errorResult("unavailable: the store assistant is not available right now");
-        }
         console.error("[mcp] talk_to_store failed", error);
         return errorResult("internal_error: the store assistant failed, try again later");
       }

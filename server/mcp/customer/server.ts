@@ -28,6 +28,7 @@ export const CUSTOMER_TOOLS = [
   "get_business_info",
   "create_order",
   "submit_inquiry",
+  "get_inquiry",
 ] as const;
 
 const contactSchema = z
@@ -272,6 +273,28 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
         return {
           ...inquiryView(inquiry),
           next_step: "The inquiry was sent to the store. The owner will reply to the shopper.",
+        };
+      }),
+  );
+
+  server.registerTool(
+    "get_inquiry",
+    {
+      description:
+        "Status of a sent inquiry and the owner's answer once there is one. answer is null until the owner replies.",
+      inputSchema: { inquiry_id: z.uuid() },
+      annotations: { readOnlyHint: true },
+    },
+    ({ inquiry_id }) =>
+      runTool("get_inquiry", async () => {
+        const inquiry = await orders.getInquiry(ctx, inquiry_id);
+        if (!inquiry) throw new ServiceError("not_found", "Inquiry not found");
+        return {
+          inquiry_id: inquiry.id,
+          subject: inquiry.subject,
+          status: inquiry.status,
+          answer: inquiry.answer,
+          answered_at: inquiry.answeredAt?.toISOString() ?? null,
         };
       }),
   );

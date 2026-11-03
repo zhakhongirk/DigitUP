@@ -136,16 +136,20 @@ describe("public MCP endpoint", () => {
     ]);
   });
 
-  it("returns an unavailable tool error without a model", async () => {
+  it("answers from the catalog without a model", async () => {
     const ctx = await liveStore();
     const res = await publicCall(
       ctx.slug,
-      callBody("talk_to_store", { message: "hi", session_id: SESSION }),
+      callBody("talk_to_store", { message: "how much is the runner?", session_id: SESSION }),
       null,
     );
     const body = await rpc(res);
-    expect(body.result?.isError).toBe(true);
-    expect(body.result?.content?.[0]?.text).toContain("unavailable");
+    expect(body.result?.isError).toBeFalsy();
+    const payload = JSON.parse(body.result!.content![0]!.text) as { reply: string };
+    expect(payload.reply).toContain("Runner: 100 KZT");
+    const [conversation] = await services.conversations.list(ctx, { channel: "external_agent" });
+    const rows = await services.conversations.listMessages(ctx, conversation!.id);
+    expect(rows.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
   });
 
   it("returns a generic tool error when the agent crashes", async () => {
