@@ -16,6 +16,7 @@ const AUDITED_ACTIONS = [
   "inquiry.answered",
   "inquiry.created",
   "inquiry.status_changed",
+  "intent.reported",
   "offer.archived",
   "offer.created",
   "offer.price_updated",

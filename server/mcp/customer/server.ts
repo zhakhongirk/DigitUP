@@ -16,18 +16,26 @@ import {
 } from "@/server/services/orders";
 import type { WebhookService } from "@/server/services/webhooks";
 import { WebhookUrlError } from "@/server/services/webhooks/guard";
-import { attributeValueSchema } from "@/shared/business-model";
 import type { RateLimitResult } from "@/server/http/rate-limit";
+import type { IntentTracking } from "@/server/services/intent";
+import { registerIntentTools } from "../intent-tools";
 import { errorResult, runTool } from "../tools";
-import { inquiryView, orderView, policiesWithStates, priceLabel, publicOffer } from "../views";
+import { registerRawTools } from "./raw-tools";
+import { inquiryView, orderView, policiesWithStates } from "../views";
 
 export interface CustomerMcpOptions {
   ctx: TenantContext;
-  services: Pick<Services, "catalog" | "orders">;
+  services: Pick<Services, "catalog" | "orders" | "intent">;
   /** Where the conversation happens; recorded on orders. */
   source: OrderSource;
   /** Conversation the agent is serving, bound by the server, never taken from the model. */
   conversationId?: string;
+  /** Who is asking, for measuring find_offers answers; defaults to the order source. */
+  tracking?: IntentTracking;
+  /** Count raw catalog calls that follow find_offers; set for outside callers only. */
+  trackRaw?: boolean;
+  /** Used to build offer links in find_offers results. */
+  store?: { slug: string; baseUrl?: string };
   /** Present only for API-key agents; the storefront chat assistant never manages webhooks. */
   webhooks?: WebhookService;
   guards?: {
@@ -39,6 +47,7 @@ export interface CustomerMcpOptions {
 }
 
 export const CUSTOMER_TOOLS = [
+  "find_offers",
   "search_offers",
   "get_offer_details",
   "check_availability",
@@ -47,6 +56,7 @@ export const CUSTOMER_TOOLS = [
   "create_order",
   "submit_inquiry",
   "get_inquiry",
+  "report_answer",
 ] as const;
 
 export const WEBHOOK_TOOLS = ["set_webhook", "clear_webhook"] as const;
@@ -107,139 +117,24 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     return null;
   }
 
-  server.registerTool(
-    "search_offers",
-    {
-      description:
-        "Search the store's offers by free text, category, attributes and price range. Returns active offers only. " +
-        "Offers whose price is on request are kept when a price range is given; they are listed in price_on_request_ids and must be presented separately.",
-      inputSchema: {
-        query: z.string().max(200).optional().describe("Free text, e.g. 'red running shoes'"),
-        category: z.string().max(100).optional(),
-        attributes: z
-          .record(z.string(), attributeValueSchema)
-          .optional()
-          .describe('Exact attribute filters, e.g. { "sizes": "42", "gender": "women" }'),
-        min_price: z.number().nonnegative().optional(),
-        max_price: z.number().nonnegative().optional(),
-        limit: z.number().int().min(1).max(50).default(10),
-        offset: z.number().int().min(0).default(0),
-      },
-      annotations: { readOnlyHint: true },
-    },
-    (args) =>
-      runTool("search_offers", async () => {
-        const result = await catalog.searchOffers(ctx, {
-          query: args.query,
-          category: args.category,
-          attributes: args.attributes,
-          minPrice: args.min_price,
-          maxPrice: args.max_price,
-          limit: args.limit,
-          offset: args.offset,
-        });
-        if (result.total === 0 && args.offset === 0 && args.query?.trim()) {
-          await catalog.recordSearchMiss(ctx, args.query);
+  const tracking: IntentTracking = options.tracking ?? { channel: source };
+  registerIntentTools(server, {
+    ctx,
+    intent: services.intent,
+    track: tracking,
+    store: options.store,
+  });
+  registerRawTools(server, {
+    ctx,
+    catalog,
+    track: options.trackRaw
+      ? async (tool, args, resultIds) => {
+          await services.intent
+            .recordRawCall(ctx, { tool, args, resultIds, track: tracking })
+            .catch(() => null);
         }
-        const found = result.items.map(publicOffer);
-        return {
-          total: result.total,
-          offers: found,
-          price_on_request_ids: found.filter((o) => o.price_on_request).map((o) => o.offer_id),
-        };
-      }),
-  );
-
-  server.registerTool(
-    "get_offer_details",
-    {
-      description: "Full card of one offer.",
-      inputSchema: { offer_id: z.uuid() },
-      annotations: { readOnlyHint: true },
-    },
-    ({ offer_id }) =>
-      runTool("get_offer_details", async () => {
-        const offer = await catalog.getOffer(ctx, offer_id);
-        if (!offer || offer.status !== "active") {
-          throw new ServiceError("not_found", "Offer not found");
-        }
-        return publicOffer(offer);
-      }),
-  );
-
-  server.registerTool(
-    "check_availability",
-    {
-      description:
-        "Availability and price state of offers. Unknown values are reported as such and must not be guessed.",
-      inputSchema: { offer_ids: z.array(z.uuid()).min(1).max(20) },
-      annotations: { readOnlyHint: true },
-    },
-    ({ offer_ids }) =>
-      runTool("check_availability", async () => {
-        const found = await catalog.getOffers(ctx, offer_ids);
-        const byId = new Map(found.filter((o) => o.status === "active").map((o) => [o.id, o]));
-        return offer_ids.map((id) => {
-          const offer = byId.get(id);
-          if (!offer) return { offer_id: id, found: false };
-          const view = publicOffer(offer);
-          return {
-            offer_id: id,
-            found: true,
-            title: view.title,
-            availability: view.availability,
-            availability_label: view.availability_label,
-            price_status: view.price_status,
-            price_label: view.price_label,
-            can_order: view.can_order,
-          };
-        });
-      }),
-  );
-
-  server.registerTool(
-    "compare_offers",
-    {
-      description: "Side-by-side comparison of 2 to 5 offers: price, availability and attributes.",
-      inputSchema: { offer_ids: z.array(z.uuid()).min(2).max(5) },
-      annotations: { readOnlyHint: true },
-    },
-    ({ offer_ids }) =>
-      runTool("compare_offers", async () => {
-        const found = (await catalog.getOffers(ctx, offer_ids)).filter(
-          (o) => o.status === "active",
-        );
-        if (found.length < 2) {
-          throw new ServiceError("not_found", "At least two of the offers must exist");
-        }
-        const ordered = offer_ids.flatMap((id) => found.filter((o) => o.id === id));
-        const types = await catalog.listOfferTypes(ctx);
-        const labels = new Map<string, string>();
-        for (const type of types) {
-          for (const attr of type.attributeSchema as { key: string; label: string }[]) {
-            labels.set(attr.key, attr.label);
-          }
-        }
-        const keys = [
-          ...new Set(ordered.flatMap((o) => Object.keys(o.attributes as Record<string, unknown>))),
-        ];
-        return {
-          offers: ordered.map((o) => ({
-            offer_id: o.id,
-            title: o.title,
-            price_label: priceLabel(o),
-            availability: o.availability,
-          })),
-          attributes: keys.map((key) => ({
-            key,
-            label: labels.get(key) ?? key,
-            values: Object.fromEntries(
-              ordered.map((o) => [o.id, (o.attributes as Record<string, unknown>)[key] ?? null]),
-            ),
-          })),
-        };
-      }),
-  );
+      : undefined,
+  });
 
   server.registerTool(
     "get_business_info",

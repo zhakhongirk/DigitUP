@@ -19,6 +19,10 @@ import { createCustomerMcpServer } from "./customer/server";
 import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
 import { createPublicMcpServer } from "./public/server";
 
+function baseUrlOf(request: Request): string {
+  return (process.env.APP_URL ?? new URL(request.url).origin).replace(/\/+$/, "");
+}
+
 type Resolved =
   { ok: true; ctx: TenantContext; apiKeyId?: string } | { ok: false; response: Response };
 
@@ -98,6 +102,12 @@ export async function handleCustomerMcp(
     ctx: resolved.ctx,
     services,
     source: channel === "external_agent" ? "external_agent" : "storefront",
+    tracking: {
+      channel: "external_agent",
+      clientKey: resolved.apiKeyId ? `key:${resolved.apiKeyId}` : clientIp(request),
+    },
+    trackRaw: true,
+    store: { slug, baseUrl: baseUrlOf(request) },
     conversationId,
     webhooks: services.webhooks,
     guards: resolved.apiKeyId
@@ -121,6 +131,8 @@ export async function handlePublicMcp(
     ctx,
     storeName: tenant.name,
     agent: createCustomerAgent({ services, llm }),
+    services,
+    store: { slug, baseUrl: baseUrlOf(request) },
     clientKey: `${clientIp(request)}:${slug}`,
   });
   return serveMcp(request, server);

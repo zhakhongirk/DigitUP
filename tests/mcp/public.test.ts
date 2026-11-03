@@ -76,12 +76,20 @@ describe("public MCP endpoint", () => {
     expect(res.status).toBe(404);
   });
 
-  it("lists exactly the talk_to_store tool", async () => {
+  it("lists the intent tools, the read-only catalog tools and talk_to_store", async () => {
     const ctx = await liveStore();
     const res = await publicCall(ctx.slug, listBody, new ScriptedLlm([]));
     expect(res.status).toBe(200);
     const body = await rpc(res);
-    expect(body.result?.tools?.map((t) => t.name)).toEqual(["talk_to_store"]);
+    expect(body.result?.tools?.map((t) => t.name).sort()).toEqual([
+      "check_availability",
+      "compare_offers",
+      "find_offers",
+      "get_offer_details",
+      "report_answer",
+      "search_offers",
+      "talk_to_store",
+    ]);
   });
 
   it("talks to the Customer Agent and stores an external_agent conversation", async () => {
@@ -199,11 +207,11 @@ describe("public MCP endpoint", () => {
     expect(llm.requests).toHaveLength(0);
   });
 
-  it("does not expose the data tools", async () => {
+  it("does not expose order or inquiry tools", async () => {
     const ctx = await liveStore();
     const offers = await services.catalog.searchOffers({ ...ctx, actor: "system" }, {});
     const calls = [
-      callBody("search_offers", { query: "Runner" }),
+      callBody("submit_inquiry", { subject: "Hello", details: "Hello" }),
       callBody("create_order", {
         idempotency_key: "public-order-key",
         items: [{ offer_id: offers.items[0]!.id, quantity: 1 }],

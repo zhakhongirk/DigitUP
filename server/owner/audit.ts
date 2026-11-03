@@ -53,6 +53,7 @@ const ACTION_LABELS: Record<string, string> = {
   "offer.updated": "Edited an offer",
   "order.created": "Drafted an order",
   "order.status_changed": "Changed an order status",
+  "intent.reported": "A shopper agent rated a search answer",
   "order.contact_updated": "Updated order details",
   "order.items_updated": "Changed the items in an order",
   "offer_type.created": "Added a product type",
