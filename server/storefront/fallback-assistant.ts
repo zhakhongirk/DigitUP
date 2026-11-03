@@ -37,6 +37,8 @@ export interface Intent {
   topic: InfoTopic | null;
   quantity: number;
   size: string | null;
+  /** Upper price limit the shopper named, in the store's currency. */
+  maxPrice: number | null;
   contact: ShopperContact;
 }
 
@@ -62,6 +64,22 @@ const NAME_RE =
   /(?<![\p{L}])(?:[Mm]y name is|[Ii]'m|I am|[Мм]еня зовут|[Мм]о[её] имя|[Ээ]то|[Мм]енің атым|[Аа]тым)\s+(\p{Lu}[\p{L}'-]*(?:\s+\p{Lu}[\p{L}'-]*)?)/u;
 const SIZE_RE =
   /(?<![\p{L}])(?:(?:size|sz|eu|us|uk|размер|өлшем\p{L}*)\s*[:#-]?\s*(\d{1,3}(?:[.,]\d)?)|(\d{2}(?:[.,]\d)?)\s*-?\s*(?:го\s+)?(?:размер\p{L}*|өлшем\p{L}*|size))/iu;
+const BARE_SIZE_IN_TEXT_RE = /(?<![\p{L}\d.,/-])(?:3\d|4\d|50)(?![\d-]|[.,]\d|\p{L})/u;
+const NUMBER = String.raw`(\d{1,3}(?:[ \u00a0]\d{3})+|\d+(?:[.,]\d+)?)`;
+const THOUSANDS = String.raw`(?:\s*(k|к|тыс\p{L}*|тысяч\p{L}*|мың|thousand))?`;
+const CURRENCY = String.raw`(?:\s*(?:тең?ге\p{L}*|тг|₸|kzt|usd|руб\p{L}*|₽|\$))?`;
+const BUDGET_PREFIX_RE = new RegExp(
+  String.raw`(?<![\p{L}])(?:under|below|up to|upto|max(?:imum)?|within|less than|no more than|cheaper than|budget|до|не дороже|дешевле|не более|максимум|бюджет\p{L}*)\s*(?:of\s*)?\$?\s*` +
+    NUMBER +
+    THOUSANDS +
+    CURRENCY,
+  "iu",
+);
+const BUDGET_SUFFIX_RE = new RegExp(
+  NUMBER + THOUSANDS + CURRENCY + String.raw`\s*(?:-?\s*(?:ге|ға|ке|қа))?\s*дейін`,
+  "iu",
+);
+const BUDGET_SHORT_RE = /(?<![\p{L}\d.,])(\d+(?:[.,]\d+)?)\s*(k|к|тыс\p{L}*|мың)(?![\p{L}])/iu;
 const BARE_SIZE_RE = /^\s*(\d{2}(?:[.,]5)?)\s*$/;
 const QUANTITY_RES = [
   /(\d{1,2})\s*(?:pcs|pieces|piece|pairs?|units?|шт|штук|штуки|пар|пары|дана|жұп)(?![\p{L}])/iu,
@@ -303,6 +321,25 @@ function shopperSize(intent: Intent, userMessages: string[]): string | null {
   return null;
 }
 
+function budgetOf(match: RegExpExecArray, hasMultiplier: boolean): number | null {
+  const digits = (match[1] ?? "").replace(/[ \u00a0]/g, "");
+  const value = Number(hasMultiplier ? digits.replace(",", ".") : digits.replace(/[.,]/g, ""));
+  if (!Number.isFinite(value)) return null;
+  const amount = Math.round(hasMultiplier ? value * 1000 : value);
+  return amount >= 100 ? amount : null;
+}
+
+/** Pulls an upper price limit such as "до 75 000", "under 75k" or "75000-ге дейін" out of a message. */
+export function extractBudget(text: string): { maxPrice: number | null; rest: string } {
+  for (const re of [BUDGET_PREFIX_RE, BUDGET_SUFFIX_RE, BUDGET_SHORT_RE]) {
+    const match = re.exec(text);
+    if (!match) continue;
+    const maxPrice = budgetOf(match, Boolean(match[2]));
+    if (maxPrice !== null) return { maxPrice, rest: text.replace(match[0], " ") };
+  }
+  return { maxPrice: null, rest: text };
+}
+
 function matchName(text: string): { value: string; phrase: string } | null {
   const match = NAME_RE.exec(text);
   return match?.[1] ? { value: match[1], phrase: match[0] } : null;
@@ -335,11 +372,12 @@ function extractContact(text: string): { contact: ShopperContact; rest: string }
 export function parseIntent(input: string): Intent {
   const text = input.trim();
   const lang = detectLang(text);
-  const { contact, rest: withoutContact } = extractContact(text);
+  const { maxPrice, rest: withoutBudget } = extractBudget(text);
+  const { contact, rest: withoutContact } = extractContact(withoutBudget);
 
   let rest = withoutContact;
   const sizeMatch = SIZE_RE.exec(rest);
-  const size = sizeMatch ? (sizeMatch[1] ?? sizeMatch[2] ?? "").replace(",", ".") : null;
+  let size = sizeMatch ? (sizeMatch[1] ?? sizeMatch[2] ?? "").replace(",", ".") : null;
   if (sizeMatch) rest = rest.replace(sizeMatch[0], " ");
   let quantity = 1;
   for (const re of QUANTITY_RES) {
@@ -351,8 +389,19 @@ export function parseIntent(input: string): Intent {
     }
   }
 
+  if (size === null && searchTerms(rest).length > 0) {
+    const bare = BARE_SIZE_IN_TEXT_RE.exec(rest);
+    if (bare) {
+      size = bare[0];
+      rest = rest.replace(bare[0], " ");
+    }
+  }
+
   const terms = searchTerms(rest);
-  const base = { lang, terms, topic: null, quantity, size, contact } satisfies Omit<Intent, "kind">;
+  const base = { lang, terms, topic: null, quantity, size, maxPrice, contact } satisfies Omit<
+    Intent,
+    "kind"
+  >;
   const short = wordCount(withoutContact) <= 4;
 
   if (short && YES_RE.test(withoutContact)) return { ...base, kind: "yes", terms: [] };
@@ -381,6 +430,10 @@ const COPY = {
     found: "Here is what I found:",
     more: (n: number) => `...and ${n} more. Tell me a bit more to narrow it down.`,
     priceOnRequest: "Price on request",
+    withinBudget: (amount: string) => `Within ${amount}:`,
+    nothingWithinBudget: (amount: string) => `No offer with a confirmed price is within ${amount}.`,
+    onRequestLead:
+      "The price of these is on request, so I cannot say whether they fit your budget:",
     availability: {
       in_stock: "in stock",
       out_of_stock: "out of stock",
@@ -444,6 +497,10 @@ const COPY = {
     found: "Вот что нашлось:",
     more: (n: number) => `...и ещё ${n}. Уточните запрос, чтобы сузить выбор.`,
     priceOnRequest: "Цена по запросу",
+    withinBudget: (amount: string) => `В пределах ${amount}:`,
+    nothingWithinBudget: (amount: string) => `С подтверждённой ценой до ${amount} ничего нет.`,
+    onRequestLead:
+      "Цена этих товаров по запросу, поэтому не могу сказать, укладываются ли они в бюджет:",
     availability: {
       in_stock: "в наличии",
       out_of_stock: "нет в наличии",
@@ -509,6 +566,10 @@ const COPY = {
     found: "Мынау табылды:",
     more: (n: number) => `...және тағы ${n}. Таңдауды тарылту үшін сұрауды нақтылаңыз.`,
     priceOnRequest: "Бағасы сұраныс бойынша",
+    withinBudget: (amount: string) => `${amount} дейін:`,
+    nothingWithinBudget: (amount: string) => `Расталған бағасы ${amount} дейін тауар жоқ.`,
+    onRequestLead:
+      "Бұл тауарлардың бағасы сұраныс бойынша, сондықтан бюджетке сыятынын айта алмаймын:",
     availability: {
       in_stock: "бар",
       out_of_stock: "қалмаған",
@@ -1013,8 +1074,42 @@ function offerLine(offer: ShownOffer, intent: Intent, copy: Copy): string {
 
 const MAX_LISTED = 5;
 
+function formatAmount(amount: number): string {
+  return new Intl.NumberFormat("en-US").format(amount).replace(/,/g, " ");
+}
+
+function budgetReply(offers: ShownOffer[], maxPrice: number, shopper: Intent, copy: Copy): string {
+  const intent: Intent = { ...shopper, kind: "search" };
+  const amount = formatAmount(maxPrice);
+  const priced = offers.filter((o) => o.price_status === "confirmed");
+  const unpriced = offers.filter((o) => o.price_status !== "confirmed");
+  const parts: string[] = [];
+  if (priced.length > 0) {
+    parts.push(
+      [
+        copy.withinBudget(amount),
+        ...priced.slice(0, MAX_LISTED).map((o) => offerLine(o, intent, copy)),
+      ].join("\n"),
+    );
+    if (priced.length > MAX_LISTED) parts.push(copy.more(priced.length - MAX_LISTED));
+  } else {
+    parts.push(copy.nothingWithinBudget(amount));
+  }
+  if (unpriced.length > 0) {
+    parts.push(
+      [
+        copy.onRequestLead,
+        ...unpriced.slice(0, MAX_LISTED).map((o) => offerLine(o, intent, copy)),
+      ].join("\n"),
+      handoffText(copy),
+    );
+  }
+  return parts.join("\n");
+}
+
 function offersReply(offers: ShownOffer[], total: number, intent: Intent, copy: Copy): string {
   if (offers.length === 0) return `${copy.noMatch} ${handoffText(copy)}`;
+  if (intent.maxPrice !== null) return budgetReply(offers, intent.maxPrice, intent, copy);
   const lines = offers.slice(0, MAX_LISTED).map((offer) => offerLine(offer, intent, copy));
   const extra = total - lines.length;
   const lead = copy.found;
@@ -1270,7 +1365,7 @@ function startDecision(
   if (removal) return removal;
   if (adding && ctx.draft) {
     if (intent.terms.length === 0) return { reply: copy.askAdd };
-    return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms) }] };
+    return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
   }
   if (pending?.kind === "order" && intent.kind !== "no") {
     const fresh = parseOrderDetails(text, pending.asking, true);
@@ -1319,15 +1414,29 @@ function startDecision(
           calls: [{ name: "get_offer_details", arguments: { offer_id: ctx.lastOffer.offer_id } }],
         };
       }
-      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms) }] };
+      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
     case "search":
-      if (intent.terms.length === 0) return { reply: copy.askProduct };
-      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms) }] };
+      if (intent.terms.length === 0 && !hasSearchFilters(intent)) {
+        return { reply: copy.askProduct };
+      }
+      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
   }
 }
 
-function searchArgs(terms: string[]): Record<string, unknown> {
-  return { ...(terms.length ? { query: terms.join(" ") } : {}), limit: MAX_LISTED + 1 };
+function searchArgs(terms: string[], intent?: Intent): Record<string, unknown> {
+  const filtered = intent !== undefined && intent.kind !== "buy";
+  const maxPrice = filtered ? intent.maxPrice : null;
+  const size = filtered ? intent.size : null;
+  return {
+    ...(terms.length ? { query: terms.join(" ") } : {}),
+    ...(maxPrice !== null ? { max_price: maxPrice } : {}),
+    ...(size ? { attributes: { sizes: size } } : {}),
+    limit: maxPrice !== null ? MAX_LISTED * 4 : MAX_LISTED + 1,
+  };
+}
+
+function hasSearchFilters(intent: Intent): boolean {
+  return intent.maxPrice !== null || (intent.size !== null && intent.kind === "search");
 }
 
 function continueDecision(
@@ -1380,7 +1489,9 @@ function continueDecision(
     if (offers.length === 0 && first === "search_offers") {
       const translated = english.primary.join(" ") !== intent.terms.join(" ");
       if (batches.length === 1 && translated) {
-        return { calls: [{ name: "search_offers", arguments: searchArgs(english.primary) }] };
+        return {
+          calls: [{ name: "search_offers", arguments: searchArgs(english.primary, intent) }],
+        };
       }
       const split = translated ? english.all : intent.terms;
       const stage = translated ? 2 : 1;
@@ -1388,7 +1499,7 @@ function continueDecision(
         return {
           calls: split.slice(0, 3).map((term) => ({
             name: "search_offers",
-            arguments: searchArgs([term]),
+            arguments: searchArgs([term], intent),
           })),
         };
       }
@@ -1473,7 +1584,7 @@ export function decide(messages: LlmMessage[], key: string): Decision {
       (ctx.pending?.kind === "add" && ["search", "buy", "price", "stock"].includes(plain.kind)));
   const card = ADD_CARD_RE.exec(text);
   const intent: Intent = card?.[1]
-    ? { ...parseIntent(card[1]), lang, quantity: 1, size: null, kind: "buy" }
+    ? { ...parseIntent(card[1]), lang, quantity: 1, size: null, maxPrice: null, kind: "buy" }
     : adding
       ? (() => {
           const stripped = ADD_MORE_RE.test(text) ? "" : stripWords(text, ADD_SOURCE);

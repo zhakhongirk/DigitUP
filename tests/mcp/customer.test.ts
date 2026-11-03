@@ -116,12 +116,23 @@ describe("search_offers", () => {
     const { ctx } = await seededTenant();
     const mcp = await customer(ctx);
     const res = await mcp.call("search_offers", { min_price: 40000, max_price: 50000, limit: 50 });
-    const data = res.data as { offers: OfferData[] };
+    const data = res.data as {
+      offers: (OfferData & { price_on_request: boolean })[];
+      price_on_request_ids: string[];
+    };
     expect(data.offers.length).toBeGreaterThan(0);
-    for (const o of data.offers) {
+    const priced = data.offers.filter((o) => !o.price_on_request);
+    expect(priced.length).toBeGreaterThan(0);
+    for (const o of priced) {
       expect(o.price).toBeGreaterThanOrEqual(40000);
       expect(o.price).toBeLessThanOrEqual(50000);
     }
+    expect(data.price_on_request_ids.sort()).toEqual(
+      data.offers
+        .filter((o) => o.price_on_request)
+        .map((o) => o.offer_id)
+        .sort(),
+    );
   });
 
   it("returns only active offers", async () => {

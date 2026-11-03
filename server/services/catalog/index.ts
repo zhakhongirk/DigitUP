@@ -8,7 +8,9 @@ import {
   ilike,
   inArray,
   isNotNull,
+  isNull,
   lte,
+  ne,
   or,
   sql,
   type SQL,
@@ -61,6 +63,7 @@ export interface OfferSearch {
   offerTypeKey?: string;
   /** Exact attribute filters; a string also matches inside list attributes. */
   attributes?: Record<string, AttributeValue>;
+  /** Price range; offers without a confirmed price are always kept and report priceStatus. */
   minPrice?: number;
   maxPrice?: number;
   /** Defaults to active offers only. */
@@ -166,8 +169,13 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
           : exact,
       );
     }
-    if (search.minPrice !== undefined) conditions.push(gte(offers.price, search.minPrice));
-    if (search.maxPrice !== undefined) conditions.push(lte(offers.price, search.maxPrice));
+    const unpriced = or(isNull(offers.price), ne(offers.priceStatus, "confirmed"))!;
+    if (search.minPrice !== undefined) {
+      conditions.push(or(gte(offers.price, search.minPrice), unpriced)!);
+    }
+    if (search.maxPrice !== undefined) {
+      conditions.push(or(lte(offers.price, search.maxPrice), unpriced)!);
+    }
     return conditions;
   }
 

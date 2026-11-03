@@ -36,6 +36,7 @@ export function publicOffer(offer: OfferView) {
     price: offer.priceStatus === "confirmed" ? offer.price : null,
     currency: offer.priceStatus === "confirmed" ? offer.currency : null,
     price_status: offer.priceStatus,
+    price_on_request: offer.priceStatus !== "confirmed",
     price_label: priceLabel(offer),
     availability: offer.availability,
     availability_label: AVAILABILITY_LABEL[offer.availability],

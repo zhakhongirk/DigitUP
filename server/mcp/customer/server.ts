@@ -79,7 +79,8 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     "search_offers",
     {
       description:
-        "Search the store's offers by free text, category, attributes and price range. Returns active offers only.",
+        "Search the store's offers by free text, category, attributes and price range. Returns active offers only. " +
+        "Offers whose price is on request are kept when a price range is given; they are listed in price_on_request_ids and must be presented separately.",
       inputSchema: {
         query: z.string().max(200).optional().describe("Free text, e.g. 'red running shoes'"),
         category: z.string().max(100).optional(),
@@ -108,7 +109,12 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
         if (result.total === 0 && args.offset === 0 && args.query?.trim()) {
           await catalog.recordSearchMiss(ctx, args.query);
         }
-        return { total: result.total, offers: result.items.map(publicOffer) };
+        const found = result.items.map(publicOffer);
+        return {
+          total: result.total,
+          offers: found,
+          price_on_request_ids: found.filter((o) => o.price_on_request).map((o) => o.offer_id),
+        };
       }),
   );
 

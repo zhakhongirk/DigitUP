@@ -311,16 +311,16 @@ describe("searchOffers", () => {
     expect(duration.total).toBe(1);
   });
 
-  it("filters by min and max price, excluding on-request offers", async () => {
+  it("filters by min and max price and keeps on-request offers", async () => {
     const ctx = await createTestTenant();
     const { catalog } = setup();
     await seed(ctx);
     const titles = async (minPrice?: number, maxPrice?: number) =>
       (await catalog.searchOffers(ctx, { minPrice, maxPrice })).items.map((o) => o.title);
-    expect(await titles(50, 120)).toEqual(["Runner Pro"]);
-    expect(await titles(100)).toEqual(["Runner Pro", "Winter Boot"]);
-    expect(await titles(undefined, 30)).toEqual(["Sandal", "Sole Repair"]);
-    expect(await titles(100, 100)).toEqual(["Runner Pro"]);
+    expect(await titles(50, 120)).toEqual(["Custom Loafer", "Runner Pro"]);
+    expect(await titles(100)).toEqual(["Custom Loafer", "Runner Pro", "Winter Boot"]);
+    expect(await titles(undefined, 30)).toEqual(["Custom Loafer", "Sandal", "Sole Repair"]);
+    expect(await titles(100, 100)).toEqual(["Custom Loafer", "Runner Pro"]);
   });
 
   it("excludes archived and draft offers by default and honours statuses", async () => {
@@ -777,7 +777,8 @@ describe("tenant isolation", () => {
     expect((await catalog.searchOffers(b, { category: "Sneakers" })).total).toBe(0);
     expect((await catalog.searchOffers(b, { offerTypeKey: "shoes" })).total).toBe(0);
     expect((await catalog.searchOffers(b, { attributes: { sizes: "42" } })).total).toBe(0);
-    expect((await catalog.searchOffers(b, { minPrice: 100, maxPrice: 150 })).total).toBe(0);
+    const priced = await catalog.searchOffers(b, { minPrice: 100, maxPrice: 150 });
+    expect(priced.items.every((o) => o.tenantId === b.tenantId && !aIds.has(o.id))).toBe(true);
     expect((await catalog.searchOffers(b, { statuses: ["archived"] })).total).toBe(0);
     // A still sees its own data through the same filters.
     expect((await catalog.searchOffers(a, { query: "Runner" })).total).toBe(1);
