@@ -137,8 +137,31 @@ function matchTopic(text: string): InfoTopic | null {
   return null;
 }
 
-function detectLang(text: string): Lang {
+function messageLang(text: string): Lang | null {
+  if (!/\p{L}/u.test(text)) return null;
   return /[а-яё]/i.test(text) ? "ru" : "en";
+}
+
+function detectLang(text: string): Lang {
+  return messageLang(text) ?? "en";
+}
+
+/**
+ * Language of the shopper's side of the chat. Messages without letters (phone
+ * numbers, digits, emoji) say nothing about language and are skipped. The
+ * dominant language wins; on a tie the latest letter-bearing message decides.
+ */
+export function conversationLang(texts: string[]): Lang {
+  const counts: Record<Lang, number> = { en: 0, ru: 0 };
+  let latest: Lang | null = null;
+  for (const text of texts) {
+    const lang = messageLang(text);
+    if (!lang) continue;
+    counts[lang] += 1;
+    latest = lang;
+  }
+  if (counts.ru === counts.en) return latest ?? "en";
+  return counts.ru > counts.en ? "ru" : "en";
 }
 
 function wordCount(text: string): number {
@@ -1084,7 +1107,10 @@ export function decide(messages: LlmMessage[], key: string): Decision {
   if (lastUser < 0) return { reply: COPY.en.help };
 
   const text = messageText(messages[lastUser]);
-  const intent = parseIntent(text);
+  const lang = conversationLang(
+    messages.filter((m) => m.role === "user").map((m) => messageText(m)),
+  );
+  const intent = { ...parseIntent(text), lang };
   const ctx = readContext(messages.slice(0, lastUser));
   const batches = readBatches(messages.slice(lastUser + 1));
   if (batches.length === 0) return startDecision(intent, ctx, text, key);

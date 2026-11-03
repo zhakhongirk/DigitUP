@@ -586,6 +586,23 @@ describe("decide", () => {
         argsOf([...order([], "ru"), user("меня зовут Айдар, +7 701 000 11 22, самовывоз")]),
       ).toMatchObject({ contact: { name: "Айдар", phone }, fulfillment: "pickup" });
     });
+
+    it("keeps Russian for a phone-only reply in a Russian chat", () => {
+      const history = order(["покажи кроссовки"], "ru");
+      expect(reply(decide([...history, user(phone)], "k"))).toBe("Как вас зовут?");
+    });
+
+    it("keeps English for a phone-only reply in an English chat", () => {
+      const history = order(["show me the sneakers"], "en");
+      expect(reply(decide([...history, user(phone)], "k"))).toBe("What is your name?");
+    });
+
+    it("uses the latest letter-bearing message when the chat is tied", () => {
+      const english = order(["покажи кроссовки", "show me the sneakers"], "en");
+      expect(reply(decide([...english, user(phone)], "k"))).toBe("What is your name?");
+      const russian = order(["show me the sneakers", "покажи кроссовки"], "ru");
+      expect(reply(decide([...russian, user(phone)], "k"))).toBe("Как вас зовут?");
+    });
   });
 
   it("explains a product that cannot be ordered and offers the owner", () => {

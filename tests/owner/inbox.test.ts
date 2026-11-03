@@ -157,7 +157,7 @@ describe("inbox items", () => {
       who: "dana@example.com",
       next: { status: "in_progress", label: "Mark in progress" },
     });
-    expect(items[2]?.source).toBe("Customer agent");
+    expect(items[2]?.source).toBe("Customer Agent");
     expect(countBuckets(items)).toEqual({ all: 3, new: 3, in_progress: 0, completed: 0 });
   });
 

@@ -33,9 +33,9 @@ const ENDPOINTS = [
   ["MCP", "Public", "/mcp/public/:slug", "No key. Talk to the store assistant."],
   [
     "MCP",
-    "Customer agent",
+    "Customer Agent",
     "/mcp/customer/:slug",
-    "Customer agent key. Search offers, check stock, place orders.",
+    "Customer Agent key. Search offers, check stock, place orders.",
   ],
   ["MCP", "Business agent", "/mcp/business", "Owner key. Manage the catalog and review approvals."],
 ] as const;

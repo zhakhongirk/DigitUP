@@ -204,7 +204,7 @@ export function inquiryItem(
     id: inquiry.id,
     label: "Question",
     who: customerName(contact, "Customer"),
-    source: channel ? CHANNEL_LABELS[channel] : "Customer agent",
+    source: channel ? CHANNEL_LABELS[channel] : "Customer Agent",
     bucket,
     status: inquiry.status,
     statusLabel: BUCKET_LABELS[bucket],
