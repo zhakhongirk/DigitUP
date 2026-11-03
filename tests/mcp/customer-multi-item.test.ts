@@ -25,11 +25,11 @@ type View = {
   missing_fields: string[];
 };
 
-async function start() {
+async function start(source: "storefront" | "external_agent" = "storefront") {
   const ctx = await createTestTenant({ actor: "customer_agent", live: true });
   await services.catalog.applyBusinessModel({ ...ctx, actor: "system" }, shoeStoreModel);
   const { items } = await services.catalog.searchOffers(ctx, { limit: 200 });
-  const client = await connect(createCustomerMcpServer({ ctx, services, source: "storefront" }));
+  const client = await connect(createCustomerMcpServer({ ctx, services, source }));
   open.push(client);
   const [a, b] = items.filter(orderable);
   return { ctx, client, a: a!, b: b! };
@@ -65,8 +65,8 @@ describe("create_order with several items", () => {
     expect(view.items[0]).not.toHaveProperty("size");
   });
 
-  it("adds items with merge and replaces them without it", async () => {
-    const { client, a, b } = await start();
+  it("adds items with merge and replaces them without it for an external agent", async () => {
+    const { client, a, b } = await start("external_agent");
     const idempotency_key = key();
     await client.call("create_order", {
       idempotency_key,
@@ -88,6 +88,38 @@ describe("create_order with several items", () => {
       })
     ).data as View;
     expect(replaced.items.map((i) => i.offerId)).toEqual([b.id]);
+  });
+
+  it("keeps draft lines on the storefront when a call leaves them out", async () => {
+    const { client, a, b } = await start();
+    const idempotency_key = key();
+    await client.call("create_order", {
+      idempotency_key,
+      items: [{ offer_id: a.id, quantity: 1 }],
+    });
+    const added = (
+      await client.call("create_order", {
+        idempotency_key,
+        items: [{ offer_id: b.id, quantity: 2 }],
+      })
+    ).data as View;
+    expect(added.items.map((i) => [i.offerId, i.quantity])).toEqual([
+      [a.id, 1],
+      [b.id, 2],
+    ]);
+    const again = (
+      await client.call("create_order", {
+        idempotency_key,
+        items: [
+          { offer_id: a.id, quantity: 1 },
+          { offer_id: b.id, quantity: 2 },
+        ],
+      })
+    ).data as View;
+    expect(again.items.map((i) => [i.offerId, i.quantity])).toEqual([
+      [a.id, 1],
+      [b.id, 2],
+    ]);
   });
 
   it("asks for the city on delivery only and submits once it is given", async () => {

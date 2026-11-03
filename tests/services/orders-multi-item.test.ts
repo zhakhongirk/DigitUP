@@ -247,4 +247,75 @@ describe("orders with several items", () => {
     });
     expect((await orders.submitOrder(ctx, pickup.order.id)).status).toBe("submitted");
   });
+
+  describe("keepLines", () => {
+    async function draft() {
+      const env = await setup();
+      const idempotencyKey = key();
+      await env.orders.createOrder(env.ctx, {
+        idempotencyKey,
+        source: "storefront",
+        items: [
+          { offerId: env.ids.Alpha!, quantity: 1, size: "42" },
+          { offerId: env.ids.Beta!, quantity: 2 },
+        ],
+      });
+      return { ...env, idempotencyKey };
+    }
+    const lines = (items: unknown) =>
+      (items as OrderItem[]).map((i) => [i.title, i.quantity, i.size ?? null]);
+
+    it("keeps existing lines when the call sends only a new item", async () => {
+      const { orders, ctx, ids, idempotencyKey } = await draft();
+      const { order } = await orders.createOrder(ctx, {
+        idempotencyKey,
+        source: "storefront",
+        keepLines: true,
+        items: [{ offerId: ids.Alpha!, quantity: 1, size: "43" }],
+      });
+      expect(lines(order.items)).toEqual([
+        ["Alpha", 1, "42"],
+        ["Beta", 2, null],
+        ["Alpha", 1, "43"],
+      ]);
+    });
+
+    it("replaces the quantity of a matching line instead of summing", async () => {
+      const { orders, ctx, ids, idempotencyKey } = await draft();
+      const { order } = await orders.createOrder(ctx, {
+        idempotencyKey,
+        source: "storefront",
+        keepLines: true,
+        items: [
+          { offerId: ids.Alpha!, quantity: 5, size: "42" },
+          { offerId: ids.Beta!, quantity: 2 },
+        ],
+      });
+      expect(lines(order.items)).toEqual([
+        ["Alpha", 5, "42"],
+        ["Beta", 2, null],
+      ]);
+    });
+
+    it("leaves the lines unchanged on the confirm call with the full list", async () => {
+      const { orders, ctx, ids, idempotencyKey } = await draft();
+      const { order } = await orders.createOrder(ctx, {
+        idempotencyKey,
+        source: "storefront",
+        keepLines: true,
+        items: [
+          { offerId: ids.Alpha!, quantity: 1, size: "42" },
+          { offerId: ids.Beta!, quantity: 2 },
+        ],
+        contact: { name: "Ann", phone: "+77010000000" },
+        fulfillment: "pickup",
+      });
+      const submitted = await orders.submitOrder(ctx, order.id);
+      expect(lines(submitted.items)).toEqual([
+        ["Alpha", 1, "42"],
+        ["Beta", 2, null],
+      ]);
+      expect(submitted.total).toBe(500.5);
+    });
+  });
 });

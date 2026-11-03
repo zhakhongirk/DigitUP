@@ -278,6 +278,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
             ...(item.size ? { size: item.size } : {}),
           })),
           merge: args.merge,
+          keepLines: source === "storefront" && !args.merge,
           contact: args.contact ?? {},
           fulfillment: args.fulfillment,
           deliveryAddress: args.delivery_address,

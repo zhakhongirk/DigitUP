@@ -120,6 +120,8 @@ export const createOrderSchema = z.object({
   items: orderItemsInputSchema,
   /** On a repeated call for a draft: add the items to it instead of replacing its items. */
   merge: z.boolean().optional(),
+  /** Storefront agent: keep draft lines that the call leaves out. */
+  keepLines: z.boolean().optional(),
   contact: orderContactSchema.default({}),
   fulfillment: fulfillmentSchema.optional(),
   deliveryAddress: deliveryAddressSchema.optional(),
@@ -281,6 +283,13 @@ function sameLines(current: OrderItem[], wanted: OrderItemInput[]): boolean {
       ),
     )
   );
+}
+
+function unionLines(base: OrderItemInput[], incoming: OrderItemInput[]): OrderItemInput[] {
+  const lineKey = (line: OrderItemInput) => `${line.offerId}|${line.size ?? ""}`;
+  const result = new Map(base.map((line) => [lineKey(line), line]));
+  for (const line of mergeLines(incoming)) result.set(lineKey(line), line);
+  return [...result.values()];
 }
 
 function toLines(items: OrderItem[]): OrderItemInput[] {
@@ -486,7 +495,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     const hasExtras = Boolean(input.fulfillment || input.deliveryAddress || input.city);
     if (existing.status !== "draft") return existing;
     const current = existing.items as OrderItem[];
-    const wanted = input.merge ? [...toLines(current), ...input.items] : input.items;
+    const wanted = input.merge
+      ? [...toLines(current), ...input.items]
+      : input.keepLines
+        ? unionLines(toLines(current), input.items)
+        : input.items;
     const itemsChanged = !sameLines(current, wanted);
     if (provided.length === 0 && !hasExtras && !itemsChanged) return existing;
 
