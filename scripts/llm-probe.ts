@@ -4,7 +4,7 @@
  *
  *   pnpm llm:probe [-- --tier fast|main|heavy]
  *
- * Requires LLM_API_KEY and LLM_MODEL (or the legacy FIREWORKS_* names), read from .env.
+ * Requires LLM_API_KEY and LLM_MODEL, read from .env.
  * LLM_REASONING_EFFORT and LLM_REASONING_TOKENS apply to every probe call.
  */
 import "dotenv/config";

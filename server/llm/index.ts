@@ -5,7 +5,7 @@ import type { LlmClient, LlmTier } from "./types";
 import { createUsageRecorder } from "./usage";
 
 export * from "./types";
-export { createLlmClient, createFireworksClient } from "./client";
+export { createLlmClient, createOpenAiCompatibleClient } from "./client";
 export {
   isLlmConfigured,
   readLlmConfig,

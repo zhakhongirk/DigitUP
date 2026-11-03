@@ -67,7 +67,7 @@ Variables read by `server/llm` (see `.env.example`):
 
 | Variable                                           | Required | Notes                                                              |
 | -------------------------------------------------- | -------- | ------------------------------------------------------------------ |
-| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`         | yes      | main tier; `FIREWORKS_*` are accepted as legacy aliases            |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`         | yes      | main tier; base URL defaults to `https://api.meta.ai/v1`           |
 | `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`          | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1` |
 | `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`         | no       | heavy tier                                                         |
 | `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS` | no       | per tier, falls back to the main value                             |

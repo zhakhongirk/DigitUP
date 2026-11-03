@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { LlmTier } from "./types";
 
-export const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
+export const DEFAULT_LLM_BASE_URL = "https://api.meta.ai/v1";
 
 export const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
@@ -9,7 +9,7 @@ export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 const llmEnvSchema = z.object({
   apiKey: z.string({ error: "LLM_API_KEY is required" }).min(1, "LLM_API_KEY is required"),
   model: z.string({ error: "LLM_MODEL is required" }).min(1, "LLM_MODEL is required"),
-  baseURL: z.url().default(FIREWORKS_BASE_URL),
+  baseURL: z.url().default(DEFAULT_LLM_BASE_URL),
   LLM_TOOL_CALL_MODE: z.enum(["native", "json"]).default("native"),
   LLM_JSON_RESPONSE_FORMAT: z
     .enum(["true", "false"])

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { isLlmConfigured, readTierConfig } from "@/server/llm/config";
 import { createLlmRouter, tierForSurface } from "@/server/llm/router";
-import type { FireworksClientOptions } from "@/server/llm/client";
+import type { OpenAiCompatibleClientOptions } from "@/server/llm/client";
 import type { LlmClient } from "@/server/llm/types";
 
 const MAIN = {
@@ -83,7 +83,7 @@ describe("readTierConfig", () => {
 
 describe("router", () => {
   function setup(env: Record<string, string>) {
-    const built: FireworksClientOptions[] = [];
+    const built: OpenAiCompatibleClientOptions[] = [];
     const router = createLlmRouter({
       env,
       build: (options) => {

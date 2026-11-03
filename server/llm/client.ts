@@ -233,7 +233,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
   };
 }
 
-export interface FireworksClientOptions {
+export interface OpenAiCompatibleClientOptions {
   tier?: LlmTier;
   apiKey: string;
   model: string;
@@ -245,7 +245,7 @@ export interface FireworksClientOptions {
   recordUsage?: LlmClientOptions["recordUsage"];
 }
 
-export function createFireworksClient(options: FireworksClientOptions): LlmClient {
+export function createOpenAiCompatibleClient(options: OpenAiCompatibleClientOptions): LlmClient {
   const openai = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
   return createLlmClient({
     model: options.model,

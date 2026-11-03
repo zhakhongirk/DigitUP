@@ -1,4 +1,4 @@
-import { createFireworksClient } from "./client";
+import { createOpenAiCompatibleClient } from "./client";
 import { readTierConfig } from "./config";
 import type { LlmClient, LlmSurface, LlmTier, LlmUsageRecord } from "./types";
 
@@ -15,7 +15,7 @@ export function tierForSurface(surface: LlmSurface): LlmTier {
 }
 
 type Env = Record<string, string | undefined>;
-type Build = typeof createFireworksClient;
+type Build = typeof createOpenAiCompatibleClient;
 
 export interface LlmRouter {
   /** The client of a tier; a tier without usable settings of its own uses the main one. */
@@ -26,7 +26,7 @@ export interface LlmRouter {
 export function createLlmRouter({
   env = process.env,
   recordUsage,
-  build = createFireworksClient,
+  build = createOpenAiCompatibleClient,
 }: {
   env?: Env;
   recordUsage?: (record: LlmUsageRecord) => Promise<void> | void;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIREWORKS_BASE_URL, isLlmConfigured, readLlmConfig } from "@/server/llm/config";
+import { DEFAULT_LLM_BASE_URL, isLlmConfigured, readLlmConfig } from "@/server/llm/config";
 
 describe("readLlmConfig", () => {
   it("applies defaults", () => {
@@ -7,7 +7,7 @@ describe("readLlmConfig", () => {
     expect(config).toEqual({
       apiKey: "k",
       model: "m",
-      baseURL: FIREWORKS_BASE_URL,
+      baseURL: DEFAULT_LLM_BASE_URL,
       mode: "native",
       jsonResponseFormat: true,
       reasoningTokens: 0,
