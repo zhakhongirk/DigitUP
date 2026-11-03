@@ -320,9 +320,17 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
               </li>
             ))}
           </ul>
-          {busy && slow ? (
+          {busy && (slow || status.run?.slow) ? (
             <p className="ob-note">
-              This is taking longer than usual. You can leave this page; the draft keeps building.
+              This is taking longer than expected. You can leave this page; the draft keeps building
+              and you can come back to it. If nothing changes in a few minutes, you will be able to
+              try again.
+            </p>
+          ) : null}
+          {status.run?.status === "failed" ? (
+            <p className="ob-error" role="alert">
+              {status.run.error ?? "The draft could not be finished."} Nothing was lost, your files
+              are still here.
             </p>
           ) : null}
           {!showForm && error ? (
@@ -340,8 +348,12 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
           </button>
           <div className="ob-actions-buttons">
             {!busy ? (
-              <button type="button" className="btn btn-secondary" onClick={analyzeAgain}>
-                Analyze again
+              <button
+                type="button"
+                className={status.run?.status === "failed" ? "btn" : "btn btn-secondary"}
+                onClick={analyzeAgain}
+              >
+                {status.run?.status === "failed" ? "Try again" : "Analyze again"}
               </button>
             ) : null}
             {status.draft ? (

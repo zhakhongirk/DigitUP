@@ -8,7 +8,7 @@ import { analyzeLimiter, limitRequest } from "@/server/http/rate-limit";
 import { sessionCookie } from "@/server/mcp/http";
 import { sessionCookieHeader } from "@/server/owner/session";
 import { ServiceError, type TenantContext } from "@/server/services/context";
-import { sourceOrder, type UploadedFile } from "@/server/services/ingestion";
+import { RUN_SLOW_MS, sourceOrder, type UploadedFile } from "@/server/services/ingestion";
 
 export interface OnboardingStatus {
   business: { name: string; slug: string; live: boolean };
@@ -20,7 +20,11 @@ export interface OnboardingStatus {
     error: string | null;
     chars: number;
   }[];
-  run: { status: "pending" | "running" | "succeeded" | "failed"; error: string | null } | null;
+  run: {
+    status: "pending" | "running" | "succeeded" | "failed";
+    error: string | null;
+    slow: boolean;
+  } | null;
   draft: { id: string; offers: number; questions: number } | null;
 }
 
@@ -56,6 +60,7 @@ export async function onboardingStatus(
   services: Services,
   ctx: TenantContext,
 ): Promise<OnboardingStatus> {
+  await services.ingestion.expireStaleRuns(ctx);
   const [tenant, assets, run, draft] = await Promise.all([
     services.tenancy.getTenant(ctx),
     services.ingestion.listSourceAssets(ctx, { limit: 50 }),
@@ -74,7 +79,15 @@ export async function onboardingStatus(
       error: a.error,
       chars: a.extractedText?.length ?? 0,
     })),
-    run: run ? { status: run.status, error: run.error } : null,
+    run: run
+      ? {
+          status: run.status,
+          error: run.error,
+          slow:
+            (run.status === "pending" || run.status === "running") &&
+            Date.now() - run.updatedAt.getTime() > RUN_SLOW_MS,
+        }
+      : null,
     draft:
       draftReady && draft
         ? {

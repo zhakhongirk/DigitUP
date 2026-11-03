@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { Db, DbTx } from "@/db/client";
 import { proposalRuns, sourceAssets } from "@/db/schema";
 import { EVENTS, type EventPublisher } from "@/server/events/types";
@@ -20,6 +20,12 @@ export type ProposalRun = typeof proposalRuns.$inferSelect;
 export const NOTE_KIND = "note";
 export const MAX_FILES = 10;
 export const MAX_NOTE_CHARS = 20_000;
+/** A run with no progress for this long is reported as slow. */
+export const RUN_SLOW_MS = 60_000;
+/** A run with no progress for this long is failed so the owner can retry. */
+export const RUN_TIMEOUT_MS = 5 * 60_000;
+export const RUN_TIMEOUT_MESSAGE =
+  "The analysis did not finish in time. The background worker may be busy or offline. Try again.";
 
 /** The owner's description first, then files by name. */
 export function sourceOrder(a: SourceAsset, b: SourceAsset): number {
@@ -51,6 +57,8 @@ export interface IngestionService {
   /** Starts a fresh proposal run over the sources already uploaded. */
   startRun(ctx: TenantContext): Promise<ProposalRun>;
   getLatestRun(ctx: TenantContext): Promise<ProposalRun | null>;
+  /** Fails pending or running runs that made no progress for `maxAgeMs`. Returns how many. */
+  expireStaleRuns(ctx: TenantContext, maxAgeMs?: number, now?: Date): Promise<number>;
   /** Moves a pending run to running; null when it was already taken or replaced. */
   claimRun(tenantId: string, runId: string): Promise<ProposalRun | null>;
   finishRun(runId: string, outcome: { draftId: string } | { error: string }): Promise<void>;
@@ -267,7 +275,30 @@ export function createIngestionService({ db, events, storage }: IngestionDeps): 
       if (!anyAsset) {
         throw new ServiceError("invalid", "Describe the business or upload at least one file");
       }
-      const run = await db.transaction((tx) => createRun(ctx, tx));
+      const run = await db.transaction(async (tx) => {
+        const created = await createRun(ctx, tx);
+        const stuck = await tx
+          .select({ id: sourceAssets.id })
+          .from(sourceAssets)
+          .where(
+            and(
+              eq(sourceAssets.tenantId, ctx.tenantId),
+              inArray(sourceAssets.status, ["uploaded", "processing"]),
+              lt(sourceAssets.updatedAt, new Date(Date.now() - RUN_SLOW_MS)),
+            ),
+          );
+        for (const asset of stuck) {
+          await tx
+            .update(sourceAssets)
+            .set({ status: "uploaded", error: null })
+            .where(eq(sourceAssets.id, asset.id));
+          await events.publish(tx, EVENTS.fileUploaded, {
+            tenantId: ctx.tenantId,
+            sourceAssetId: asset.id,
+          });
+        }
+        return created;
+      });
       await completeRunIfReady(ctx.tenantId);
       return run;
     },
@@ -280,6 +311,21 @@ export function createIngestionService({ db, events, storage }: IngestionDeps): 
         .orderBy(desc(proposalRuns.createdAt))
         .limit(1);
       return run ?? null;
+    },
+
+    async expireStaleRuns(ctx, maxAgeMs = RUN_TIMEOUT_MS, now = new Date()) {
+      const expired = await db
+        .update(proposalRuns)
+        .set({ status: "failed", error: RUN_TIMEOUT_MESSAGE })
+        .where(
+          and(
+            eq(proposalRuns.tenantId, ctx.tenantId),
+            inArray(proposalRuns.status, ["pending", "running"]),
+            lt(proposalRuns.updatedAt, new Date(now.getTime() - maxAgeMs)),
+          ),
+        )
+        .returning({ id: proposalRuns.id });
+      return expired.length;
     },
 
     async claimRun(tenantId, runId) {

@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { describe, expect, it, vi } from "vitest";
-import { tenants, users } from "@/db/schema";
+import { proposalRuns, tenants, users } from "@/db/schema";
 import { createServices } from "@/server/container";
 import {
   handleOnboardingAnalyze,
@@ -285,5 +285,46 @@ describe("analyze rate limit", () => {
     const limited = await handleOnboardingAnalyze(post(cookie), services);
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).not.toBeNull();
+  });
+});
+
+describe("stalled analysis", () => {
+  async function backdate(cookie: string, ms: number) {
+    const ctx = (await services.tenancy.contextFromSession(cookie.replace("session=", "")))!;
+    const run = (await services.ingestion.getLatestRun(ctx))!;
+    await testDb()
+      .update(proposalRuns)
+      .set({ updatedAt: new Date(Date.now() - ms) })
+      .where(eq(proposalRuns.id, run.id));
+    return ctx;
+  }
+
+  it("flags a run with no progress as slow", async () => {
+    const { cookie } = await signUp();
+    await backdate(cookie, 2 * 60_000);
+    const status = (await (
+      await handleOnboardingStatus(get(cookie), services)
+    ).json()) as OnboardingStatus;
+    expect(status.run).toMatchObject({ status: "pending", slow: true });
+  });
+
+  it("fails a timed out run, then retry starts a new one", async () => {
+    const { cookie } = await signUp();
+    await backdate(cookie, 10 * 60_000);
+    const failed = (await (
+      await handleOnboardingStatus(get(cookie), services)
+    ).json()) as OnboardingStatus;
+    expect(failed.run).toMatchObject({ status: "failed", slow: false });
+    expect(failed.run?.error).toMatch(/did not finish in time/);
+
+    const retried = (await (
+      await handleOnboardingAnalyze(post(cookie), services)
+    ).json()) as OnboardingStatus;
+    expect(retried.run).toMatchObject({ status: "pending", error: null, slow: false });
+  });
+
+  it("does not flag a fresh run", async () => {
+    const { status } = await signUp();
+    expect(status.run?.slow).toBe(false);
   });
 });

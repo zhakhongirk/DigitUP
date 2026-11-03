@@ -3,7 +3,12 @@ import { deflateRawSync } from "node:zlib";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
-import { detectKind, ExtractionError, extractText } from "@/server/services/ingestion/extract";
+import {
+  detectKind,
+  ExtractionError,
+  extractText,
+  SCANNED_PDF_MESSAGE,
+} from "@/server/services/ingestion/extract";
 
 const encode = (text: string) => new TextEncoder().encode(text);
 
@@ -185,6 +190,13 @@ describe("extractText", () => {
   it("reads a pdf file", async () => {
     const { text } = await extractText("pdf", buildPdf("Delivery within two days"));
     expect(text).toContain("Delivery within two days");
+  });
+
+  it("reports a pdf without extractable text as a scan", async () => {
+    const error = await extractText("pdf", buildPdf("")).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ExtractionError);
+    expect((error as Error).message).toBe(SCANNED_PDF_MESSAGE);
+    expect(SCANNED_PDF_MESSAGE).toMatch(/text PDF, a CSV or XLSX/);
   });
 
   it("rejects corrupt input", async () => {

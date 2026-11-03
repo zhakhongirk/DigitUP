@@ -8,6 +8,10 @@ export type SourceKind = "xlsx" | "csv" | "pdf" | "docx" | "txt";
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const MAX_TEXT_CHARS = 200_000;
+const MIN_PDF_CHARS = 5;
+
+export const SCANNED_PDF_MESSAGE =
+  "This PDF has no readable text, it looks like a scan. Upload a text PDF, a CSV or XLSX file, or describe the business by hand.";
 
 function assertSafeZip(bytes: Uint8Array, tooLarge: string, unreadable: string): void {
   const verdict = inspectZip(bytes);
@@ -189,8 +193,8 @@ async function readPdf(bytes: Uint8Array): Promise<string> {
     throw new ExtractionError("Could not read the PDF.");
   }
   const normalised = normalise(text);
-  if (!normalised) {
-    throw new ExtractionError("No text found in the PDF. Scanned documents are not supported yet.");
+  if (normalised.replace(/\s/g, "").length < MIN_PDF_CHARS) {
+    throw new ExtractionError(SCANNED_PDF_MESSAGE);
   }
   return normalised;
 }
