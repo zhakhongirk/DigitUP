@@ -56,7 +56,7 @@ describe("conversations service", () => {
     );
     expect(new Set(results.map((c) => c.id)).size).toBe(1);
     const audit = await createAuditService(db).list(ctx, { entity: "conversation" });
-    expect(audit.filter((e) => e.action === "conversation.created")).toHaveLength(1);
+    expect(audit.filter((e) => e.action === "conversation.created")).toHaveLength(0);
   });
 
   it("keeps insertion order across appends", async () => {
@@ -122,7 +122,7 @@ describe("conversations service", () => {
     expect(changed?.entityId).toBe(conv.id);
     expect(changed?.before).toEqual({ status: "new" });
     expect(changed?.after).toEqual({ status: "completed" });
-    expect(audit.some((e) => e.action === "conversation.created")).toBe(true);
+    expect(audit.some((e) => e.action === "conversation.created")).toBe(false);
 
     const done = await service.list(ctx, { status: "completed" });
     expect(done.map((c) => c.id)).toEqual([conv.id]);

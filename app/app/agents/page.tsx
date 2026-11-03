@@ -87,7 +87,7 @@ export default async function AgentsPage() {
     {
       title: "Your business assistant (owner key)",
       auth: "Owner key",
-      text: "Can update your catalog, orders and questions. Price changes, deletions and bulk edits wait in Approvals until you accept them. Agents cannot approve their own changes.",
+      text: "Can update your catalog, orders and questions. Price changes, deletions and bulk edits wait in Change sets for your approval. Agents cannot approve their own changes.",
       who: "Keep this key to yourself or your own trusted assistant. It acts for the business.",
       url: businessUrl,
       tools: BUSINESS_TOOLS,

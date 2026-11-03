@@ -816,6 +816,7 @@
     overflow-x: auto;
     scroll-snap-type: x proximity;
     scrollbar-width: none;
+    mask-image: linear-gradient(90deg, #000 85%, transparent);
   }
 
   .ws-links::-webkit-scrollbar {
@@ -918,4 +919,24 @@
 
 .ib-reply-submit {
   align-self: flex-end;
+}
+
+.au-filter {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.au-filter a {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.au-filter a[aria-current="page"] {
+  background: var(--hairline-soft);
+  color: var(--text-1);
 }

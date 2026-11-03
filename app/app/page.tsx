@@ -29,7 +29,7 @@ export default async function WorkspacePage() {
   const nothingWaiting = newCount === 0 && view.pendingCount === 0;
   const { health } = view;
   const setupLeft = view.setup.filter((item) => !item.done).length;
-  const showSetup = nothingWaiting && setupLeft > 0;
+  const setupTotal = view.setup.length;
 
   return (
     <>
@@ -40,33 +40,11 @@ export default async function WorkspacePage() {
 
       <div className="wk-grid">
         <section className="wk-card glass" aria-labelledby="wk-needs">
-          <h2 id="wk-needs">{showSetup ? "Get your store ready" : "Needs you"}</h2>
-          {showSetup ? (
-            <ol className="wk-setup">
-              {view.setup.map((item) => (
-                <li key={item.key} className={item.done ? "wk-done" : undefined}>
-                  <Link
-                    href={item.href}
-                    className="wk-step"
-                    {...(item.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                  >
-                    <span className="wk-check" aria-hidden="true">
-                      {item.done ? "✓" : ""}
-                    </span>
-                    <span>
-                      <b>
-                        {item.title}
-                        <span className="sr-only">{item.done ? " (done)" : " (to do)"}</span>
-                      </b>
-                      <small>{item.hint}</small>
-                    </span>
-                  </Link>
-                  {item.copy ? <CopyButton text={`${base}${item.copy}`} /> : null}
-                </li>
-              ))}
-            </ol>
-          ) : nothingWaiting ? (
-            <p className="wk-empty">You are all caught up.</p>
+          <h2 id="wk-needs">Needs you</h2>
+          {nothingWaiting ? (
+            <p className="wk-empty">
+              {setupLeft === 0 ? "You are all caught up." : "Nothing is waiting on you."}
+            </p>
           ) : (
             <div className="wk-stack">
               {view.pendingCount > 0 ? (
@@ -138,6 +116,40 @@ export default async function WorkspacePage() {
           </dl>
         </section>
       </div>
+
+      {setupLeft > 0 ? (
+        <section className="wk-card glass wk-setup-card" aria-labelledby="wk-setup">
+          <h2 id="wk-setup">
+            Get your store ready
+            <span className="wk-count">
+              {setupTotal - setupLeft}/{setupTotal}
+            </span>
+          </h2>
+          <ol className="wk-setup">
+            {view.setup.map((item) => (
+              <li key={item.key} className={item.done ? "wk-done" : undefined}>
+                <Link
+                  href={item.href}
+                  className="wk-step"
+                  {...(item.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                >
+                  <span className="wk-check" aria-hidden="true">
+                    {item.done ? "✓" : ""}
+                  </span>
+                  <span>
+                    <b>
+                      {item.title}
+                      <span className="sr-only">{item.done ? " (done)" : " (to do)"}</span>
+                    </b>
+                    <small>{item.hint}</small>
+                  </span>
+                </Link>
+                {item.copy ? <CopyButton text={`${base}${item.copy}`} /> : null}
+              </li>
+            ))}
+          </ol>
+        </section>
+      ) : null}
 
       <section className="wk-card glass" aria-labelledby="wk-activity">
         <div className="wk-card-head">

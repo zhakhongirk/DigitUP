@@ -130,19 +130,7 @@ export function createConversationsService(deps: {
           .values(values)
           .onConflictDoNothing()
           .returning();
-        if (created) {
-          await recordAudit(tx, ctx, {
-            action: "conversation.created",
-            entity: "conversation",
-            entityId: created.id,
-            after: {
-              agent: created.agent,
-              channel: created.channel,
-              sessionKey: sessionKey ?? null,
-            },
-          });
-          return created;
-        }
+        if (created) return created;
         if (sessionKey === undefined) {
           throw new ServiceError("conflict", "Could not create conversation");
         }

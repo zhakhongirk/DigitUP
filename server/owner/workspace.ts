@@ -157,7 +157,7 @@ export async function loadWorkspace(
       services.orders.listInquiries(ctx, { status: "new", limit: 200 }),
       services.approvals.listChangeSets(ctx, { status: "pending", limit: 200 }),
       services.catalog.catalogStats(ctx),
-      services.audit.list(ctx, { limit: ACTIVITY_LIMIT }),
+      services.audit.list(ctx, { limit: ACTIVITY_LIMIT, excludeAction: "conversation.created" }),
       services.catalog.getBusinessModel(ctx),
       services.tenancy.getTenant(ctx),
       services.tenancy.listApiKeys(ctx),

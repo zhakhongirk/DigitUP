@@ -6,16 +6,18 @@ import { useEffect, useRef } from "react";
 
 const SECTIONS = [
   {
-    title: "Today",
+    title: null,
+    label: "Main",
     links: [
       { href: "/app", label: "Workspace", badge: null, exact: true },
       { href: "/app/inbox", label: "Inbox", badge: "inbox" },
-      { href: "/app/notifications", label: "Notifications", badge: "notifications" },
       { href: "/app/changes", label: "Change sets", badge: "changes" },
+      { href: "/app/notifications", label: "Notifications", badge: "notifications" },
     ],
   },
   {
     title: "Store",
+    label: "Store",
     links: [
       { href: "/app/catalog", label: "Catalog", badge: null },
       { href: "/app/analytics", label: "Analytics", badge: null },
@@ -24,6 +26,7 @@ const SECTIONS = [
   },
   {
     title: "Agents",
+    label: "Agents",
     links: [
       { href: "/app/agents", label: "Connect agents", badge: null },
       { href: "/app/audit", label: "Audit log", badge: null },
@@ -49,10 +52,12 @@ export function SideNav({
   return (
     <div className="ws-links" ref={root}>
       {SECTIONS.map((section) => (
-        <div key={section.title} className="ws-section" role="group" aria-label={section.title}>
-          <span className="ws-section-title" aria-hidden="true">
-            {section.title}
-          </span>
+        <div key={section.label} className="ws-section" role="group" aria-label={section.label}>
+          {section.title ? (
+            <span className="ws-section-title" aria-hidden="true">
+              {section.title}
+            </span>
+          ) : null}
           {section.links.map((link) => (
             <Link
               key={link.href}

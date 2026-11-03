@@ -22,10 +22,13 @@ export default async function AuditPage({
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/audit");
 
-  const total = await services.audit.count(owner);
+  const all = params.all === "1";
+  const excludeAction = all ? undefined : "conversation.created";
+  const total = await services.audit.count(owner, { excludeAction });
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const page = Math.min(parsePage(params.page), pageCount);
   const events = await services.audit.list(owner, {
+    excludeAction,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
@@ -38,6 +41,14 @@ export default async function AuditPage({
         <h1>Audit log</h1>
         <p className="ws-sub">Every change to the store, by you, the agents or the system.</p>
       </div>
+      <nav className="au-filter" aria-label="Audit filter">
+        <Link href="/app/audit" aria-current={all ? undefined : "page"}>
+          Changes
+        </Link>
+        <Link href="/app/audit?all=1" aria-current={all ? "page" : undefined}>
+          All activity
+        </Link>
+      </nav>
       <section className="au-list glass" aria-label="Recent changes">
         {events.length === 0 ? (
           <p className="au-empty">No changes recorded yet.</p>
@@ -72,7 +83,13 @@ export default async function AuditPage({
       <Pager
         page={page}
         pageCount={pageCount}
-        href={(n) => (n > 1 ? `/app/audit?page=${n}` : "/app/audit")}
+        href={(n) => {
+          const query = new URLSearchParams();
+          if (all) query.set("all", "1");
+          if (n > 1) query.set("page", String(n));
+          const qs = query.toString();
+          return qs ? `/app/audit?${qs}` : "/app/audit";
+        }}
       />
     </>
   );

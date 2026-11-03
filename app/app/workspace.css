@@ -265,3 +265,14 @@
   color: var(--text-3);
   text-decoration: line-through;
 }
+
+.wk-setup-card {
+  margin-top: 16px;
+}
+
+.wk-count {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-size: 14px;
+  font-weight: 600;
+}

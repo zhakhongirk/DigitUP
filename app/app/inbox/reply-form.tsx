@@ -25,11 +25,11 @@ export function ReplyForm({ id, answered }: { id: string; answered: boolean }) {
         disabled={pending}
       />
       <p style={{ margin: 0, fontSize: 13, opacity: 0.75 }}>
-        Saved to this question. Agents can read it; contact the customer directly using the details
-        on the right.
+        Saved to this question. Agents can read it; contact the customer directly using the contact
+        details for this question.
       </p>
       <button type="submit" className="btn btn-sm ib-reply-submit" disabled={pending}>
-        {pending ? "Saving�" : "Save answer"}
+        {pending ? "Saving..." : "Save answer"}
       </button>
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">
