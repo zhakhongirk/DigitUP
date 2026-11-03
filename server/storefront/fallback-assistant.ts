@@ -338,6 +338,7 @@ const COPY = {
     orderPrompt:
       'Press "Confirm order" below or reply yes to place it, or no to cancel. You can add a phone number, for example "yes, +7 700 000 00 00".',
     orderSize: (size: string) => `Size: ${size}.`,
+    sizeAsk: (list: string) => `Which size? Available: ${list}.`,
     phoneAsk:
       "Add a phone number so the store can confirm the order (or reply 'yes' to send without it).",
     orderSent: "Your order was sent to the store. The owner will contact you to confirm it.",
@@ -391,15 +392,16 @@ const COPY = {
     orderDraft: (lines: string, total: string) =>
       `Ваш заказ: ${lines}. Итого ${total}. Он ещё не оформлен.`,
     orderPrompt:
-      'Нажмите "Confirm order" ниже или ответьте да, чтобы оформить, или нет, чтобы отменить. Можно добавить телефон, например "да, +7 700 000 00 00".',
+      'Нажмите «Подтвердить заказ» ниже или ответьте да, чтобы оформить, или нет, чтобы отменить. Можно добавить телефон, например "да, +7 700 000 00 00".',
     orderSize: (size: string) => `Размер: ${size}.`,
+    sizeAsk: (list: string) => `Какой размер? Есть: ${list}.`,
     phoneAsk:
       "Добавьте номер телефона, чтобы магазин мог подтвердить заказ (или ответьте 'да', чтобы отправить без него).",
     orderSent: "Заказ отправлен в магазин. Владелец свяжется с вами для подтверждения.",
     orderCancelled: "Хорошо, заказ не оформлен. Ничего не отправлено.",
     orderError:
       "Не удалось оформить заказ. Возможно, он уже отправлен; проверьте карточку заказа или свяжитесь с магазином.",
-    orderWaiting: 'Чтобы оформить заказ, ответьте "да" или нажмите "Confirm order" ниже.',
+    orderWaiting: 'Чтобы оформить заказ, ответьте "да" или нажмите «Подтвердить заказ» ниже.',
     error: "Извините, сейчас не получилось. Попробуйте ещё раз или свяжитесь с магазином напрямую.",
     askOwner: "Конечно.",
     askProduct: "О каком товаре речь? Напишите название или что вы ищете.",
@@ -407,6 +409,8 @@ const COPY = {
 } as const;
 
 type Copy = (typeof COPY)[Lang];
+
+const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть): (.+)\.$/u;
 
 function endsWithPrompt(
   text: string,
@@ -427,6 +431,7 @@ interface ShownOffer {
 
 export type Pending =
   | { kind: "handoff"; question: string }
+  | { kind: "size"; offerId: string; quantity: number; sizes: string[] }
   | { kind: "inquiry_sent" }
   | { kind: "order"; key: string; items: { offer_id: string; quantity: number }[]; asked: boolean };
 
@@ -516,7 +521,29 @@ export function readContext(history: LlmMessage[]): FallbackContext {
   const lastText = lastIndex >= 0 ? messageText(history[lastIndex]) : "";
 
   let pending: Pending | null = null;
-  if (endsWithPrompt(lastText, "handoff")) {
+  const sizeAsk = SIZE_ASK_RE.exec(lastText);
+  if (sizeAsk?.[1]) {
+    const listed = sizeAsk[1];
+    const offer = [...batches]
+      .reverse()
+      .flatMap((b) => offersOf(b))
+      .find((o) => {
+        const sizes = o.attributes?.sizes;
+        return Array.isArray(sizes) && sizes.map(String).join(", ") === listed;
+      });
+    const buy = [...userMessages]
+      .reverse()
+      .map(parseIntent)
+      .find((i) => i.kind === "buy");
+    if (offer) {
+      pending = {
+        kind: "size",
+        offerId: offer.offer_id,
+        quantity: buy?.quantity ?? 1,
+        sizes: listed.split(", "),
+      };
+    }
+  } else if (endsWithPrompt(lastText, "handoff")) {
     const before = history.slice(0, lastIndex).filter((m) => m.role === "user");
     pending = { kind: "handoff", question: messageText(before.at(-1)) };
   } else if (endsWithPrompt(lastText, "addContact")) {
@@ -743,9 +770,29 @@ function submitOrder(
   };
 }
 
-function startDecision(intent: Intent, ctx: FallbackContext, text: string): Decision {
+function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: string): Decision {
   const copy = COPY[intent.lang];
   const { pending } = ctx;
+  if (pending?.kind === "size") {
+    const size = intent.size ?? BARE_SIZE_RE.exec(text)?.[1]?.replace(",", ".") ?? null;
+    if (size && pending.sizes.includes(size)) {
+      return {
+        calls: [
+          {
+            name: "create_order",
+            arguments: {
+              idempotency_key: key,
+              items: [{ offer_id: pending.offerId, quantity: pending.quantity }],
+              submit: false,
+              contact: noteArg(size),
+            },
+          },
+        ],
+      };
+    }
+    if (size) return { reply: copy.sizeAsk(pending.sizes.join(", ")) };
+    if (intent.kind === "no") return { reply: copy.orderCancelled };
+  }
   switch (intent.kind) {
     case "greeting":
       return { reply: `${copy.greeting}${copy.help}` };
@@ -878,6 +925,12 @@ function continueDecision(
             : availabilityOf(offer, copy);
         return { reply: `${copy.notOrderable(offer.title, why)} ${handoffText(copy)}` };
       }
+      const sizes = Array.isArray(offer.attributes?.sizes)
+        ? offer.attributes.sizes.map(String)
+        : [];
+      if (sizes.length > 0 && (!size || !sizes.includes(size))) {
+        return { reply: copy.sizeAsk(sizes.join(", ")) };
+      }
       return {
         calls: [
           {
@@ -923,8 +976,9 @@ export function decide(messages: LlmMessage[], key: string): Decision {
   const intent = parseIntent(text);
   const ctx = readContext(messages.slice(0, lastUser));
   const batches = readBatches(messages.slice(lastUser + 1));
-  if (batches.length === 0) return startDecision(intent, ctx, text);
-  return continueDecision(intent, ctx, batches, key);
+  if (batches.length === 0) return startDecision(intent, ctx, text, key);
+  const withCurrent = { ...ctx, userMessages: [...ctx.userMessages, text] };
+  return continueDecision(intent, withCurrent, batches, key);
 }
 
 export function createFallbackLlm(): LlmClient {

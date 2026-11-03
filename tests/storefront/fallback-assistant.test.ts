@@ -302,7 +302,7 @@ describe("decide", () => {
   it("creates a draft order for a buy request", () => {
     const search = [
       user("I want to buy 2 Runner"),
-      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+      ...toolTurn("search_offers", {}, { total: 1, offers: [{ ...runner, attributes: {} }] }),
     ];
     const [call] = calls(decide(search, "key-1234567"));
     expect(call).toEqual({
@@ -331,6 +331,65 @@ describe("decide", () => {
     expect(text).toContain("Runner x 2");
     expect(text).toContain("200 KZT");
     expect(text).toContain("Confirm order");
+  });
+
+  describe("size step", () => {
+    const buyEn = [
+      user("I'd like to order 2 Runner"),
+      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+    ];
+
+    it("asks for the size before drafting", () => {
+      expect(reply(decide(buyEn, "k"))).toBe("Which size? Available: 41, 42.");
+      const ru = [
+        user("Хочу заказать Runner"),
+        ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+      ];
+      expect(reply(decide(ru, "k"))).toBe("Какой размер? Есть: 41, 42.");
+    });
+
+    it("drafts the order from a bare size answer", () => {
+      const asked = [...buyEn, assistant("Which size? Available: 41, 42.")];
+      expect(readContext(asked).pending).toMatchObject({ kind: "size", quantity: 2 });
+      const [call] = calls(decide([...asked, user("42")], "key-1234567"));
+      expect(call).toEqual({
+        name: "create_order",
+        arguments: {
+          idempotency_key: "key-1234567",
+          items: [{ offer_id: runner.offer_id, quantity: 2 }],
+          submit: false,
+          contact: { note: "Size: 42" },
+        },
+      });
+    });
+
+    it("drafts the order from a Russian size answer and keeps the RU button name", () => {
+      const asked = [
+        user("Хочу заказать Runner"),
+        ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
+        assistant("Какой размер? Есть: 41, 42."),
+      ];
+      const [call] = calls(decide([...asked, user("42 размер")], "k"));
+      expect(call?.arguments.contact).toEqual({ note: "Size: 42" });
+      const draft = [
+        ...asked,
+        user("42 размер"),
+        ...toolTurn(
+          "create_order",
+          {},
+          { status: "draft", items: [{ title: "Runner", quantity: 1 }], total_label: "100 KZT" },
+        ),
+      ];
+      const text = reply(decide(draft, "x"));
+      expect(text).toContain("Размер: 42.");
+      expect(text).toContain("«Подтвердить заказ»");
+    });
+
+    it("asks again for a size that is not offered and cancels on no", () => {
+      const asked = [...buyEn, assistant("Which size? Available: 41, 42.")];
+      expect(reply(decide([...asked, user("50")], "k"))).toBe("Which size? Available: 41, 42.");
+      expect(reply(decide([...asked, user("no")], "k"))).toContain("did not place the order");
+    });
   });
 
   it("shows the size in the draft and passes it as a note", () => {

@@ -8,6 +8,7 @@ import type { AgentEvent } from "@/server/agents/runtime";
 import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
 import { ServiceError } from "@/server/services/context";
+import { orderContactSchema } from "@/server/services/orders";
 import { orderView } from "@/server/mcp/views";
 
 export const CHAT_COOKIE = "sf_session";
@@ -159,7 +160,28 @@ export async function handleOrderConfirm(
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 
+  let phone: string | undefined;
+  const body: unknown = await request.json().catch(() => null);
+  const rawPhone = (body as { phone?: unknown } | null)?.phone;
+  if (typeof rawPhone === "string" && rawPhone.trim() !== "") {
+    const parsed = orderContactSchema.shape.phone.safeParse(rawPhone);
+    if (!parsed.success) return Response.json({ error: "invalid_phone" }, { status: 400 });
+    phone = parsed.data;
+  }
+
   try {
+    if (phone && order.status === "draft") {
+      await services.orders.createOrder(ctx, {
+        idempotencyKey: order.idempotencyKey,
+        items: (order.items as { offerId: string; quantity: number }[]).map((item) => ({
+          offerId: item.offerId,
+          quantity: item.quantity,
+        })),
+        contact: { phone },
+        conversationId: order.conversationId ?? undefined,
+        source: order.source,
+      });
+    }
     const submitted = await services.orders.submitOrder(ctx, orderId);
     return Response.json(orderView(submitted));
   } catch (error) {

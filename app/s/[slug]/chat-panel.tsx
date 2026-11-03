@@ -6,14 +6,18 @@ import type { FormEvent, KeyboardEvent } from "react";
 import {
   MAX_MESSAGE_CHARS,
   UNAVAILABLE_NOTICE,
+  SUGGESTIONS,
+  UI_LABELS,
   chatReducer,
   flushNdjson,
   initialChatState,
+  lastUserLang,
   parseNdjsonChunk,
   toOrderView,
   type OfferChip,
   type OrderCard,
   type StreamEvent,
+  type UiLang,
 } from "./chat-state";
 import { formatPrice } from "@/shared/format";
 import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
@@ -55,13 +59,17 @@ async function errorMessage(res: Response): Promise<string> {
 function OrderSummary({
   slug,
   order,
+  lang,
   onConfirm,
 }: {
   slug: string;
   order: OrderCard;
-  onConfirm: (orderId: string) => void;
+  lang: UiLang;
+  onConfirm: (orderId: string, phone: string) => void;
 }) {
   const sent = order.status !== "draft";
+  const labels = UI_LABELS[lang];
+  const [phone, setPhone] = useState("");
   return (
     <section className="chat-order" aria-label="Order summary">
       <div className="chat-order-head">
@@ -88,11 +96,26 @@ function OrderSummary({
       {sent ? (
         <p className="chat-order-sent">
           Order sent to the store. The store will confirm it.{" "}
-          <Link href={`/s/${encodeURIComponent(slug)}/orders/${order.orderId}`}>Track order</Link>
+          <Link href={`/s/${encodeURIComponent(slug)}/orders/${order.orderId}`}>
+            {labels.track}
+          </Link>
         </p>
       ) : (
         <div className="chat-order-actions">
           {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
+          <label className="chat-order-phone">
+            <span>{labels.phone}</span>
+            <input
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              maxLength={50}
+              placeholder="+7 700 000 00 00"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+            />
+          </label>
+          <p className="chat-order-hint">{labels.phoneHint}</p>
           {order.error ? (
             <p className="chat-error-text" role="alert">
               {order.error}
@@ -102,9 +125,9 @@ function OrderSummary({
             type="button"
             className="btn chat-confirm"
             disabled={order.confirming}
-            onClick={() => onConfirm(order.orderId)}
+            onClick={() => onConfirm(order.orderId, phone)}
           >
-            {order.confirming ? "Sending..." : "Confirm order"}
+            {order.confirming ? labels.sending : labels.confirm}
           </button>
         </div>
       )}
@@ -250,12 +273,16 @@ export function ChatPanel({ slug, storeName }: Props) {
   }, [stream]);
 
   const confirm = useCallback(
-    async (orderId: string) => {
+    async (orderId: string, phone: string) => {
       dispatch({ type: "confirm_started", orderId });
       try {
         const res = await fetch(
           `/api/s/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}/confirm`,
-          { method: "POST" },
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(phone.trim() ? { phone: phone.trim() } : {}),
+          },
         );
         if (!res.ok) {
           dispatch({ type: "confirm_failed", orderId, message: await errorMessage(res) });
@@ -284,6 +311,7 @@ export function ChatPanel({ slug, storeName }: Props) {
   };
 
   const disabled = !state.available;
+  const lang = lastUserLang(state.items);
   const canSend = !disabled && !state.sending && draft.trim() !== "";
 
   return (
@@ -318,7 +346,22 @@ export function ChatPanel({ slug, storeName }: Props) {
           </div>
         ) : null}
         {state.loaded && state.items.length === 0 && !disabled ? (
-          <p className="chat-note chat-empty">Ask about products, availability or ordering.</p>
+          <div className="chat-empty">
+            <p className="chat-note">Ask in English or Russian · Спрашивайте по-русски</p>
+            <div className="chat-chips">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s.en}
+                  type="button"
+                  className="chat-chip"
+                  disabled={state.sending}
+                  onClick={() => sendText(s.en)}
+                >
+                  {s.en} · {s.ru}
+                </button>
+              ))}
+            </div>
+          </div>
         ) : null}
         {state.items.map((item) => {
           if (item.kind === "message") {
@@ -334,7 +377,13 @@ export function ChatPanel({ slug, storeName }: Props) {
           }
           if (item.kind === "order") {
             return (
-              <OrderSummary key={item.id} slug={slug} order={item.order} onConfirm={confirm} />
+              <OrderSummary
+                key={item.id}
+                slug={slug}
+                order={item.order}
+                lang={lang}
+                onConfirm={confirm}
+              />
             );
           }
           return (
@@ -350,7 +399,7 @@ export function ChatPanel({ slug, storeName }: Props) {
               <i />
               <i />
             </span>
-            <span className="chat-activity">{state.activity ?? "Typing"}</span>
+            <span className="chat-activity">{state.activity ?? UI_LABELS[lang].typing}</span>
           </div>
         ) : null}
         {state.error ? (
@@ -375,7 +424,7 @@ export function ChatPanel({ slug, storeName }: Props) {
           className="chat-input"
           rows={1}
           maxLength={MAX_MESSAGE_CHARS}
-          placeholder={disabled ? "Assistant unavailable" : "Message"}
+          placeholder={disabled ? "Assistant unavailable" : UI_LABELS[lang].placeholder}
           value={draft}
           disabled={disabled}
           onChange={(e) => setDraft(e.target.value)}

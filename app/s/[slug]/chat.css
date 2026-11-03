@@ -355,3 +355,51 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+.chat-empty {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+}
+
+.chat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.chat-chip {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.chat-chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.chat-order-phone {
+  display: grid;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.chat-order-phone input {
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 16px;
+}

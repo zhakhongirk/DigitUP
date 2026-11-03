@@ -3,19 +3,65 @@ export const MAX_MESSAGE_CHARS = 2000;
 export const UNAVAILABLE_NOTICE =
   "The store assistant is not available yet. You can browse the catalog and contact the store directly.";
 
-export const TOOL_LABELS: Record<string, string> = {
-  search_offers: "Searching the catalog",
-  get_offer_details: "Looking at the offer",
-  check_availability: "Checking availability",
-  compare_offers: "Comparing offers",
-  get_business_info: "Checking store info",
-  create_order: "Preparing your order",
-  submit_inquiry: "Sending your inquiry",
+export type UiLang = "en" | "ru";
+
+export function detectUiLang(text: string): UiLang {
+  return /[а-яё]/i.test(text) ? "ru" : "en";
+}
+
+export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
+  en: {
+    search_offers: "Searching the catalog",
+    get_offer_details: "Looking at the offer",
+    check_availability: "Checking availability",
+    compare_offers: "Comparing offers",
+    get_business_info: "Checking store info",
+    create_order: "Preparing your order",
+    submit_inquiry: "Sending your inquiry",
+  },
+  ru: {
+    search_offers: "Ищу в каталоге",
+    get_offer_details: "Смотрю товар",
+    check_availability: "Проверяю наличие",
+    compare_offers: "Сравниваю товары",
+    get_business_info: "Смотрю данные магазина",
+    create_order: "Готовлю заказ",
+    submit_inquiry: "Отправляю вопрос",
+  },
 };
 
-export function toolLabel(name: string): string {
-  return TOOL_LABELS[name] ?? "Working on it";
+export function toolLabel(name: string, lang: UiLang = "en"): string {
+  return TOOL_LABELS[lang][name] ?? (lang === "ru" ? "Работаю над этим" : "Working on it");
 }
+
+export const UI_LABELS = {
+  en: {
+    confirm: "Confirm order",
+    sending: "Sending...",
+    track: "Track order",
+    typing: "Typing",
+    placeholder: "Message",
+    phone: "Phone (optional)",
+    phoneHint: "Add a phone so the store can confirm.",
+    inquirySent: "Inquiry sent to the store",
+  },
+  ru: {
+    confirm: "Подтвердить заказ",
+    sending: "Отправляю…",
+    track: "Отследить заказ",
+    typing: "Печатает",
+    placeholder: "Сообщение",
+    phone: "Телефон (необязательно)",
+    phoneHint: "Добавьте телефон, чтобы магазин мог подтвердить.",
+    inquirySent: "Вопрос отправлен в магазин",
+  },
+} as const;
+
+export const SUGGESTIONS: { en: string; ru: string }[] = [
+  { en: "What's in stock?", ru: "Что есть в наличии?" },
+  { en: "Delivery and payment", ru: "Доставка и оплата" },
+  { en: "Prices", ru: "Цены" },
+];
 
 export type OrderLine = {
   title: string;
@@ -240,10 +286,19 @@ function flushOffers(state: ChatState): ChatState {
   return appendItem({ ...state, pendingOffers: [] }, (id) => ({ kind: "offers", id, offers }));
 }
 
+export function lastUserLang(items: ChatItem[]): UiLang {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.kind === "message" && item.role === "user") return detectUiLang(item.content);
+  }
+  return "en";
+}
+
 function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
+  const lang = lastUserLang(state.items);
   switch (event.type) {
     case "tool_call":
-      return { ...state, activity: toolLabel(event.name) };
+      return { ...state, activity: toolLabel(event.name, lang) };
     case "tool_result": {
       const cleared = { ...state, activity: null };
       if (event.isError) return cleared;
@@ -255,7 +310,7 @@ function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
         return appendItem(cleared, (id) => ({
           kind: "note",
           id,
-          text: "Inquiry sent to the store",
+          text: UI_LABELS[lang].inquirySent,
         }));
       }
       if (event.name === "search_offers" || event.name === "get_offer_details") {

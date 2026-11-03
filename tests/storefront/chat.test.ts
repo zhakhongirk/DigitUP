@@ -271,11 +271,12 @@ describe("handleChatMessage", () => {
 });
 
 describe("handleOrderConfirm", () => {
-  function confirm(slug: string, orderId: string, cookie?: string) {
+  function confirm(slug: string, orderId: string, cookie?: string, body?: unknown) {
     return handleOrderConfirm(
       new Request(`${URL_BASE}/orders/${orderId}/confirm`, {
         method: "POST",
         headers: cookie ? { cookie } : {},
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       }),
       slug,
       orderId,
@@ -328,6 +329,22 @@ describe("handleOrderConfirm", () => {
       .ofType("order.submitted")
       .filter((e) => e.orderId === orderId);
     expect(submitted).toHaveLength(1);
+  });
+
+  it("saves a phone sent with the confirmation as the order contact", async () => {
+    const { slug, ctx, cookie, orderId } = await draftOrder();
+    const res = await confirm(slug, orderId, cookie, { phone: "+7 700 111 22 33" });
+    expect(res.status).toBe(200);
+    expect(await services.orders.getOrder(ctx, orderId)).toMatchObject({
+      status: "submitted",
+      contact: { phone: "+7 700 111 22 33" },
+    });
+  });
+
+  it("rejects an invalid phone without submitting", async () => {
+    const { slug, ctx, cookie, orderId } = await draftOrder();
+    expect((await confirm(slug, orderId, cookie, { phone: "1" })).status).toBe(400);
+    expect((await services.orders.getOrder(ctx, orderId))?.status).toBe("draft");
   });
 
   it("returns 404 for another session, a missing cookie, unknown or malformed ids", async () => {

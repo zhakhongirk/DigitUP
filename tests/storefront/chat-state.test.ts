@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  UI_LABELS,
   chatReducer,
+  detectUiLang,
   flushNdjson,
   initialChatState,
   parseNdjsonChunk,
@@ -167,5 +169,21 @@ describe("offer cards", () => {
     ]);
     expect(s.items.map((i) => i.kind)).toEqual(["message", "message", "offers"]);
     expect(s.pendingOffers).toEqual([]);
+  });
+});
+
+describe("interface language", () => {
+  it("detects Cyrillic text", () => {
+    expect(detectUiLang("Хочу заказать")).toBe("ru");
+    expect(detectUiLang("order it")).toBe("en");
+    expect(UI_LABELS.ru.confirm).toBe("Подтвердить заказ");
+  });
+
+  it("labels activity from the last user message", () => {
+    const s = run([
+      { type: "user_sent", text: "Есть кроссовки?" },
+      ev({ type: "tool_call", name: "search_offers" }),
+    ]);
+    expect(s.activity).toBe("Ищу в каталоге");
   });
 });
