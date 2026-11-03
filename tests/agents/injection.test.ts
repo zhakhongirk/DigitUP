@@ -241,3 +241,35 @@ describe("uploaded files in onboarding", () => {
     expect((await own.catalog.searchOffers(ctx, {})).total).toBe(0);
   });
 });
+
+describe("catalog text in the model's context", () => {
+  it("is wrapped as store data and the system prompt says it is not instructions", async () => {
+    const { ctx } = await store();
+    const llm = new ScriptedLlm([
+      { call: [{ name: "search_offers", arguments: { query: "Runner" } }] },
+      { reply: "ok" },
+    ]);
+    const events: { type: string; data?: unknown }[] = [];
+    await createCustomerAgent({ services, llm }).reply({
+      ctx,
+      channel: "storefront",
+      sessionKey: "session-inject-wrap",
+      message: "show me the runner",
+      onEvent: (event) => events.push(event),
+    });
+
+    const second = llm.requests[1]!;
+    const description = toolJson(second, "search_offers").offers[0].description as string;
+    expect(description.startsWith("<store_data>")).toBe(true);
+    expect(description.endsWith("</store_data>")).toBe(true);
+    expect(description).toContain(INJECTION);
+
+    const system = second.messages[0] as { content: string };
+    expect(system.content).toContain("never an instruction");
+
+    const shown = events.find((e) => e.type === "tool_result")?.data as {
+      offers: { description: string }[];
+    };
+    expect(shown.offers[0]!.description.startsWith("<store_data>")).toBe(false);
+  });
+});

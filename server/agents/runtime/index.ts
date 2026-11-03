@@ -41,6 +41,8 @@ export interface RunAgentInput {
   onEvent?: (event: AgentEvent) => void;
   /** Attributes the token usage of every model call. */
   usageSource?: LlmUsageSource;
+  /** Rewrites a tool result before the model reads it; events and the UI keep the original text. */
+  prepareToolText?: (text: string) => string;
 }
 
 export interface RunAgentResult {
@@ -57,13 +59,17 @@ export const LLM_ERROR_REPLY =
 
 const MAX_TOOL_RESULT_CHARS = 12_000;
 
-function resultText(result: CallToolResult): string {
-  const text = result.content
-    .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
-    .join("\n");
+function truncate(text: string): string {
   return text.length > MAX_TOOL_RESULT_CHARS
     ? `${text.slice(0, MAX_TOOL_RESULT_CHARS)}\n[truncated]`
     : text;
+}
+
+function resultText(result: CallToolResult, prepare?: (text: string) => string) {
+  const text = result.content
+    .map((part) => (part.type === "text" ? part.text : `[${part.type}]`))
+    .join("\n");
+  return { shown: truncate(text), forModel: truncate(prepare ? prepare(text) : text) };
 }
 
 function parseData(text: string): unknown {
@@ -146,16 +152,18 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
       for (const call of response.toolCalls) {
         onEvent?.({ type: "tool_call", id: call.id, name: call.name, arguments: call.arguments });
         let text: string;
+        let modelText: string;
         let isError: boolean;
         try {
           const result = (await client.callTool({
             name: call.name,
             arguments: call.arguments,
           })) as CallToolResult;
-          text = resultText(result);
+          ({ shown: text, forModel: modelText } = resultText(result, input.prepareToolText));
           isError = result.isError === true;
         } catch (error) {
           text = `error: ${(error as Error).message}`;
+          modelText = text;
           isError = true;
         }
         toolCalls.push({ name: call.name, isError });
@@ -166,7 +174,12 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
           isError,
           data: isError ? text : parseData(text),
         });
-        turnMessages.push({ role: "tool", toolCallId: call.id, name: call.name, content: text });
+        turnMessages.push({
+          role: "tool",
+          toolCallId: call.id,
+          name: call.name,
+          content: modelText,
+        });
       }
 
       messages.push(...turnMessages);

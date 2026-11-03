@@ -6,6 +6,7 @@ import { submissionLimiter } from "@/server/http/rate-limit";
 import { createFallbackLlm, isExplicitConfirmation } from "@/server/storefront/fallback-assistant";
 import { runAgent, type AgentEvent, type RunAgentResult } from "../runtime";
 import { customerAgentPrompt } from "./prompt";
+import { stripStoreDataTags, wrapStoreData } from "./store-data";
 
 export type CustomerChannel = "storefront" | "external_agent";
 
@@ -37,7 +38,21 @@ export function createCustomerAgent(deps: {
   budget?: TokenBudget;
 }): CustomerAgent {
   const { services } = deps;
-  const fallbackLlm = createFallbackLlm();
+  const rules = createFallbackLlm();
+  /** The rule-based assistant parses tool results, so it gets them without store data tags. */
+  const fallbackLlm: LlmClient = {
+    mode: rules.mode,
+    model: rules.model,
+    chat: (request) =>
+      rules.chat({
+        ...request,
+        messages: request.messages.map((message) =>
+          message.role === "tool"
+            ? { ...message, content: stripStoreDataTags(message.content) }
+            : message,
+        ),
+      }),
+  };
   const budget = deps.budget ?? (deps.llm ? getTokenBudget() : null);
   return {
     async reply({ ctx, channel, sessionKey, message, apiKeyId, submissionKey, onEvent }) {
@@ -73,6 +88,7 @@ export function createCustomerAgent(deps: {
         ctx: agentCtx,
         conversationId: conversation.id,
         userMessage: message,
+        prepareToolText: wrapStoreData,
         systemPrompt: customerAgentPrompt(tenant.name, channel),
         llm,
         server,
