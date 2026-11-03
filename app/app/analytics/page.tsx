@@ -255,6 +255,38 @@ export default async function AnalyticsPage({
         )}
       </section>
 
+      <section className="an-card an-wide glass" aria-labelledby="an-answers">
+        <h2 id="an-answers">{t("an.answers")}</h2>
+        <p className="an-q-meta">{t("an.answersNote")}</p>
+        {view.answers.findOffers === 0 ? (
+          <p className="an-empty">{t("an.answersNone")}</p>
+        ) : (
+          <dl className="an-facts">
+            <div>
+              <dt>{t("an.answersCount")}</dt>
+              <dd>{view.answers.findOffers}</dd>
+            </div>
+            <div>
+              <dt>
+                {t("an.answersFlagged")}
+                <span className="an-q-meta">
+                  {" "}
+                  {t("an.answersFlaggedNote", { rated: view.answers.rated })}
+                </span>
+              </dt>
+              <dd>{percent(view.answers.flaggedShare, t)}</dd>
+            </div>
+            <div>
+              <dt>
+                {t("an.answersRaw")}
+                <span className="an-q-meta"> {t("an.answersRawNote")}</span>
+              </dt>
+              <dd>{percent(view.answers.rawShare, t)}</dd>
+            </div>
+          </dl>
+        )}
+      </section>
+
       <div className="an-row">
         <section className="an-card an-list glass" aria-labelledby="an-open">
           <div className="an-card-head">

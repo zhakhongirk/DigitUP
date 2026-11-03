@@ -2,6 +2,7 @@ import type { Services } from "@/server/container";
 import type { MissedQuery } from "@/server/services/catalog/search-misses";
 import type { TenantContext } from "@/server/services/context";
 import type { Conversation, ConversationStats, DayCount } from "@/server/services/conversations";
+import type { IntentStats } from "@/server/services/intent";
 import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
 import { appTimeZone } from "@/server/time";
 import type { Lang } from "@/server/storefront/i18n";
@@ -148,6 +149,22 @@ export function dailySeries(
   return points;
 }
 
+export interface AgentAnswers {
+  findOffers: number;
+  rated: number;
+  flaggedShare: number | null;
+  rawShare: number | null;
+}
+
+export function agentAnswers(stats: IntentStats): AgentAnswers {
+  return {
+    findOffers: stats.findOffers,
+    rated: stats.reported,
+    flaggedShare: stats.reported > 0 ? (stats.wrong + stats.incomplete) / stats.reported : null,
+    rawShare: stats.findOffers > 0 ? Math.min(stats.followedByRaw / stats.findOffers, 1) : null,
+  };
+}
+
 export interface OpenQuestion {
   id: string;
   subject: string;
@@ -171,6 +188,7 @@ export interface AnalyticsView {
   offers: TopOffer[];
   queries: TopQuery[];
   missedQueries: MissedQuery[];
+  answers: AgentAnswers;
   days: DayPoint[];
   openQuestions: OpenQuestion[];
 }
@@ -196,6 +214,7 @@ export async function loadAnalytics(
     daily,
     unresolved,
     missedQueries,
+    intentStats,
   ] = await Promise.all([
     services.conversations.stats(ctx, { since }),
     services.orders.stats(ctx, { since }),
@@ -204,6 +223,7 @@ export async function loadAnalytics(
     services.orders.dailyCounts(ctx, { since, timeZone }),
     services.orders.listInquiries(ctx, { status: "new", limit: OPEN_QUESTIONS }),
     services.catalog.searchMisses(ctx, { days: 30, limit: MISSED_QUERIES, now }),
+    services.intent.stats(ctx, { days: 30, now }),
   ]);
   const placed = Object.entries(orders.byStatus).reduce(
     (sum, [status, n]) => (status === "draft" ? sum : sum + n),
@@ -223,6 +243,7 @@ export async function loadAnalytics(
     offers: orders.topOffers,
     queries: topQueries(firstMessages.map((m) => m.content)),
     missedQueries,
+    answers: agentAnswers(intentStats),
     days: dailySeries(
       now,
       range,

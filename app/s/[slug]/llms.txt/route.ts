@@ -1,5 +1,6 @@
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
+import { publicRawToolsEnabled } from "@/server/mcp/public/server";
 import { loadStore } from "@/server/storefront/data";
 import { storeLlmsTxt } from "@/server/storefront/llms";
 
@@ -14,6 +15,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ slu
     slug,
     name: store.name,
     description: store.description,
+    rawTools: publicRawToolsEnabled(),
   });
   return new Response(body, { headers: { "content-type": "text/plain; charset=utf-8" } });
 }

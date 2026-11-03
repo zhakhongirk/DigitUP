@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentAnswers,
   agentOutcome,
   channelCounts,
   dailySeries,
@@ -95,5 +96,26 @@ describe("analytics", () => {
       { day: "2026-11-02", conversations: 0, orders: 0, inquiries: 0 },
       { day: "2026-11-03", conversations: 2, orders: 0, inquiries: 0 },
     ]);
+  });
+});
+
+describe("agent answers", () => {
+  it("shares wrong and incomplete verdicts among rated answers", () => {
+    expect(
+      agentAnswers({ findOffers: 10, reported: 4, wrong: 1, incomplete: 1, followedByRaw: 3 }),
+    ).toEqual({ findOffers: 10, rated: 4, flaggedShare: 0.5, rawShare: 0.3 });
+  });
+
+  it("has no shares before anything happened", () => {
+    expect(
+      agentAnswers({ findOffers: 0, reported: 0, wrong: 0, incomplete: 0, followedByRaw: 0 }),
+    ).toEqual({ findOffers: 0, rated: 0, flaggedShare: null, rawShare: null });
+  });
+
+  it("never reports a raw share above 100 percent", () => {
+    expect(
+      agentAnswers({ findOffers: 2, reported: 0, wrong: 0, incomplete: 0, followedByRaw: 5 })
+        .rawShare,
+    ).toBe(1);
   });
 });
