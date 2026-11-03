@@ -20,7 +20,7 @@ export function OfferImage({ src, alt, className, size, sizes, priority }: Props
       sizes={sizes}
       className={className}
       priority={priority}
-      unoptimized={!local}
+      unoptimized={!local || src.endsWith(".svg")}
     />
   );
 }

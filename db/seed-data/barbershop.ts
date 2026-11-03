@@ -2,6 +2,13 @@ import type { BusinessModelInput } from "@/shared/business-model";
 
 type Offer = NonNullable<BusinessModelInput["offers"]>[number];
 
+function photoFor(title: string, category: string): string {
+  if (title.toLowerCase().includes("shave")) return "/demo/shave.svg";
+  if (category === "Beard") return "/demo/beard.svg";
+  if (category === "Coloring") return "/demo/coloring.svg";
+  return "/demo/haircut.svg";
+}
+
 function service(
   title: string,
   description: string,
@@ -21,6 +28,7 @@ function service(
     price_status: price === null ? "on_request" : "confirmed",
     availability: "in_stock",
     status: "active",
+    image_url: photoFor(title, category),
   };
 }
 

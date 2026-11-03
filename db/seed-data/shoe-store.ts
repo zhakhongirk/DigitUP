@@ -9,17 +9,17 @@ function range(from: number, to: number): string[] {
   return ALL_SIZES.filter((s) => Number(s) >= from && Number(s) <= to);
 }
 
-/** Product photos for the demo, served from public/demo. */
-const PHOTOS: Record<string, string> = {
-  "Nordix Air Street Sneakers": "/demo/daily-court.jpg",
-  "Velor Retro Court Sneakers": "/demo/suede-skate.jpg",
-  "Swiftrun Pulse Running Shoes": "/demo/aero-run-3.jpg",
-  "Trailhawk Trail Runners": "/demo/aero-run-3-trail.jpg",
-  "Swiftrun Carbon Racer": "/demo/marathon-pro-carbon.jpg",
-  "Aeroflex Daily Trainer": "/demo/pacer-lite.jpg",
-  "Altai Winter Leather Boots": "/demo/ridge-hiker.jpg",
-  "Kazbek Limited Edition Sneakers": "/demo/retro-runner.jpg",
-};
+function photoFor(row: { title: string; category: string }): string {
+  const title = row.title.toLowerCase();
+  if (row.category === "Kids") return "/demo/kids.svg";
+  if (row.category === "Boots") return "/demo/boots.svg";
+  if (row.category === "Sandals") return "/demo/sandals.svg";
+  if (title.includes("flats")) return "/demo/flats.svg";
+  if (row.category === "Casual") return "/demo/loafers.svg";
+  if (title.includes("trail")) return "/demo/trail.svg";
+  if (row.category === "Running") return "/demo/running.svg";
+  return "/demo/sneakers.svg";
+}
 
 interface Row {
   title: string;
@@ -54,7 +54,7 @@ function offer(row: Row): Offer {
     price_status: row.price === null ? "on_request" : "confirmed",
     availability: row.availability,
     status: "active",
-    image_url: PHOTOS[row.title] ?? null,
+    image_url: photoFor(row),
   };
 }
 
