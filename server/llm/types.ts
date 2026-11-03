@@ -83,6 +83,7 @@ export interface LlmClient {
 
 export type LlmErrorKind =
   | "api_error"
+  | "timeout"
   | "empty_response"
   | "invalid_tool_arguments"
   | "invalid_json_response"

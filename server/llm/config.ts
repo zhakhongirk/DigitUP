@@ -6,6 +6,10 @@ export const DEFAULT_LLM_BASE_URL = "https://api.meta.ai/v1";
 export const REASONING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+export const DEFAULT_TIMEOUT_MS = 25_000;
+export const HEAVY_DEFAULT_TIMEOUT_MS = 90_000;
+export const DEFAULT_MAX_RETRIES = 1;
+
 const llmEnvSchema = z.object({
   apiKey: z.string({ error: "LLM_API_KEY is required" }).min(1, "LLM_API_KEY is required"),
   model: z.string({ error: "LLM_MODEL is required" }).min(1, "LLM_MODEL is required"),
@@ -17,6 +21,8 @@ const llmEnvSchema = z.object({
     .transform((value) => value === "true"),
   LLM_REASONING_EFFORT: z.enum(REASONING_EFFORTS).optional(),
   LLM_REASONING_TOKENS: z.coerce.number().int().min(0).default(0),
+  LLM_TIMEOUT_MS: z.coerce.number().int().min(1).default(DEFAULT_TIMEOUT_MS),
+  LLM_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(DEFAULT_MAX_RETRIES),
 });
 
 export interface LlmConfig {
@@ -27,6 +33,10 @@ export interface LlmConfig {
   jsonResponseFormat: boolean;
   reasoningEffort?: ReasoningEffort;
   reasoningTokens: number;
+  /** Per request; the SDK aborts the call and counts it as a failed attempt. */
+  timeoutMs: number;
+  /** Extra attempts after a connection error, timeout, 429 or 5xx. */
+  maxRetries: number;
 }
 
 type Env = Record<string, string | undefined>;
@@ -55,6 +65,8 @@ export function readLlmConfig(env: Env = process.env): LlmConfig {
     LLM_JSON_RESPONSE_FORMAT: env.LLM_JSON_RESPONSE_FORMAT || undefined,
     LLM_REASONING_EFFORT: env.LLM_REASONING_EFFORT || undefined,
     LLM_REASONING_TOKENS: env.LLM_REASONING_TOKENS || undefined,
+    LLM_TIMEOUT_MS: env.LLM_TIMEOUT_MS || undefined,
+    LLM_MAX_RETRIES: env.LLM_MAX_RETRIES || undefined,
   });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((issue) => issue.message).join("; ");
@@ -69,6 +81,8 @@ export function readLlmConfig(env: Env = process.env): LlmConfig {
     jsonResponseFormat: value.LLM_JSON_RESPONSE_FORMAT,
     ...(value.LLM_REASONING_EFFORT ? { reasoningEffort: value.LLM_REASONING_EFFORT } : {}),
     reasoningTokens: value.LLM_REASONING_TOKENS,
+    timeoutMs: value.LLM_TIMEOUT_MS,
+    maxRetries: value.LLM_MAX_RETRIES,
   };
 }
 
@@ -96,12 +110,16 @@ export function readTierConfig(tier: LlmTier, env: Env = process.env): LlmConfig
       mode: z.enum(["native", "json"]).optional(),
       effort: z.enum(REASONING_EFFORTS).optional(),
       tokens: z.coerce.number().int().min(0).optional(),
+      timeoutMs: z.coerce.number().int().min(1).optional(),
+      maxRetries: z.coerce.number().int().min(0).max(5).optional(),
     })
     .safeParse({
       baseURL,
       mode: own("TOOL_CALL_MODE"),
       effort: own("REASONING_EFFORT"),
       tokens: own("REASONING_TOKENS"),
+      timeoutMs: own("TIMEOUT_MS"),
+      maxRetries: own("MAX_RETRIES"),
     });
   if (!parsed.success) {
     const problems = parsed.error.issues.map((issue) => issue.message).join("; ");
@@ -116,5 +134,9 @@ export function readTierConfig(tier: LlmTier, env: Env = process.env): LlmConfig
     jsonResponseFormat: main?.jsonResponseFormat ?? true,
     ...(reasoningEffort ? { reasoningEffort } : {}),
     reasoningTokens: parsed.data.tokens ?? main?.reasoningTokens ?? 0,
+    timeoutMs:
+      parsed.data.timeoutMs ??
+      (tier === "heavy" ? HEAVY_DEFAULT_TIMEOUT_MS : (main?.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
+    maxRetries: parsed.data.maxRetries ?? main?.maxRetries ?? DEFAULT_MAX_RETRIES,
   };
 }

@@ -44,6 +44,8 @@ export function createLlmRouter({
           apiKey: config.apiKey,
           model: config.model,
           baseURL: config.baseURL,
+          timeoutMs: config.timeoutMs,
+          maxRetries: config.maxRetries,
           mode: config.mode,
           jsonResponseFormat: config.jsonResponseFormat,
           reasoningEffort: config.reasoningEffort,

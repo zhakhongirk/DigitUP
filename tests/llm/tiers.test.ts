@@ -22,7 +22,10 @@ describe("readTierConfig", () => {
   it("falls back to the main settings for unset tier values", () => {
     const env = { ...MAIN, LLM_REASONING_EFFORT: "low", LLM_REASONING_TOKENS: "500" };
     expect(readTierConfig("fast", env)).toEqual(readTierConfig("main", env));
-    expect(readTierConfig("heavy", env)).toEqual(readTierConfig("main", env));
+    expect(readTierConfig("heavy", env)).toEqual({
+      ...readTierConfig("main", env),
+      timeoutMs: 90_000,
+    });
   });
 
   it("overrides only the values the tier sets and keeps the main key", () => {

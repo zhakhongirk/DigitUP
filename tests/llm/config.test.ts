@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_LLM_BASE_URL, isLlmConfigured, readLlmConfig } from "@/server/llm/config";
+import {
+  DEFAULT_LLM_BASE_URL,
+  isLlmConfigured,
+  readLlmConfig,
+  readTierConfig,
+} from "@/server/llm/config";
 
 describe("readLlmConfig", () => {
   it("applies defaults", () => {
@@ -11,6 +16,8 @@ describe("readLlmConfig", () => {
       mode: "native",
       jsonResponseFormat: true,
       reasoningTokens: 0,
+      timeoutMs: 25_000,
+      maxRetries: 1,
     });
   });
 
@@ -86,5 +93,38 @@ describe("readLlmConfig", () => {
     expect(() => readLlmConfig({ ...base, LLM_REASONING_TOKENS: "-1" })).toThrow(
       /Invalid LLM configuration/,
     );
+  });
+});
+
+describe("timeouts and retries", () => {
+  const MAIN = { LLM_API_KEY: "k", LLM_MODEL: "m" };
+
+  it("reads the main values", () => {
+    const config = readLlmConfig({ ...MAIN, LLM_TIMEOUT_MS: "5000", LLM_MAX_RETRIES: "0" });
+    expect(config.timeoutMs).toBe(5000);
+    expect(config.maxRetries).toBe(0);
+  });
+
+  it("rejects invalid values", () => {
+    expect(() => readLlmConfig({ ...MAIN, LLM_TIMEOUT_MS: "soon" })).toThrow(/Invalid LLM/);
+  });
+
+  it("lets fast inherit and heavy default to a longer timeout", () => {
+    const env = { ...MAIN, LLM_TIMEOUT_MS: "8000", LLM_FAST_MODEL: "f", LLM_HEAVY_MODEL: "h" };
+    expect(readTierConfig("fast", env)?.timeoutMs).toBe(8000);
+    expect(readTierConfig("heavy", env)?.timeoutMs).toBe(90_000);
+    expect(readTierConfig("heavy", env)?.maxRetries).toBe(1);
+  });
+
+  it("applies per-tier overrides", () => {
+    const env = {
+      ...MAIN,
+      LLM_FAST_TIMEOUT_MS: "3000",
+      LLM_HEAVY_TIMEOUT_MS: "120000",
+      LLM_HEAVY_MAX_RETRIES: "2",
+    };
+    expect(readTierConfig("fast", env)?.timeoutMs).toBe(3000);
+    expect(readTierConfig("heavy", env)?.timeoutMs).toBe(120_000);
+    expect(readTierConfig("heavy", env)?.maxRetries).toBe(2);
   });
 });

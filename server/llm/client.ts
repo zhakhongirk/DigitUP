@@ -120,6 +120,9 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
     try {
       completion = await completions.create({ ...params, ...reasoningParams });
     } catch (error) {
+      if (error instanceof OpenAI.APIConnectionTimeoutError) {
+        throw new LlmError("timeout", `LLM request timed out: ${error.message}`, { cause: error });
+      }
       throw new LlmError("api_error", `LLM request failed: ${(error as Error).message}`, {
         cause: error,
       });
@@ -239,6 +242,8 @@ export interface OpenAiCompatibleClientOptions {
   model: string;
   mode: ToolCallMode;
   baseURL: string;
+  timeoutMs?: number;
+  maxRetries?: number;
   jsonResponseFormat?: boolean;
   reasoningEffort?: ReasoningEffort;
   reasoningTokens?: number;
@@ -246,7 +251,12 @@ export interface OpenAiCompatibleClientOptions {
 }
 
 export function createOpenAiCompatibleClient(options: OpenAiCompatibleClientOptions): LlmClient {
-  const openai = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
+  const openai = new OpenAI({
+    apiKey: options.apiKey,
+    baseURL: options.baseURL,
+    ...(options.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
+    ...(options.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
+  });
   return createLlmClient({
     model: options.model,
     tier: options.tier,
