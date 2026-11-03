@@ -16,9 +16,9 @@ describe("notificationView", () => {
     });
   });
 
-  it("links change sets and the live store", () => {
+  it("links approvals and the live store", () => {
     expect(notificationView({ kind: "change_set", refId: ref }).href).toBe(
-      `/app/changes?id=${ref}`,
+      `/app/approvals?id=${ref}`,
     );
     expect(notificationView({ kind: "tenant.live", refId: ref }).href).toBe("/app");
   });

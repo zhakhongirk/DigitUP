@@ -134,7 +134,7 @@ export function inboxHref(item: Pick<InboxItem, "key">): string {
 }
 
 export function changeHref(id: string): string {
-  return `/app/changes?id=${encodeURIComponent(id)}`;
+  return `/app/approvals?id=${encodeURIComponent(id)}`;
 }
 
 export function activityRow(event: AuditEvent): ActivityRow {
@@ -169,7 +169,7 @@ export async function loadWorkspace(
     const ops = parseOps(cs.ops);
     return {
       id: cs.id,
-      summary: ops ? summarize(ops) : "Unreadable change set",
+      summary: ops ? summarize(ops) : "Unreadable approval request",
       createdAt: cs.createdAt,
     };
   });

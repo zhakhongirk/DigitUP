@@ -104,7 +104,7 @@ export function summarize(ops: ChangeSetOp[]): string {
 
 /**
  * Rows for each operation. "Before" is the live catalog value, so it is only
- * meaningful while the change set is pending.
+ * meaningful while the approval is pending.
  */
 export function describeChangeSet(
   changeSet: ChangeSet,
@@ -178,7 +178,7 @@ export function describeChangeSet(
     reason: changeSet.reason,
     createdAt: changeSet.createdAt,
     resolvedAt: changeSet.resolvedAt,
-    summary: ops ? summarize(ops) : "Unreadable change set",
+    summary: ops ? summarize(ops) : "Unreadable approval request",
     groups,
     flagged,
     invalid: ops === null,
@@ -201,7 +201,7 @@ export async function loadChanges(
     return {
       id: cs.id,
       status: cs.status,
-      summary: ops ? summarize(ops) : "Unreadable change set",
+      summary: ops ? summarize(ops) : "Unreadable approval request",
       createdAt: cs.createdAt,
     };
   });

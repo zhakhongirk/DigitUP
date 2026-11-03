@@ -37,7 +37,7 @@ export async function POST(request: Request): Promise<Response> {
       bytes: new Uint8Array(await file.arrayBuffer()),
     });
     if (result.status === "created") {
-      return Response.json({ status: "created", href: `/app/changes?id=${result.changeSetId}` });
+      return Response.json({ status: "created", href: `/app/approvals?id=${result.changeSetId}` });
     }
     return Response.json({
       status: "unchanged",

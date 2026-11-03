@@ -9,7 +9,7 @@ const STEPS = [
 
 const WORKSPACE = [
   ["Inbox", "Orders and shopper questions the assistant could not answer."],
-  ["Change sets", "Price changes, deletions and bulk edits from agents wait for your approval."],
+  ["Approvals", "Price changes, deletions and bulk edits from agents wait for your approval."],
   ["Catalog", "Edit offers, prices and policies after launch."],
   ["Analytics", "See what shoppers and agents ask for."],
   ["Audit log", "Every change to the store, and who made it."],
@@ -18,7 +18,7 @@ const WORKSPACE = [
 const ENDPOINTS = [
   ["/mcp/public/:slug", "No key. Talk to the store assistant."],
   ["/mcp/customer/:slug", "Customer agent key. Search offers, check stock, place orders."],
-  ["/mcp/business", "Owner key. Manage the catalog and review change sets."],
+  ["/mcp/business", "Owner key. Manage the catalog and review approvals."],
 ] as const;
 
 export default function HomePage() {

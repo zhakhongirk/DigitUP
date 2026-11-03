@@ -17,10 +17,10 @@ Sign in at `/signin`. Signing out ends the session on this device. Settings has 
 #### Owner area
 
 - **Workspace home**: overview of the store.
-- **Notifications** (`/app/notifications`): the nav shows an unread count. The worker adds a notification for each new order, new question, change set proposed by an agent, and when the store goes live. Opening one marks it read and takes you to it; "Mark all as read" clears the rest.
+- **Notifications** (`/app/notifications`): linked from the Workspace header with an unread count. The worker adds a notification for each new order, new question, approval requested by an agent, and when the store goes live. Opening one marks it read and takes you to it; "Mark all as read" clears the rest.
 - **Inbox** (`/app/inbox`): orders and shopper questions. The owner changes order statuses and answers questions; customer agents read the answer through `get_inquiry`.
-- **Change sets**: approve or reject risky catalog edits proposed by the business agent.
-- **Catalog**: search, edit and archive offers. "Update from file" (`/app/catalog/import`) reads a new price list and creates one pending change set; offers missing from the file are listed but not deleted. The catalog can be exported as CSV.
+- **Approvals** (`/app/approvals`, change sets in the API): approve or reject risky catalog edits proposed by the business agent.
+- **Catalog**: search, edit and archive offers. "Update from file" (`/app/catalog/import`) reads a new price list and creates one pending approval; offers missing from the file are listed but not deleted. The catalog can be exported as CSV.
 - **Analytics**: activity over the last 7 or 30 days, with an orders CSV export. Orders and catalog exports are served at `/app/export/orders` and `/app/export/catalog`.
 - **Connect agents**: MCP endpoint URLs, and creating and revoking API keys.
 - **Audit log**: everything that changed the store.
@@ -49,7 +49,7 @@ All endpoints are served by the Next.js app over HTTP. The tenant is fixed by au
 
 `create_order` is two-step: call it with `submit=false` to get a summary, then again with the same idempotency key and `submit=true` once the shopper has confirmed. A `contact` (name, phone, email or note) passed on the confirming call is saved on the draft before it is submitted.
 
-High-risk catalog changes made through the business endpoint (price updates, deletions, bulk upserts) are not applied directly. They create a change set that the owner approves in the UI first.
+High-risk catalog changes made through the business endpoint (price updates, deletions, bulk upserts) are not applied directly. They create a pending approval (a change set in the API) that the owner approves in the UI first.
 
 `pnpm db:seed` creates API keys for the demo stores (see below).
 
@@ -103,7 +103,7 @@ pnpm worker                 # in a second terminal
 | `stride-shoes` | `owner@stride-shoes.demo` | shoe store |
 | `fade-factory` | `owner@fade-factory.demo` | barbershop |
 
-The password for both is `demo-password-123`. For each store it creates, the seed also adds demo activity spread over the last two weeks: conversations, orders, questions and change sets. Existing stores are left untouched. The seed also prints an owner API key and a customer-agent API key for each new store (shown once, so copy them from the output).
+The password for both is `demo-password-123`. For each store it creates, the seed also adds demo activity spread over the last two weeks: conversations, orders, questions and approvals. Existing stores are left untouched. The seed also prints an owner API key and a customer-agent API key for each new store (shown once, so copy them from the output).
 
 `pnpm demo:data` writes sample onboarding files to `demo-data/`: `shoe-catalog.xlsx`, `store-terms.pdf` and `barbershop-prices.csv`. Upload them at `/onboarding` to try the full flow.
 
@@ -162,7 +162,7 @@ server/       Backend code
   llm/        LLM client and configuration
   mcp/        MCP servers (public, customer, business) and HTTP entry points
   onboarding/ Onboarding flow and review logic
-  owner/      Owner session and data for the owner area (workspace, inbox, change sets, catalog, analytics, audit, settings)
+  owner/      Owner session and data for the owner area (workspace, inbox, approvals, catalog, analytics, audit, settings)
   http/       Rate limiting and bounded form parsing
   services/   Tenant-scoped domain services
   storage/    Upload storage

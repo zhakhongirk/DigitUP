@@ -17,9 +17,9 @@ const ACTION_LABELS: Record<string, string> = {
   "business_model.applied": "Published the business model",
   "business_model.confirmed": "Confirmed the business model",
   "business_model.proposed": "Proposed a business model",
-  "change_set.applied": "Applied a change set",
-  "change_set.created": "Proposed a change set",
-  "change_set.rejected": "Rejected a change set",
+  "change_set.applied": "Approved changes",
+  "change_set.created": "Requested an approval",
+  "change_set.rejected": "Rejected changes",
   "conversation.created": "Started a conversation",
   "conversation.status_changed": "Changed a conversation status",
   "inquiry.answered": "Answered a question",
@@ -134,8 +134,8 @@ export async function resolveAuditTargets(
       const changeSet = changeSetById.get(id);
       const ops = changeSet ? parseOps(changeSet.ops) : null;
       targets.set(event.id, {
-        name: ops ? summarize(ops) : "Change set",
-        href: changeSet ? `/app/changes?id=${id}` : null,
+        name: ops ? summarize(ops) : "Approval",
+        href: changeSet ? `/app/approvals?id=${id}` : null,
       });
     }
   }

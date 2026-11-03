@@ -11,8 +11,7 @@ const SECTIONS = [
     links: [
       { href: "/app", label: "Workspace", badge: null, exact: true },
       { href: "/app/inbox", label: "Inbox", badge: "inbox" },
-      { href: "/app/changes", label: "Change sets", badge: "changes" },
-      { href: "/app/notifications", label: "Notifications", badge: "notifications" },
+      { href: "/app/approvals", label: "Approvals", badge: "changes" },
     ],
   },
   {
@@ -39,7 +38,7 @@ export function SideNav({
   counts,
 }: {
   slug: string;
-  counts: { inbox: number; changes: number; notifications: number };
+  counts: { inbox: number; changes: number };
 }) {
   const path = usePathname();
   const root = useRef<HTMLDivElement>(null);

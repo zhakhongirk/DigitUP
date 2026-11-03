@@ -79,7 +79,7 @@ export async function answerInquiry(_prev: ActionState, form: FormData): Promise
 export async function decideChangeSet(_prev: ActionState, form: FormData): Promise<ActionState> {
   const services = await getServices();
   const owner = await currentOwner(services);
-  if (!owner) redirect("/signin?next=/app/changes");
+  if (!owner) redirect("/signin?next=/app/approvals");
 
   const id = form.get("id");
   const decision = form.get("decision");

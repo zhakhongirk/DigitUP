@@ -23,7 +23,11 @@ export default async function WorkspacePage() {
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app");
 
-  const [view, base] = await Promise.all([loadWorkspace(services, owner), appBaseUrl()]);
+  const [view, base, unread] = await Promise.all([
+    loadWorkspace(services, owner),
+    appBaseUrl(),
+    services.notifications.unreadCount(owner),
+  ]);
   const now = new Date();
   const newCount = view.newOrders + view.newInquiries;
   const nothingWaiting = newCount === 0 && view.pendingCount === 0;
@@ -36,6 +40,9 @@ export default async function WorkspacePage() {
       <div className="ws-title">
         <h1>Workspace</h1>
         <p className="ws-sub">What needs you today and how the store looks.</p>
+        <Link href="/app/notifications" className="wk-notify">
+          Notifications{unread > 0 ? ` (${unread} new)` : ""}
+        </Link>
       </div>
 
       <div className="wk-grid">
@@ -49,8 +56,8 @@ export default async function WorkspacePage() {
             <div className="wk-stack">
               {view.pendingCount > 0 ? (
                 <div className="wk-group wk-group-warn">
-                  <Link href="/app/changes" className="wk-head">
-                    <b>{plural(view.pendingCount, "change set")} to review</b>
+                  <Link href="/app/approvals" className="wk-head">
+                    <b>{plural(view.pendingCount, "approval")} to review</b>
                     <span>Awaiting your approval</span>
                   </Link>
                   <ul>

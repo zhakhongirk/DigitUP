@@ -19,9 +19,9 @@ const VIEWS: Record<string, { title: string; description: string; href: (ref: st
       href: (ref) => `/app/inbox?item=inquiry:${ref}#detail`,
     },
     change_set: {
-      title: "Change set to review",
+      title: "Approval to review",
       description: "An agent proposed changes to your store.",
-      href: (ref) => `/app/changes?id=${ref}`,
+      href: (ref) => `/app/approvals?id=${ref}`,
     },
     "tenant.live": {
       title: "Your store is live",

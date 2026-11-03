@@ -230,7 +230,7 @@ describe("describeChangeSet: resolved and invalid", () => {
     expect(view).toMatchObject({
       invalid: true,
       groups: [],
-      summary: "Unreadable change set",
+      summary: "Unreadable approval request",
     });
   });
 });

@@ -145,7 +145,7 @@ describe("decideChangeSet", () => {
   it("redirects to sign-in without a session", async () => {
     await expectRedirect(
       decideChangeSet(prev, form({ id: "x", decision: "approve" })),
-      "/signin?next=/app/changes",
+      "/signin?next=/app/approvals",
     );
   });
 

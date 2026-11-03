@@ -39,9 +39,9 @@ describe("inboxBreakdown", () => {
 });
 
 describe("links", () => {
-  it("builds inbox and change set links", () => {
+  it("builds inbox and approval links", () => {
     expect(inboxHref({ key: "order:abc" })).toBe("/app/inbox?item=order%3Aabc");
-    expect(changeHref("cs-1")).toBe("/app/changes?id=cs-1");
+    expect(changeHref("cs-1")).toBe("/app/approvals?id=cs-1");
   });
 });
 

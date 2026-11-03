@@ -276,3 +276,10 @@
   font-size: 14px;
   font-weight: 600;
 }
+
+.wk-notify {
+  margin-bottom: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}

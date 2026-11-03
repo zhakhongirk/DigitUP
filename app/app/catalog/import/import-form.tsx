@@ -95,7 +95,7 @@ export function ImportForm() {
         </div>
       </div>
       <button type="submit" className="btn" disabled={busy}>
-        {busy ? "Reading file…" : "Create change set"}
+        {busy ? "Reading file…" : "Create approval request"}
       </button>
 
       {outcome?.kind === "error" ? (
@@ -107,7 +107,7 @@ export function ImportForm() {
       {outcome?.kind === "same" ? (
         <div className="ri-result" role="status">
           <b>Everything already matches the catalog</b>
-          <span>No change set was created.</span>
+          <span>No approval request was created.</span>
           {outcome.missing.length > 0 ? (
             <div className="ri-missing">
               <h2>Not in the file ({outcome.missing.length})</h2>

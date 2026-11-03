@@ -21,9 +21,9 @@ describe("actionLabel", () => {
     ["business_model.applied", "Published the business model"],
     ["business_model.confirmed", "Confirmed the business model"],
     ["business_model.proposed", "Proposed a business model"],
-    ["change_set.applied", "Applied a change set"],
-    ["change_set.created", "Proposed a change set"],
-    ["change_set.rejected", "Rejected a change set"],
+    ["change_set.applied", "Approved changes"],
+    ["change_set.created", "Requested an approval"],
+    ["change_set.rejected", "Rejected changes"],
     ["conversation.created", "Started a conversation"],
     ["conversation.status_changed", "Changed a conversation status"],
     ["inquiry.answered", "Answered a question"],
@@ -124,7 +124,7 @@ describe("resolveAuditTargets", () => {
     });
     expect(targets.get("c")).toEqual({
       name: "1 price changed",
-      href: `/app/changes?id=${CS}`,
+      href: `/app/approvals?id=${CS}`,
     });
     expect(targets.get("e")).toEqual({
       name: "Order 9AD11A",

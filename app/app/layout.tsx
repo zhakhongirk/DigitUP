@@ -23,10 +23,9 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
 
   const tenant = await services.tenancy.getTenant(owner);
   if (tenant.status !== "live") redirect("/onboarding");
-  const [inbox, changes, notifications] = await Promise.all([
+  const [inbox, changes] = await Promise.all([
     newInboxCount(services, owner),
     pendingChangeCount(services, owner),
-    services.notifications.unreadCount(owner),
   ]);
 
   return (
@@ -44,7 +43,7 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
             <span>Owner</span>
           </div>
         </div>
-        <SideNav slug={tenant.slug} counts={{ inbox, changes, notifications }} />
+        <SideNav slug={tenant.slug} counts={{ inbox, changes }} />
         <form action={signOut} className="ws-signout">
           <button type="submit">Sign out</button>
         </form>
