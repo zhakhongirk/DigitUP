@@ -302,3 +302,70 @@ describe("tenant isolation", () => {
     expect((await a.catalog.getOffer(a.owner, a.ids.Beta!))?.status).toBe("active");
   });
 });
+
+describe("approveChangeSet with selected rows", () => {
+  async function prices() {
+    const ctx = await setup();
+    const cs = await ctx.approvals.createChangeSet(ctx.agent, {
+      ops: [
+        {
+          op: "update_prices",
+          items: [
+            { offerId: ctx.ids.Alpha!, price: 111 },
+            { offerId: ctx.ids.Beta!, price: 222 },
+          ],
+        },
+        { op: "delete_offers", offerIds: [ctx.ids.Gamma!] },
+      ],
+    });
+    return { ...ctx, cs };
+  }
+
+  it("applies only the selected rows and audits applied and skipped rows", async () => {
+    const { approvals, owner, catalog, ids, cs, audit } = await prices();
+    const result = await approvals.approveChangeSet(owner, cs.id, ["0:1"]);
+    expect(result.status).toBe("applied");
+    expect((await catalog.getOffer(owner, ids.Alpha!))?.price).toBe(100);
+    expect((await catalog.getOffer(owner, ids.Beta!))?.price).toBe(222);
+    expect((await catalog.getOffer(owner, ids.Gamma!))?.status).toBe("active");
+    const entry = (await audit.list(owner, { entity: "change_set", entityId: cs.id })).find(
+      (e) => e.action === "change_set.applied",
+    );
+    expect(entry?.after).toEqual({ status: "applied", applied: ["0:1"], skipped: ["0:0", "1:0"] });
+  });
+
+  it("records every row as applied when none is skipped", async () => {
+    const { approvals, owner, cs, audit } = await prices();
+    await approvals.approveChangeSet(owner, cs.id);
+    const entry = (await audit.list(owner, { entity: "change_set", entityId: cs.id })).find(
+      (e) => e.action === "change_set.applied",
+    );
+    expect(entry?.after).toEqual({
+      status: "applied",
+      applied: ["0:0", "0:1", "1:0"],
+      skipped: [],
+    });
+  });
+
+  it("rejects an empty selection and leaves the change set pending", async () => {
+    const { approvals, owner, cs } = await prices();
+    await expectCode(approvals.approveChangeSet(owner, cs.id, []), "invalid");
+    expect((await approvals.getChangeSet(owner, cs.id))?.status).toBe("pending");
+  });
+
+  it("rejects row ids that are not in the change set", async () => {
+    const { approvals, owner, catalog, ids, cs } = await prices();
+    await expectCode(approvals.approveChangeSet(owner, cs.id, ["0:0", "0:9"]), "invalid");
+    await expectCode(approvals.approveChangeSet(owner, cs.id, ["5:0"]), "invalid");
+    await expectCode(approvals.approveChangeSet(owner, cs.id, [ids.Alpha!]), "invalid");
+    expect((await catalog.getOffer(owner, ids.Alpha!))?.price).toBe(100);
+    expect((await approvals.getChangeSet(owner, cs.id))?.status).toBe("pending");
+  });
+
+  it("does not let another tenant apply rows", async () => {
+    const a = await prices();
+    const b = await setup();
+    await expectCode(b.approvals.approveChangeSet(b.owner, a.cs.id, ["0:0"]), "not_found");
+    expect((await a.approvals.getChangeSet(a.owner, a.cs.id))?.status).toBe("pending");
+  });
+});

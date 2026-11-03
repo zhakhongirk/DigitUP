@@ -1014,3 +1014,22 @@
   color: var(--text-4);
   font-size: 12px;
 }
+
+.cs-table th.cs-check,
+.cs-table td.cs-check {
+  width: 36px;
+  padding-right: 0;
+}
+
+.cs-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-hover);
+  font: inherit;
+  cursor: pointer;
+}
+
+.cs-link:hover {
+  text-decoration: underline;
+}

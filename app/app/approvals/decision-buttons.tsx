@@ -12,10 +12,14 @@ export function DecisionButtons({
   id,
   canApprove,
   pending: awaiting,
+  selected,
+  total,
 }: {
   id: string;
   canApprove: boolean;
   pending: boolean;
+  selected: string[];
+  total: number;
 }) {
   const [state, action, pending] = useActionState<DecisionState, FormData>(
     async (_prev, form) => {
@@ -28,6 +32,10 @@ export function DecisionButtons({
   return (
     <form action={action} className="cs-actions">
       <input type="hidden" name="id" value={id} />
+      <input type="hidden" name="partial" value="1" />
+      {selected.map((key) => (
+        <input key={key} type="hidden" name="row" value={key} />
+      ))}
       {awaiting ? (
         <>
           <button
@@ -45,9 +53,13 @@ export function DecisionButtons({
               name="decision"
               value="approve"
               className="btn"
-              disabled={pending}
+              disabled={pending || selected.length === 0}
             >
-              {pending ? "Saving…" : "Approve all"}
+              {pending
+                ? "Saving…"
+                : selected.length === total
+                  ? "Approve all"
+                  : `Apply ${selected.length} selected`}
             </button>
           ) : null}
         </>

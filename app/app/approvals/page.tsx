@@ -5,17 +5,9 @@ import { getServices } from "@/server/container";
 import { CHANGE_STATUS_LABELS, loadChanges, type ChangeSetView } from "@/server/owner/changes";
 import { formatWhen } from "@/server/owner/inbox";
 import { currentOwner } from "@/server/owner/session";
-import { DecisionButtons } from "./decision-buttons";
+import { ChangeRows } from "./change-rows";
 
 export const metadata: Metadata = { title: "Approvals" };
-
-function deltaClass(delta: string | null): string {
-  if (!delta) return "";
-  if (delta === "Newly priced") return " cs-delta-new";
-  if (delta.startsWith("+")) return " cs-delta-up";
-  if (delta.startsWith("-")) return " cs-delta-down";
-  return "";
-}
 
 function Banner({ view }: { view: ChangeSetView }) {
   if (view.status === "applied") {
@@ -67,58 +59,13 @@ function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
         {view.invalid ? (
           <p className="cs-note">This request can&apos;t be read and can only be rejected.</p>
         ) : null}
-        {view.groups.map((group, i) => (
-          <div key={`${group.op}-${i}`} className="cs-group">
-            <div className="cs-group-head">
-              <h2>{group.title}</h2>
-              <span className="cs-group-count">
-                {group.rows.length} {group.rows.length === 1 ? "offer" : "offers"}
-              </span>
-            </div>
-            <div className="cs-table-wrap">
-              <table className="cs-table">
-                <thead>
-                  <tr>
-                    <th>Offer</th>
-                    {pending ? <th className="cs-num">Now</th> : null}
-                    <th className="cs-num">{pending ? "After" : "Set to"}</th>
-                    {pending ? <th className="cs-num">Change</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.rows.map((row) => (
-                    <tr key={row.key} className={row.flagged ? "cs-flagged" : undefined}>
-                      <td>{row.title}</td>
-                      {pending ? (
-                        <td
-                          className={`cs-num cs-before${row.before === "On request" ? " cs-before-none" : ""}`}
-                        >
-                          {row.before ?? ""}
-                        </td>
-                      ) : null}
-                      <td className="cs-num cs-after">{row.after}</td>
-                      {pending ? (
-                        <td className={`cs-num cs-delta${deltaClass(row.delta)}`}>
-                          {row.delta ?? ""}
-                        </td>
-                      ) : null}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        ))}
-        <div className="cs-foot">
-          <span>
-            {pending
-              ? "Approving applies every change at once and updates the storefront and agent endpoints."
-              : view.resolvedAt
-                ? `Decided ${formatWhen(view.resolvedAt, now)}.`
-                : ""}
-          </span>
-          <DecisionButtons id={view.id} canApprove={!view.invalid} pending={pending} />
-        </div>
+        <ChangeRows
+          id={view.id}
+          groups={view.groups}
+          pending={pending}
+          canApprove={!view.invalid}
+          footNote={view.resolvedAt ? `Decided ${formatWhen(view.resolvedAt, now)}.` : ""}
+        />
       </section>
     </div>
   );

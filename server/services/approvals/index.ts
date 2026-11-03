@@ -32,6 +32,38 @@ export const createChangeSetSchema = z.object({
 });
 export type CreateChangeSetInput = z.input<typeof createChangeSetSchema>;
 
+/** Identifies one row of a change set: operation index and position inside the operation. */
+export function changeRowIds(ops: ChangeSetOp[]): string[] {
+  return ops.flatMap((op, index) => {
+    const count =
+      op.op === "update_prices"
+        ? op.items.length
+        : op.op === "delete_offers"
+          ? op.offerIds.length
+          : op.offers.length;
+    return Array.from({ length: count }, (_, n) => `${index}:${n}`);
+  });
+}
+
+function selectRows(ops: ChangeSetOp[], selected: ReadonlySet<string>): ChangeSetOp[] {
+  const picked = <T>(items: T[], index: number) =>
+    items.filter((_, n) => selected.has(`${index}:${n}`));
+  const result: ChangeSetOp[] = [];
+  ops.forEach((op, index) => {
+    if (op.op === "update_prices") {
+      const items = picked(op.items, index);
+      if (items.length > 0) result.push({ op: op.op, items });
+    } else if (op.op === "delete_offers") {
+      const offerIds = picked(op.offerIds, index);
+      if (offerIds.length > 0) result.push({ op: op.op, offerIds });
+    } else {
+      const offers = picked(op.offers, index);
+      if (offers.length > 0) result.push({ op: op.op, offers });
+    }
+  });
+  return result;
+}
+
 export type ChangeSet = typeof changeSets.$inferSelect;
 export type ChangeSetStatus = ChangeSet["status"];
 
@@ -42,8 +74,11 @@ export interface ApprovalsService {
     ctx: TenantContext,
     filter?: { status?: ChangeSetStatus; limit?: number },
   ): Promise<ChangeSet[]>;
-  /** Owner only. Applies all operations atomically; fails as a whole if any operation fails. */
-  approveChangeSet(ctx: TenantContext, id: string): Promise<ChangeSet>;
+  /**
+   * Owner only. Applies the operations atomically; fails as a whole if any operation fails.
+   * With `rowIds` only those rows are applied and the rest are dropped; without it all rows are applied.
+   */
+  approveChangeSet(ctx: TenantContext, id: string, rowIds?: string[]): Promise<ChangeSet>;
   /** Owner only. */
   rejectChangeSet(ctx: TenantContext, id: string): Promise<ChangeSet>;
 }
@@ -126,12 +161,22 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
         .limit(Math.min(Math.max(filter.limit ?? 50, 1), 200));
     },
 
-    async approveChangeSet(ctx, id) {
+    async approveChangeSet(ctx, id, rowIds) {
       assertOwner(ctx);
       return db.transaction(async (tx) => {
         const changeSet = await lockPending(tx, ctx, id);
         const ops = parseOrThrow(z.array(changeSetOpSchema), changeSet.ops, "stored change set");
-        for (const op of ops) await applyOp(tx, ctx, op);
+        const all = changeRowIds(ops);
+        const selected = rowIds === undefined ? all : [...new Set(rowIds)];
+        if (selected.length === 0) {
+          throw new ServiceError("invalid", "Select at least one change to apply");
+        }
+        const known = new Set(all);
+        if (selected.some((rowId) => !known.has(rowId))) {
+          throw new ServiceError("invalid", "Some selected changes do not belong to this request");
+        }
+        const chosen = new Set(selected);
+        for (const op of selectRows(ops, chosen)) await applyOp(tx, ctx, op);
 
         const [applied] = await tx
           .update(changeSets)
@@ -143,7 +188,11 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
           entity: "change_set",
           entityId: id,
           before: { status: "pending" },
-          after: { status: "applied" },
+          after: {
+            status: "applied",
+            applied: selected,
+            skipped: all.filter((rowId) => !chosen.has(rowId)),
+          },
         });
         return applied!;
       });

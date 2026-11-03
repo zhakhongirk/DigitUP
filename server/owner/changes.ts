@@ -126,7 +126,7 @@ export function describeChangeSet(
         const title = offer?.title ?? "Unknown offer";
         if (change.big) flagged.push(title);
         rows.push({
-          key: `${index}:${item.offerId}`,
+          key: `${index}:${rows.length}`,
           title,
           before: pending && offer ? priceText(offer.price, offer.currency) : null,
           after: priceText(item.price, currency),
@@ -138,7 +138,7 @@ export function describeChangeSet(
       for (const id of op.offerIds) {
         const offer = offers.get(id);
         rows.push({
-          key: `${index}:${id}`,
+          key: `${index}:${rows.length}`,
           title: offer?.title ?? "Unknown offer",
           before: pending && offer ? priceText(offer.price, offer.currency) : null,
           after: "Removed",
@@ -154,7 +154,7 @@ export function describeChangeSet(
           pending && existing ? delta(existing.price, price) : { text: null, big: false };
         if (change.big) flagged.push(item.title);
         rows.push({
-          key: `${index}:${item.id ?? n}`,
+          key: `${index}:${n}`,
           title: item.title,
           before: !item.id
             ? "New offer"
