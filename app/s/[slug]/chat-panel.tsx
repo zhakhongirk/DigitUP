@@ -10,6 +10,7 @@ import {
   chatReducer,
   flushNdjson,
   initialChatState,
+  isOrderDetailsValid,
   lastUserLang,
   parseNdjsonChunk,
   toOrderView,
@@ -56,6 +57,13 @@ async function errorMessage(res: Response, fallback: string): Promise<string> {
   return fallback;
 }
 
+type OrderDetailsInput = {
+  name: string;
+  phone: string;
+  fulfillment: "pickup" | "delivery" | null;
+  address: string;
+};
+
 function OrderSummary({
   slug,
   order,
@@ -67,11 +75,16 @@ function OrderSummary({
   order: OrderCard;
   lang: UiLang;
   uiLang: Lang;
-  onConfirm: (orderId: string, phone: string) => void;
+  onConfirm: (orderId: string, details: OrderDetailsInput) => void;
 }) {
   const sent = order.status !== "draft";
   const labels = UI_LABELS[lang];
-  const [phone, setPhone] = useState("");
+  const [name, setName] = useState(order.name);
+  const [phone, setPhone] = useState(order.phone);
+  const [fulfillment, setFulfillment] = useState(order.fulfillment);
+  const [address, setAddress] = useState(order.address);
+  const details = { name, phone, fulfillment, address };
+  const valid = isOrderDetailsValid(details);
   return (
     <section className="chat-order" aria-label={t(uiLang, "orderSummary")}>
       <div className="chat-order-head">
@@ -106,7 +119,17 @@ function OrderSummary({
         <div className="chat-order-actions">
           {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
           <label className="chat-order-phone">
-            <span>{labels.phone}</span>
+            <span>{t(uiLang, "fieldName")}</span>
+            <input
+              type="text"
+              autoComplete="name"
+              maxLength={200}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </label>
+          <label className="chat-order-phone">
+            <span>{t(uiLang, "fieldPhone")}</span>
             <input
               type="tel"
               inputMode="tel"
@@ -117,7 +140,36 @@ function OrderSummary({
               onChange={(e) => setPhone(e.target.value)}
             />
           </label>
-          <p className="chat-order-hint">{labels.phoneHint}</p>
+          <div
+            className="chat-order-toggle"
+            role="group"
+            aria-label={t(uiLang, "fulfillmentGroup")}
+          >
+            {(["pickup", "delivery"] as const).map((option) => (
+              <button
+                key={option}
+                type="button"
+                className="chat-order-option"
+                aria-pressed={fulfillment === option}
+                onClick={() => setFulfillment(option)}
+              >
+                {t(uiLang, option)}
+              </button>
+            ))}
+          </div>
+          {fulfillment === "delivery" ? (
+            <label className="chat-order-phone">
+              <span>{t(uiLang, "fieldAddress")}</span>
+              <textarea
+                rows={2}
+                maxLength={500}
+                autoComplete="street-address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+              />
+            </label>
+          ) : null}
+          {!valid ? <p className="chat-order-hint">{t(uiLang, "fillRequired")}</p> : null}
           {order.error ? (
             <p className="chat-error-text" role="alert">
               {order.error}
@@ -126,8 +178,8 @@ function OrderSummary({
           <button
             type="button"
             className="btn chat-confirm"
-            disabled={order.confirming}
-            onClick={() => onConfirm(order.orderId, phone)}
+            disabled={order.confirming || !valid}
+            onClick={() => onConfirm(order.orderId, details)}
           >
             {order.confirming ? labels.sending : labels.confirm}
           </button>
@@ -315,7 +367,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
   }, [stream]);
 
   const confirm = useCallback(
-    async (orderId: string, phone: string) => {
+    async (orderId: string, details: OrderDetailsInput) => {
       dispatch({ type: "confirm_started", orderId });
       try {
         const res = await fetch(
@@ -323,7 +375,12 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
           {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(phone.trim() ? { phone: phone.trim() } : {}),
+            body: JSON.stringify({
+              name: details.name.trim(),
+              phone: details.phone.trim(),
+              fulfillment: details.fulfillment,
+              ...(details.fulfillment === "delivery" ? { address: details.address.trim() } : {}),
+            }),
           },
         );
         if (!res.ok) {

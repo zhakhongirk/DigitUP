@@ -121,6 +121,9 @@ export default async function StoreLayout({ children, params }: Props) {
           </Link>
           {sub ? <span className="sf-brand-sub">{sub}</span> : null}
         </div>
+        <Link href={`/s/${slug}/my-order`} className="sf-brand-sub">
+          {t(lang, "myOrder")}
+        </Link>
         <Suspense fallback={null}>
           <HeaderSearch
             action={`/s/${slug}`}

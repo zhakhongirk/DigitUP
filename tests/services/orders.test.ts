@@ -5,7 +5,7 @@ import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError } from "@/server/services/context";
 import { createConversationsService } from "@/server/services/conversations";
-import { createOrdersService, type OrderItem } from "@/server/services/orders";
+import { createOrdersService, missingOrderFields, type OrderItem } from "@/server/services/orders";
 import type { BusinessModelInput } from "@/shared/business-model";
 import { createTestTenant, recordingEvents, testDb } from "../helpers/db";
 
@@ -91,6 +91,11 @@ async function setup(actor: "owner" | "business_agent" | "customer_agent" = "own
     audit: createAuditService(db),
   };
 }
+
+const ready = {
+  contact: { name: "Ann", phone: "+7 701 000 11 22" },
+  fulfillment: "pickup" as const,
+};
 
 let keyCounter = 0;
 const key = () => `key-${Date.now()}-${keyCounter++}-${Math.random().toString(36).slice(2)}`;
@@ -359,13 +364,22 @@ describe("createOrder contact merge", () => {
 
   it("leaves a submitted order untouched", async () => {
     const { orders, ctx, order, input } = await draft();
+    await orders.updateDraftDetails(ctx, order.id, {
+      name: "Ann",
+      phone: "+7 701 000 11 22",
+      fulfillment: "pickup",
+    });
     await orders.submitOrder(ctx, order.id);
     const again = await orders.createOrder(ctx, {
       ...input,
-      contact: { phone: "+7 701 000 11 22" },
+      contact: { email: "a@example.com" },
+      fulfillment: "delivery",
+      deliveryAddress: "Elsewhere 1",
     });
     expect(again.order.status).toBe("submitted");
-    expect(again.order.contact).toEqual({});
+    expect(again.order.contact).toEqual({ name: "Ann", phone: "+7 701 000 11 22" });
+    expect(again.order.fulfillment).toBe("pickup");
+    expect(again.order.deliveryAddress).toBeNull();
   });
 
   it("ignores the contact when the items differ", async () => {
@@ -377,6 +391,54 @@ describe("createOrder contact merge", () => {
     });
     expect(other.order.id).toBe(order.id);
     expect(other.order.contact).toEqual({});
+  });
+
+  it("stores fulfillment, address and city given at creation", async () => {
+    const s = await setup();
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    expect(order).toMatchObject({
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+  });
+
+  it("merges fulfillment, address and city into a draft and overwrites changed values", async () => {
+    const { orders, ctx, order, input, audit } = await draft();
+    const first = await orders.createOrder(ctx, { ...input, fulfillment: "pickup" });
+    expect(first.order.id).toBe(order.id);
+    expect(first.order.fulfillment).toBe("pickup");
+    const second = await orders.createOrder(ctx, {
+      ...input,
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    expect(second.order).toMatchObject({
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    const third = await orders.createOrder(ctx, { ...input, deliveryAddress: "Abay 2" });
+    expect(third.order.deliveryAddress).toBe("Abay 2");
+    expect(third.order.fulfillment).toBe("delivery");
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.filter((e) => e.action === "order.contact_updated")).toHaveLength(3);
+  });
+
+  it("does not touch the order when the provided details are unchanged", async () => {
+    const { orders, ctx, order, input, audit } = await draft();
+    await orders.createOrder(ctx, { ...input, fulfillment: "pickup" });
+    await orders.createOrder(ctx, { ...input, fulfillment: "pickup" });
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.filter((e) => e.action === "order.contact_updated")).toHaveLength(1);
   });
 
   it("does not touch the order when no contact is given", async () => {
@@ -393,10 +455,116 @@ describe("submitOrder", () => {
     const { order } = await s.orders.createOrder(s.ctx, {
       idempotencyKey: key(),
       source: "storefront",
+      ...ready,
       items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
     });
     return { ...s, order };
   }
+
+  async function bare() {
+    const s = await setup();
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+    });
+    return { ...s, order };
+  }
+
+  async function rejection(promise: Promise<unknown>) {
+    const error = await promise.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(ServiceError);
+    expect((error as ServiceError).code).toBe("invalid");
+    return (error as ServiceError).message;
+  }
+
+  it("lists every missing detail when submitting an empty draft", async () => {
+    const { orders, ctx, order, events } = await bare();
+    expect(await rejection(orders.submitOrder(ctx, order.id))).toBe(
+      "Cannot submit the order, missing: customer name, phone number, fulfillment method (pickup or delivery)",
+    );
+    expect(events.ofType("order.submitted")).toHaveLength(0);
+    expect((await orders.getOrder(ctx, order.id))?.status).toBe("draft");
+  });
+
+  it("requires the name, the phone and the fulfillment one by one", async () => {
+    const noName = await bare();
+    await noName.orders.updateDraftDetails(noName.ctx, noName.order.id, {
+      phone: "+7 701 000 11 22",
+      fulfillment: "pickup",
+    });
+    expect(await rejection(noName.orders.submitOrder(noName.ctx, noName.order.id))).toBe(
+      "Cannot submit the order, missing: customer name",
+    );
+    const noPhone = await bare();
+    await noPhone.orders.updateDraftDetails(noPhone.ctx, noPhone.order.id, {
+      name: "Ann",
+      fulfillment: "pickup",
+    });
+    expect(await rejection(noPhone.orders.submitOrder(noPhone.ctx, noPhone.order.id))).toBe(
+      "Cannot submit the order, missing: phone number",
+    );
+    const noFulfillment = await bare();
+    await noFulfillment.orders.updateDraftDetails(noFulfillment.ctx, noFulfillment.order.id, {
+      name: "Ann",
+      phone: "+7 701 000 11 22",
+    });
+    expect(
+      await rejection(noFulfillment.orders.submitOrder(noFulfillment.ctx, noFulfillment.order.id)),
+    ).toBe("Cannot submit the order, missing: fulfillment method (pickup or delivery)");
+  });
+
+  it("requires an address for delivery but not for pickup", async () => {
+    const delivery = await bare();
+    await delivery.orders.updateDraftDetails(delivery.ctx, delivery.order.id, {
+      name: "Ann",
+      phone: "+7 701 000 11 22",
+      fulfillment: "delivery",
+    });
+    expect(await rejection(delivery.orders.submitOrder(delivery.ctx, delivery.order.id))).toBe(
+      "Cannot submit the order, missing: delivery address",
+    );
+    await delivery.orders.updateDraftDetails(delivery.ctx, delivery.order.id, {
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    const sent = await delivery.orders.submitOrder(delivery.ctx, delivery.order.id);
+    expect(sent.status).toBe("submitted");
+    expect(sent.deliveryAddress).toBe("Abay 1");
+
+    const pickup = await bare();
+    await pickup.orders.updateDraftDetails(pickup.ctx, pickup.order.id, {
+      name: "Ann",
+      phone: "+7 701 000 11 22",
+      fulfillment: "pickup",
+    });
+    expect((await pickup.orders.submitOrder(pickup.ctx, pickup.order.id)).status).toBe("submitted");
+  });
+
+  it("reports the missing fields through missingOrderFields", () => {
+    expect(missingOrderFields({ contact: {}, fulfillment: null, deliveryAddress: null })).toEqual([
+      "name",
+      "phone",
+      "fulfillment",
+    ]);
+    expect(
+      missingOrderFields({
+        contact: { name: "Ann", phone: "+7 701 000 11 22" },
+        fulfillment: "delivery",
+        deliveryAddress: "  ",
+      }),
+    ).toEqual(["address"]);
+    expect(
+      missingOrderFields({
+        contact: { name: "Ann", phone: "+7 701 000 11 22" },
+        fulfillment: "pickup",
+        deliveryAddress: null,
+      }),
+    ).toEqual([]);
+  });
 
   it("moves draft to submitted and publishes exactly one event", async () => {
     const { orders, ctx, order, events } = await draft();
@@ -431,12 +599,90 @@ describe("submitOrder", () => {
   });
 });
 
+describe("updateDraftDetails", () => {
+  async function draft() {
+    const s = await setup();
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      contact: { name: "Old", email: "a@example.com" },
+    });
+    return { ...s, order };
+  }
+
+  it("overwrites the details, keeps other contact keys and audits it", async () => {
+    const { orders, ctx, order, audit } = await draft();
+    const updated = await orders.updateDraftDetails(ctx, order.id, {
+      name: " Ann ",
+      phone: "+7 701 000 11 22",
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    expect(updated.contact).toEqual({
+      name: "Ann",
+      email: "a@example.com",
+      phone: "+7 701 000 11 22",
+    });
+    expect(updated).toMatchObject({
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    const again = await orders.updateDraftDetails(ctx, order.id, { name: "Bob" });
+    expect(again.contact).toMatchObject({ name: "Bob", phone: "+7 701 000 11 22" });
+    expect(again.deliveryAddress).toBe("Abay 1");
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.filter((e) => e.action === "order.contact_updated")).toHaveLength(2);
+  });
+
+  it("clears the address and city when switching to pickup", async () => {
+    const { orders, ctx, order } = await draft();
+    await orders.updateDraftDetails(ctx, order.id, {
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
+    });
+    const pickup = await orders.updateDraftDetails(ctx, order.id, { fulfillment: "pickup" });
+    expect(pickup).toMatchObject({ fulfillment: "pickup", deliveryAddress: null, city: null });
+  });
+
+  it("leaves a submitted order unchanged and rejects invalid details", async () => {
+    const { orders, ctx, order } = await draft();
+    await orders.updateDraftDetails(ctx, order.id, {
+      name: "Ann",
+      phone: "+7 701 000 11 22",
+      fulfillment: "pickup",
+    });
+    await orders.submitOrder(ctx, order.id);
+    const same = await orders.updateDraftDetails(ctx, order.id, {
+      name: "Bob",
+      fulfillment: "delivery",
+    });
+    expect(same.contact).toMatchObject({ name: "Ann" });
+    expect(same.fulfillment).toBe("pickup");
+    await expectCode(
+      orders.updateDraftDetails(ctx, order.id, { fulfillment: "teleport" as "pickup" }),
+      "invalid",
+    );
+    await expectCode(orders.updateDraftDetails(ctx, "nope", { name: "Ann" }), "not_found");
+  });
+
+  it("is tenant scoped", async () => {
+    const a = await draft();
+    const b = await setup();
+    await expectCode(b.orders.updateDraftDetails(b.ctx, a.order.id, { name: "X" }), "not_found");
+  });
+});
+
 describe("updateOrderStatus", () => {
   async function submitted() {
     const s = await setup();
     const { order } = await s.orders.createOrder(s.ctx, {
       idempotencyKey: key(),
       source: "storefront",
+      ...ready,
       items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
     });
     await s.orders.submitOrder(s.ctx, order.id);
@@ -462,6 +708,7 @@ describe("updateOrderStatus", () => {
     const { order } = await s.orders.createOrder(s.ctx, {
       idempotencyKey: key(),
       source: "storefront",
+      ...ready,
       items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
     });
     await expectCode(s.orders.updateOrderStatus(s.ctx, order.id, "completed"), "invalid");
@@ -479,6 +726,95 @@ describe("updateOrderStatus", () => {
     expect(same.status).toBe("submitted");
     const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
     expect(logged.filter((e) => e.action === "order.status_changed")).toHaveLength(0);
+  });
+
+  it("stores the cancel reason, audits it and posts it to the conversation", async () => {
+    const s = await setup();
+    const conversations = createConversationsService({ db: s.db, events: s.events });
+    const conv = await conversations.getOrCreate(s.ctx, {
+      agent: "customer",
+      channel: "storefront",
+    });
+    await conversations.appendMessages(s.ctx, conv.id, [{ role: "user", content: "Hello" }]);
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      conversationId: conv.id,
+      ...ready,
+    });
+    await s.orders.submitOrder(s.ctx, order.id);
+    const cancelled = await s.orders.updateOrderStatus(
+      s.ctx,
+      order.id,
+      "cancelled",
+      "  Out of stock  ",
+    );
+    expect(cancelled.status).toBe("cancelled");
+    expect(cancelled.cancelReason).toBe("Out of stock");
+    const logged = await s.audit.list(s.ctx, { entity: "order", entityId: order.id });
+    const change = logged.find(
+      (e) =>
+        e.action === "order.status_changed" &&
+        (e.after as { status: string }).status === "cancelled",
+    );
+    expect(change?.after).toEqual({ status: "cancelled", reason: "Out of stock" });
+    const rows = await conversations.listMessages(s.ctx, conv.id);
+    expect(rows.map((m) => [m.role, m.content])).toEqual([
+      ["user", "Hello"],
+      ["assistant", "Order cancelled by the store: Out of stock"],
+    ]);
+  });
+
+  it("posts the cancellation in Russian when the shopper wrote in Russian", async () => {
+    const s = await setup();
+    const conversations = createConversationsService({ db: s.db, events: s.events });
+    const conv = await conversations.getOrCreate(s.ctx, {
+      agent: "customer",
+      channel: "storefront",
+    });
+    await conversations.appendMessages(s.ctx, conv.id, [{ role: "user", content: "Привет" }]);
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      conversationId: conv.id,
+    });
+    await s.orders.updateOrderStatus(s.ctx, order.id, "cancelled", "Нет в наличии");
+    const rows = await conversations.listMessages(s.ctx, conv.id);
+    expect(rows.at(-1)?.content).toBe("Заказ отменён магазином: Нет в наличии");
+  });
+
+  it("cancels without a reason and posts nothing", async () => {
+    const s = await setup();
+    const conversations = createConversationsService({ db: s.db, events: s.events });
+    const conv = await conversations.getOrCreate(s.ctx, {
+      agent: "customer",
+      channel: "storefront",
+    });
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      conversationId: conv.id,
+    });
+    const cancelled = await s.orders.updateOrderStatus(s.ctx, order.id, "cancelled");
+    expect(cancelled.cancelReason).toBeNull();
+    expect(await conversations.listMessages(s.ctx, conv.id)).toEqual([]);
+  });
+
+  it("rejects an empty or oversized reason and ignores a reason for other statuses", async () => {
+    const { orders, ctx, order } = await submitted();
+    await expectCode(orders.updateOrderStatus(ctx, order.id, "cancelled", "   "), "invalid");
+    await expectCode(
+      orders.updateOrderStatus(ctx, order.id, "cancelled", "x".repeat(501)),
+      "invalid",
+    );
+    expect((await orders.getOrder(ctx, order.id))?.status).toBe("submitted");
+    const received = await orders.updateOrderStatus(ctx, order.id, "received", "ignored");
+    expect(received.cancelReason).toBeNull();
+    const accepted = await orders.updateOrderStatus(ctx, order.id, "cancelled", "x".repeat(500));
+    expect(accepted.cancelReason).toHaveLength(500);
   });
 
   it("filters listOrders by status", async () => {
@@ -632,6 +968,7 @@ describe("tenant isolation", () => {
     const { order } = await a.orders.createOrder(a.ctx, {
       idempotencyKey: key(),
       source: "storefront",
+      ...ready,
       items: [{ offerId: a.ids.Alpha!, quantity: 1 }],
     });
     const inquiry = await a.orders.createInquiry(a.ctx, { subject: "Question" });
@@ -658,6 +995,7 @@ describe("tenant isolation", () => {
       b.orders.createOrder(b.ctx, {
         idempotencyKey: key(),
         source: "storefront",
+        ...ready,
         items: [{ offerId: a.ids.Alpha!, quantity: 1 }],
       }),
       "invalid",
@@ -672,11 +1010,13 @@ describe("tenant isolation", () => {
     const ra = await a.orders.createOrder(a.ctx, {
       idempotencyKey: idemKey,
       source: "storefront",
+      ...ready,
       items: [{ offerId: a.ids.Alpha!, quantity: 1 }],
     });
     const rb = await b.orders.createOrder(b.ctx, {
       idempotencyKey: idemKey,
       source: "storefront",
+      ...ready,
       items: [{ offerId: b.ids.Alpha!, quantity: 1 }],
     });
     expect(ra.created).toBe(true);
@@ -695,6 +1035,7 @@ describe("stats", () => {
     const { order } = await s.orders.createOrder(s.ctx, {
       idempotencyKey: key(),
       source: "storefront",
+      ...ready,
       items: lines,
     });
     if (status !== "draft") await s.orders.submitOrder(s.ctx, order.id);
@@ -779,6 +1120,7 @@ describe("daily counts", () => {
       const { order } = await s.orders.createOrder(s.ctx, {
         idempotencyKey: key(),
         source: "storefront",
+        ...ready,
         items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
       });
       if (submit) await s.orders.submitOrder(s.ctx, order.id);
@@ -817,6 +1159,7 @@ describe("paging and counts", () => {
       const { order } = await s.orders.createOrder(s.ctx, {
         idempotencyKey: key(),
         source: "storefront",
+        ...ready,
         items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
       });
       if (i < 3) await s.orders.submitOrder(s.ctx, order.id);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { updateStatus, type ActionState } from "../actions";
 
 const initial: ActionState = { error: null };
@@ -17,6 +17,7 @@ export function StatusActions({
   canCancel: boolean;
 }) {
   const [state, action, pending] = useActionState<ActionState, FormData>(updateStatus, initial);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const saved = state !== initial && !state.error;
   if (!next && !canCancel) return null;
 
@@ -35,21 +36,54 @@ export function StatusActions({
           {next.label}
         </button>
       ) : null}
-      {canCancel ? (
+      {canCancel && !reasonOpen ? (
         <button
-          type="submit"
-          name="status"
-          value="cancelled"
+          type="button"
           className="btn btn-sm btn-danger"
           disabled={pending}
-          onClick={(event) => {
-            if (!window.confirm("Cancel this order? The customer will need to order again.")) {
-              event.preventDefault();
-            }
-          }}
+          onClick={() => setReasonOpen(true)}
         >
           Cancel order
         </button>
+      ) : null}
+      {canCancel && reasonOpen ? (
+        <>
+          <input
+            type="text"
+            name="reason"
+            style={{
+              flex: "1 1 220px",
+              height: 38,
+              padding: "0 12px",
+              borderRadius: 10,
+              border: "1px solid rgba(128,128,128,0.4)",
+              background: "transparent",
+              color: "inherit",
+            }}
+            aria-label="Cancellation reason"
+            placeholder="Reason shown to the customer"
+            maxLength={500}
+            required
+            autoFocus
+          />
+          <button
+            type="submit"
+            name="status"
+            value="cancelled"
+            className="btn btn-sm btn-danger"
+            disabled={pending}
+          >
+            Confirm cancellation
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={pending}
+            onClick={() => setReasonOpen(false)}
+          >
+            Keep order
+          </button>
+        </>
       ) : null}
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">

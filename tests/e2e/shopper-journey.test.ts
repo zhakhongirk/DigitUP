@@ -110,13 +110,15 @@ describe("shopper journey", () => {
     expect(created).toBeDefined();
     expect(await services.orders.listOrders(owner)).toMatchObject([{ status: "draft" }]);
 
-    expect(messageOf(await say("yes, my name is Aidar Nurlanuly, +7 701 000 11 22"))).toContain(
-      "sent to the store",
-    );
+    expect(messageOf(await say("yes"))).toContain("What is your name?");
+    expect(messageOf(await say("Aidar Nurlanuly"))).toContain("phone number");
+    expect(messageOf(await say("+7 701 000 11 22"))).toContain("pickup or delivery");
+    expect(messageOf(await say("pickup"))).toContain("sent to the store");
     const [order] = await services.orders.listOrders(owner);
     expect(order).toMatchObject({
       status: "submitted",
       total: 1500,
+      fulfillment: "pickup",
       contact: { name: "Aidar Nurlanuly", phone: "+7 701 000 11 22" },
     });
     orderId = order!.id;
@@ -139,6 +141,7 @@ describe("shopper journey", () => {
       idempotencyKey: "named-order-0001",
       items: [{ offerId: flatWhite.items[0]!.id, quantity: 1 }],
       contact: { name: "Aidar Nurlanuly", phone: "+7 701 222 33 44" },
+      fulfillment: "pickup",
       source: "storefront",
     });
     await services.orders.submitOrder(customerCtx, named.id);
@@ -227,6 +230,7 @@ describe("shopper journey", () => {
     expect(line).toContain("Cardamom latte x 1");
     expect(line).toContain("Storefront");
     expect(line).toContain("+7 701 000 11 22");
+    expect(line).toContain(",pickup,");
   });
 
   it("counts the conversations and orders in analytics", async () => {

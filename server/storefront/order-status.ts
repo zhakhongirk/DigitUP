@@ -47,7 +47,19 @@ export interface OrderStatusView {
   lines: OrderStatusLine[];
   totalLabel: string | null;
   firstName: string | null;
+  cancelReason: string | null;
+  kaspi: { value: string; href: string | null } | null;
   updatedAt: Date;
+}
+
+const PAYABLE: OrderStatus[] = ["submitted", "received", "processing"];
+
+function kaspiOf(contacts: unknown): OrderStatusView["kaspi"] {
+  if (!contacts || typeof contacts !== "object") return null;
+  const raw = (contacts as { kaspi?: unknown }).kaspi;
+  const value = typeof raw === "string" ? raw.trim() : "";
+  if (!value) return null;
+  return { value, href: /^https?:\/\//i.test(value) ? value : null };
 }
 
 export function orderNumber(id: string): string {
@@ -96,7 +108,7 @@ function linesOf(order: Order, lang: Lang): OrderStatusLine[] {
 
 export function toOrderStatusView(
   order: Order,
-  store: { name: string },
+  store: { name: string; contacts?: unknown },
   lang: Lang = "en",
 ): OrderStatusView | null {
   if (order.status === "draft") return null;
@@ -112,6 +124,8 @@ export function toOrderStatusView(
     lines: linesOf(order, lang),
     totalLabel: order.total === null ? null : formatPrice(order.total, order.currency),
     firstName: firstNameOf(order.contact),
+    cancelReason: order.status === "cancelled" ? order.cancelReason?.trim() || null : null,
+    kaspi: PAYABLE.includes(order.status) ? kaspiOf(store.contacts) : null,
     updatedAt: order.updatedAt,
   };
 }

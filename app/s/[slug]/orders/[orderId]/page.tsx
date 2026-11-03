@@ -69,6 +69,21 @@ export default async function OrderStatusPage({ params }: Props) {
         )}
 
         <p className="os-note">{view.note}</p>
+        {view.cancelReason ? (
+          <p className="os-meta">{t(lang, "cancelledReason", { reason: view.cancelReason })}</p>
+        ) : null}
+        {view.kaspi ? (
+          <p className="os-meta">
+            {t(lang, "payWithKaspi")}:{" "}
+            {view.kaspi.href ? (
+              <a href={view.kaspi.href} target="_blank" rel="noopener noreferrer">
+                {view.kaspi.value}
+              </a>
+            ) : (
+              view.kaspi.value
+            )}
+          </p>
+        ) : null}
         <p className="os-meta">{t(lang, "orderQuestions")}</p>
         <p className="os-meta">
           {t(lang, "lastUpdated")}{" "}

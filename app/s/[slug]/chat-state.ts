@@ -41,8 +41,6 @@ export const UI_LABELS = {
     track: "Track order",
     typing: "Typing",
     placeholder: "Message",
-    phone: "Phone (optional)",
-    phoneHint: "Add a phone so the store can confirm.",
     inquirySent: "Inquiry sent to the store",
   },
   ru: {
@@ -51,8 +49,6 @@ export const UI_LABELS = {
     track: "Отследить заказ",
     typing: "Печатает",
     placeholder: "Сообщение",
-    phone: "Телефон (необязательно)",
-    phoneHint: "Добавьте телефон, чтобы магазин мог подтвердить.",
     inquirySent: "Вопрос отправлен в магазин",
   },
 } as const;
@@ -79,6 +75,9 @@ export type OrderView = {
   currency: string;
   total_label?: string;
   next_step?: string;
+  contact?: { name?: string; phone?: string };
+  fulfillment?: string | null;
+  delivery_address?: string | null;
 };
 
 export type StreamEvent =
@@ -134,6 +133,10 @@ export type OrderCard = {
   currency: string;
   totalLabel: string | null;
   nextStep: string | null;
+  name: string;
+  phone: string;
+  fulfillment: "pickup" | "delivery" | null;
+  address: string;
   confirming: boolean;
   error: string | null;
 };
@@ -222,6 +225,7 @@ export function toOrderView(data: unknown): OrderView | null {
   const r = asRecord(data);
   if (!r || typeof r.order_id !== "string" || typeof r.status !== "string") return null;
   if (!Array.isArray(r.items)) return null;
+  const contact = asRecord(r.contact);
   return {
     order_id: r.order_id,
     status: r.status,
@@ -230,7 +234,27 @@ export function toOrderView(data: unknown): OrderView | null {
     currency: typeof r.currency === "string" ? r.currency : "",
     ...(typeof r.total_label === "string" ? { total_label: r.total_label } : {}),
     ...(typeof r.next_step === "string" ? { next_step: r.next_step } : {}),
+    contact: {
+      ...(typeof contact?.name === "string" ? { name: contact.name } : {}),
+      ...(typeof contact?.phone === "string" ? { phone: contact.phone } : {}),
+    },
+    fulfillment: typeof r.fulfillment === "string" ? r.fulfillment : null,
+    delivery_address: typeof r.delivery_address === "string" ? r.delivery_address : null,
   };
+}
+
+export function isOrderDetailsValid(details: {
+  name: string;
+  phone: string;
+  fulfillment: "pickup" | "delivery" | null;
+  address: string;
+}): boolean {
+  return (
+    details.name.trim().length > 0 &&
+    details.phone.replace(/\D/g, "").length >= 7 &&
+    details.fulfillment !== null &&
+    (details.fulfillment === "pickup" || details.address.trim().length > 0)
+  );
 }
 
 function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
@@ -242,6 +266,11 @@ function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
     currency: view.currency,
     totalLabel: view.total_label ?? null,
     nextStep: view.next_step ?? null,
+    name: view.contact?.name ?? "",
+    phone: view.contact?.phone ?? "",
+    fulfillment:
+      view.fulfillment === "pickup" || view.fulfillment === "delivery" ? view.fulfillment : null,
+    address: view.delivery_address ?? "",
     confirming: false,
     error: previous?.status === view.status ? previous.error : null,
   };
@@ -295,7 +324,8 @@ export function lastUserLang(items: ChatItem[], fallback: UiLang = "en"): UiLang
   return fallback;
 }
 
-const STORE_ANSWER = /^(Answer from the store|Ответ магазина): /;
+const STORE_ANSWER =
+  /^(Answer from the store|Ответ магазина|Order cancelled by the store|Заказ отменён магазином): /;
 
 /** Appends store answers that arrived while the chat was open and are not shown yet. */
 export function mergeHistory(

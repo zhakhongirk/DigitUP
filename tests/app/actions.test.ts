@@ -27,6 +27,8 @@ async function ownerWithOrder() {
     idempotencyKey: `key-${Math.random().toString(36).slice(2)}`,
     source: "storefront",
     items: [{ offerId: ids.Alpha!, quantity: 1 }],
+    contact: { name: "Ann", phone: "+7 701 000 11 22" },
+    fulfillment: "pickup",
   });
   await orders.submitOrder(ctx, order.id);
   const inquiry = await orders.createInquiry(ctx, { subject: "Do you deliver?" });
@@ -53,6 +55,34 @@ describe("updateStatus", () => {
     expect(result).toEqual({ error: null });
     expect((await testServices().orders.getOrder(ctx, order.id))?.status).toBe("received");
     expect(revalidate).toHaveBeenCalledWith("/app", "layout");
+  });
+
+  it("cancels an order with a reason", async () => {
+    const { ctx, order } = await ownerWithOrder();
+    const result = await updateStatus(
+      prev,
+      form({ kind: "order", id: order.id, status: "cancelled", reason: "  Out of stock " }),
+    );
+    expect(result).toEqual({ error: null });
+    const saved = await testServices().orders.getOrder(ctx, order.id);
+    expect(saved?.status).toBe("cancelled");
+    expect(saved?.cancelReason).toBe("Out of stock");
+  });
+
+  it("requires a reason to cancel an order", async () => {
+    const { ctx, order } = await ownerWithOrder();
+    const error = { error: "Give a reason for the cancellation." };
+    expect(
+      await updateStatus(prev, form({ kind: "order", id: order.id, status: "cancelled" })),
+    ).toEqual(error);
+    expect(
+      await updateStatus(
+        prev,
+        form({ kind: "order", id: order.id, status: "cancelled", reason: "   " }),
+      ),
+    ).toEqual(error);
+    expect((await testServices().orders.getOrder(ctx, order.id))?.status).toBe("submitted");
+    expect(revalidate).not.toHaveBeenCalled();
   });
 
   it("updates an inquiry status", async () => {

@@ -64,6 +64,12 @@ const QUANTITY_RES = [
   /(?:buy|order|take|купить|заказать|беру|возьму)\s+(\d{1,2})(?=\s)/iu,
   /(?:^|\s)x\s?(\d{1,2})(?=$|[\s,.!?])/i,
 ];
+const PICKUP_RE =
+  /(?<![\p{L}])(?:pick\s?-?up|collect|self[- ]?pickup|самовывоз\p{L}*|заберу|забрать)/iu;
+const DELIVERY_RE =
+  /(?<![\p{L}])(?:deliver\p{L}*|ship\p{L}*|courier|доставк\p{L}*|доставьте|курьер\p{L}*|привез\p{L}*)/iu;
+const ADDRESS_RE =
+  /(?:(?:deliver\p{L}*|ship\p{L}*)\s+(?:to|at)|(?:доставк\p{L}*|доставьте)\s+(?:на|по|в)|(?<![\p{L}])(?:address|адрес))\s*[:-]?\s*(\S.{3,})$/iu;
 const END = "(?=$|[\\s,.!?])";
 
 const YES_RE = new RegExp(
@@ -336,16 +342,18 @@ const COPY = {
     orderDraft: (lines: string, total: string) =>
       `Your order: ${lines}. Total ${total}. It is not placed yet.`,
     orderPrompt:
-      'Press "Confirm order" below or reply yes to place it, or no to cancel. You can add a phone number, for example "yes, +7 700 000 00 00".',
+      'To place it, press "Confirm order" below, or tell me your name, phone number and whether you want pickup or delivery (with the address). Reply no to cancel.',
     orderSize: (size: string) => `Size: ${size}.`,
     sizeAsk: (list: string) => `Which size? Available: ${list}.`,
-    phoneAsk:
-      "Add a phone number so the store can confirm the order (or reply 'yes' to send without it).",
+    askName: "What is your name?",
+    askPhone: "What phone number can the store reach you at?",
+    askFulfillment: "Would you like pickup or delivery?",
+    askAddress: "What is the delivery address?",
     orderSent: "Your order was sent to the store. The owner will contact you to confirm it.",
     orderCancelled: "Okay, I did not place the order. Nothing was sent.",
     orderError:
       "I could not place that order. It may already be sent; check the order card, or contact the store directly.",
-    orderWaiting: 'To place the order, reply "yes", or press "Confirm order" below.',
+    orderWaiting: 'To place the order, tell me your details, or press "Confirm order" below.',
     error: "Sorry, I could not do that right now. Please try again, or contact the store directly.",
     askOwner: "Of course.",
     askProduct: "Which product do you mean? Tell me its name or what you are looking for.",
@@ -392,16 +400,19 @@ const COPY = {
     orderDraft: (lines: string, total: string) =>
       `Ваш заказ: ${lines}. Итого ${total}. Он ещё не оформлен.`,
     orderPrompt:
-      'Нажмите «Подтвердить заказ» ниже или ответьте да, чтобы оформить, или нет, чтобы отменить. Можно добавить телефон, например "да, +7 700 000 00 00".',
+      "Чтобы оформить, нажмите «Подтвердить заказ» ниже или напишите имя, телефон и что вам удобнее: самовывоз или доставка (с адресом). Ответьте нет, чтобы отменить.",
     orderSize: (size: string) => `Размер: ${size}.`,
     sizeAsk: (list: string) => `Какой размер? Есть: ${list}.`,
-    phoneAsk:
-      "Добавьте номер телефона, чтобы магазин мог подтвердить заказ (или ответьте 'да', чтобы отправить без него).",
+    askName: "Как вас зовут?",
+    askPhone: "На какой номер телефона магазин может вам позвонить?",
+    askFulfillment: "Вам нужен самовывоз или доставка?",
+    askAddress: "Какой адрес доставки?",
     orderSent: "Заказ отправлен в магазин. Владелец свяжется с вами для подтверждения.",
     orderCancelled: "Хорошо, заказ не оформлен. Ничего не отправлено.",
     orderError:
       "Не удалось оформить заказ. Возможно, он уже отправлен; проверьте карточку заказа или свяжитесь с магазином.",
-    orderWaiting: 'Чтобы оформить заказ, ответьте "да" или нажмите «Подтвердить заказ» ниже.',
+    orderWaiting:
+      "Чтобы оформить заказ, напишите свои данные или нажмите «Подтвердить заказ» ниже.",
     error: "Извините, сейчас не получилось. Попробуйте ещё раз или свяжитесь с магазином напрямую.",
     askOwner: "Конечно.",
     askProduct: "О каком товаре речь? Напишите название или что вы ищете.",
@@ -412,11 +423,81 @@ type Copy = (typeof COPY)[Lang];
 
 const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть): (.+)\.$/u;
 
-function endsWithPrompt(
-  text: string,
-  key: "handoff" | "addContact" | "orderPrompt" | "phoneAsk",
-): boolean {
+type AskKind = "name" | "phone" | "fulfillment" | "address";
+type PromptKey =
+  | "handoff"
+  | "addContact"
+  | "orderPrompt"
+  | "askName"
+  | "askPhone"
+  | "askFulfillment"
+  | "askAddress";
+
+const ASKS: [AskKind, PromptKey][] = [
+  ["name", "askName"],
+  ["phone", "askPhone"],
+  ["fulfillment", "askFulfillment"],
+  ["address", "askAddress"],
+];
+
+function endsWithPrompt(text: string, key: PromptKey): boolean {
   return text.endsWith(COPY.en[key]) || text.endsWith(COPY.ru[key]);
+}
+
+function askingOf(text: string): AskKind | null {
+  return ASKS.find(([, key]) => endsWithPrompt(text, key))?.[0] ?? null;
+}
+
+export interface OrderDetails {
+  name?: string;
+  phone?: string;
+  email?: string;
+  fulfillment?: "pickup" | "delivery";
+  address?: string;
+}
+
+function parseOrderDetails(text: string, asking: AskKind | null, inOrder: boolean): OrderDetails {
+  const { contact, rest } = extractContact(text);
+  const details: OrderDetails = { ...contact };
+  const clean = rest.replace(/\s+/g, " ").trim();
+  if (inOrder || asking) {
+    if (PICKUP_RE.test(clean)) details.fulfillment = "pickup";
+    else if (DELIVERY_RE.test(clean)) details.fulfillment = "delivery";
+    const inline = ADDRESS_RE.exec(clean)?.[1]?.trim();
+    if (inline) {
+      details.address = inline.slice(0, 500);
+      details.fulfillment ??= "delivery";
+    }
+  }
+  if (asking === "address" && !details.address && clean && !PICKUP_RE.test(clean)) {
+    details.address = clean.slice(0, 500);
+    details.fulfillment = "delivery";
+  }
+  if (
+    asking === "name" &&
+    !details.name &&
+    clean &&
+    !details.fulfillment &&
+    !/[\d?]/.test(clean) &&
+    wordCount(clean) <= 4 &&
+    !YES_RE.test(clean) &&
+    !NO_RE.test(clean)
+  ) {
+    details.name = clean
+      .replace(/[.,!;]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 200);
+  }
+  return details;
+}
+
+function mergeDetails(base: OrderDetails, next: OrderDetails): OrderDetails {
+  const merged = { ...base };
+  for (const [key, value] of Object.entries(next)) {
+    if (value) (merged as Record<string, string>)[key] = value;
+  }
+  return merged;
 }
 
 interface ShownOffer {
@@ -433,7 +514,13 @@ export type Pending =
   | { kind: "handoff"; question: string }
   | { kind: "size"; offerId: string; quantity: number; sizes: string[] }
   | { kind: "inquiry_sent" }
-  | { kind: "order"; key: string; items: { offer_id: string; quantity: number }[]; asked: boolean };
+  | {
+      kind: "order";
+      key: string;
+      items: { offer_id: string; quantity: number }[];
+      asking: AskKind | null;
+      details: OrderDetails;
+    };
 
 export interface FallbackContext {
   pending: Pending | null;
@@ -498,6 +585,28 @@ function offersOf(batch: ToolBatch): ShownOffer[] {
   return [...found.values()];
 }
 
+function collectDetails(history: LlmMessage[]): OrderDetails {
+  let details: OrderDetails = {};
+  let previous = "";
+  let inOrder = false;
+  for (const message of history) {
+    if (message.role === "assistant" && !message.toolCalls?.length) {
+      const text = messageText(message);
+      if (!text) continue;
+      previous = text;
+      if (endsWithPrompt(text, "orderPrompt") || askingOf(text) !== null) inOrder = true;
+      else if (text === COPY.en.orderSent || text === COPY.ru.orderSent) inOrder = false;
+      else if (text === COPY.en.orderCancelled || text === COPY.ru.orderCancelled) inOrder = false;
+    } else if (message.role === "user") {
+      details = mergeDetails(
+        details,
+        parseOrderDetails(messageText(message), askingOf(previous), inOrder),
+      );
+    }
+  }
+  return details;
+}
+
 export function readContext(history: LlmMessage[]): FallbackContext {
   const batches = readBatches(history);
   let lastOffer: ShownOffer | null = null;
@@ -548,7 +657,7 @@ export function readContext(history: LlmMessage[]): FallbackContext {
     pending = { kind: "handoff", question: messageText(before.at(-1)) };
   } else if (endsWithPrompt(lastText, "addContact")) {
     pending = { kind: "inquiry_sent" };
-  } else if (endsWithPrompt(lastText, "orderPrompt") || endsWithPrompt(lastText, "phoneAsk")) {
+  } else if (endsWithPrompt(lastText, "orderPrompt") || askingOf(lastText) !== null) {
     const create = batches.filter((b) => b.calls.some((c) => c.name === "create_order")).at(-1);
     const args = create?.calls.find((c) => c.name === "create_order")?.arguments;
     const key = typeof args?.idempotency_key === "string" ? args.idempotency_key : null;
@@ -557,7 +666,8 @@ export function readContext(history: LlmMessage[]): FallbackContext {
         kind: "order",
         key,
         items: args.items as { offer_id: string; quantity: number }[],
-        asked: endsWithPrompt(lastText, "phoneAsk"),
+        asking: askingOf(lastText),
+        details: collectDetails(history),
       };
     }
   }
@@ -577,17 +687,6 @@ function contactArg(contact: ShopperContact): Record<string, unknown> {
 
 function hasContact(contact: ShopperContact): boolean {
   return Boolean(contact.name || contact.phone || contact.email);
-}
-
-function withEarlierContact(contact: ShopperContact, userMessages: string[]): ShopperContact {
-  const merged = { ...contact };
-  for (const message of [...userMessages].reverse()) {
-    const earlier = extractContact(message).contact;
-    merged.name ??= earlier.name;
-    merged.phone ??= earlier.phone;
-    merged.email ??= earlier.email;
-  }
-  return merged;
 }
 
 function inquiryCall(question: string, ctx: FallbackContext, contact: ShopperContact): Decision {
@@ -742,17 +841,26 @@ function noteArg(size: string | null): Record<string, unknown> {
   return size ? { note: `Size: ${size}` } : {};
 }
 
-function submitOrder(
+function orderStep(
   pending: Extract<Pending, { kind: "order" }>,
   intent: Intent,
+  text: string,
   ctx: FallbackContext,
 ): Decision {
-  const orderContact = withEarlierContact(intent.contact, ctx.userMessages);
-  if (!orderContact.phone && !orderContact.email && !pending.asked) {
-    return { reply: COPY[intent.lang].phoneAsk };
-  }
+  const copy = COPY[intent.lang];
+  const details = mergeDetails(pending.details, parseOrderDetails(text, pending.asking, true));
+  const ask = !details.name
+    ? copy.askName
+    : !details.phone
+      ? copy.askPhone
+      : !details.fulfillment
+        ? copy.askFulfillment
+        : details.fulfillment === "delivery" && !details.address
+          ? copy.askAddress
+          : null;
+  if (ask) return { reply: ask };
   const contact = {
-    ...contactArg(orderContact),
+    ...contactArg(details),
     ...noteArg(shopperSize(intent, ctx.userMessages)),
   };
   return {
@@ -763,7 +871,9 @@ function submitOrder(
           idempotency_key: pending.key,
           items: pending.items,
           submit: true,
-          ...(Object.keys(contact).length > 0 ? { contact } : {}),
+          contact,
+          fulfillment: details.fulfillment,
+          ...(details.fulfillment === "delivery" ? { delivery_address: details.address } : {}),
         },
       },
     ],
@@ -793,6 +903,12 @@ function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: 
     if (size) return { reply: copy.sizeAsk(pending.sizes.join(", ")) };
     if (intent.kind === "no") return { reply: copy.orderCancelled };
   }
+  if (pending?.kind === "order" && intent.kind !== "no") {
+    const fresh = parseOrderDetails(text, pending.asking, true);
+    if (intent.kind === "yes" || intent.kind === "contact" || Object.keys(fresh).length > 0) {
+      return orderStep(pending, intent, text, ctx);
+    }
+  }
   switch (intent.kind) {
     case "greeting":
       return { reply: `${copy.greeting}${copy.help}` };
@@ -800,9 +916,6 @@ function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: 
       return { reply: copy.help };
     case "yes":
       if (pending?.kind === "handoff") return inquiryCall(pending.question, ctx, intent.contact);
-      if (pending?.kind === "order") {
-        return submitOrder(pending, intent, ctx);
-      }
       return { reply: copy.help };
     case "no":
       if (pending?.kind === "order") return { reply: copy.orderCancelled };
@@ -813,9 +926,7 @@ function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: 
       if (pending?.kind === "inquiry_sent") {
         return inquiryCall("Contact details for the previous question", ctx, intent.contact);
       }
-      if (pending?.kind === "order") {
-        return pending.asked ? submitOrder(pending, intent, ctx) : { reply: copy.orderWaiting };
-      }
+      if (pending?.kind === "order") return { reply: copy.orderWaiting };
       return inquiryCall(ctx.userMessages.at(-1) ?? "", ctx, intent.contact);
     case "human":
       if (hasContact(intent.contact)) {

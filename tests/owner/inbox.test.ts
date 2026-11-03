@@ -37,6 +37,10 @@ function order(overrides: Partial<Order> = {}): Order {
       },
     ],
     contact: { name: "Aidar", phone: "+7 701 555 01 42" },
+    fulfillment: "pickup",
+    deliveryAddress: null,
+    city: null,
+    cancelReason: null,
     status: "submitted",
     source: "storefront",
     idempotencyKey: "key-00001",
@@ -85,7 +89,28 @@ describe("inbox items", () => {
       { label: "Items", value: "Trail Runner × 1" },
       { label: "Total", value: "72 000 ₸" },
       { label: "Contact", value: "+7 701 555 01 42" },
+      { label: "Name", value: "Aidar" },
+      { label: "Fulfillment", value: "Pickup" },
     ]);
+  });
+
+  it("lists delivery address with the city and the cancel reason", () => {
+    const delivery = orderItem(
+      order({ fulfillment: "delivery", deliveryAddress: "Abay 10", city: "Almaty" }),
+    );
+    expect(delivery.facts).toContainEqual({ label: "Fulfillment", value: "Delivery" });
+    expect(delivery.facts).toContainEqual({ label: "Address", value: "Abay 10, Almaty" });
+
+    const noCity = orderItem(order({ fulfillment: "delivery", deliveryAddress: "Abay 10" }));
+    expect(noCity.facts).toContainEqual({ label: "Address", value: "Abay 10" });
+
+    const cancelled = orderItem(order({ status: "cancelled", cancelReason: "Out of stock" }));
+    expect(cancelled.facts).toContainEqual({ label: "Cancel reason", value: "Out of stock" });
+
+    const plain = orderItem(order({ fulfillment: null })).facts.map((f) => f.label);
+    expect(plain).not.toContain("Fulfillment");
+    expect(plain).not.toContain("Address");
+    expect(plain).not.toContain("Cancel reason");
   });
 
   it("walks the order through its lifecycle", () => {

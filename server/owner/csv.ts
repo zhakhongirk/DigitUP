@@ -50,6 +50,8 @@ const ORDER_HEADER = [
   "Total",
   "Currency",
   "Note",
+  "Fulfillment",
+  "Address",
 ];
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -79,6 +81,8 @@ export function orderRow(order: Order): (string | number | null)[] {
     order.total,
     order.currency,
     contact.note ?? "",
+    order.fulfillment ?? "",
+    [order.deliveryAddress, order.city].filter(Boolean).join(", "),
   ];
 }
 

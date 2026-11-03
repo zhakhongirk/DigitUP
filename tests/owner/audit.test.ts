@@ -35,7 +35,7 @@ describe("actionLabel", () => {
     ["offer.updated", "Edited an offer"],
     ["order.created", "Drafted an order"],
     ["order.status_changed", "Changed an order status"],
-    ["order.contact_updated", "Updated order contact"],
+    ["order.contact_updated", "Updated order details"],
     ["order.submitted", "Order confirmed by the buyer"],
     ["policies.updated", "Updated store policies"],
     ["profile.updated", "Updated store profile"],

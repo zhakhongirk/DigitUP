@@ -3,6 +3,7 @@ import {
   clientIp,
   createRateLimiter,
   signInAccountLimiter,
+  orderLookupLimiter,
   tooManyRequests,
 } from "@/server/http/rate-limit";
 
@@ -129,5 +130,13 @@ describe("signInAccountLimiter", () => {
     const blocked = signInAccountLimiter.check(key);
     expect(blocked.ok).toBe(false);
     expect(blocked).toMatchObject({ retryAfterSeconds: expect.any(Number) });
+  });
+});
+
+describe("orderLookupLimiter", () => {
+  it("allows ten lookups per key in ten minutes", () => {
+    const key = `ip:${Math.random().toString(36).slice(2)}:shop`;
+    for (let i = 0; i < 10; i++) expect(orderLookupLimiter.check(key).ok).toBe(true);
+    expect(orderLookupLimiter.check(key).ok).toBe(false);
   });
 });

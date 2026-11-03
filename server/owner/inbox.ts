@@ -144,6 +144,20 @@ export function orderItem(order: Order): OrderInboxItem {
   const reach = contactLine(contact);
   if (reach) facts.push({ label: "Contact", value: reach });
   if (contact.note) facts.push({ label: "Note", value: contact.note });
+  if (contact.name) facts.push({ label: "Name", value: contact.name });
+  if (order.fulfillment) {
+    facts.push({
+      label: "Fulfillment",
+      value: order.fulfillment === "delivery" ? "Delivery" : "Pickup",
+    });
+  }
+  if (order.deliveryAddress) {
+    facts.push({
+      label: "Address",
+      value: [order.deliveryAddress, order.city].filter(Boolean).join(", "),
+    });
+  }
+  if (order.cancelReason) facts.push({ label: "Cancel reason", value: order.cancelReason });
 
   return {
     kind: "order",

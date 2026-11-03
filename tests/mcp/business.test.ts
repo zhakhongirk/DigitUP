@@ -75,7 +75,13 @@ async function priceOf(ctx: { tenantId: string }, id: string) {
 async function createOrder(ctx: { tenantId: string }, offerId: string, key: string) {
   const { order } = await services.orders.createOrder(
     { tenantId: ctx.tenantId, actor: "customer_agent" },
-    { idempotencyKey: key, items: [{ offerId, quantity: 1 }], source: "storefront" },
+    {
+      idempotencyKey: key,
+      items: [{ offerId, quantity: 1 }],
+      contact: { name: "Ann", phone: "+7 701 000 11 22" },
+      fulfillment: "pickup",
+      source: "storefront",
+    },
   );
   return order;
 }

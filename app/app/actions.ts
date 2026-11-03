@@ -39,7 +39,14 @@ export async function updateStatus(_prev: ActionState, form: FormData): Promise<
     if (kind === "order") {
       const status = pick(ORDER_STATUSES, form.get("status"));
       if (!status) return { error: "Unknown order status." };
-      await services.orders.updateOrderStatus(owner, id, status);
+      let reason: string | undefined;
+      if (status === "cancelled") {
+        const raw = form.get("reason");
+        if (typeof raw !== "string" || !raw.trim())
+          return { error: "Give a reason for the cancellation." };
+        reason = raw;
+      }
+      await services.orders.updateOrderStatus(owner, id, status, reason);
     } else if (kind === "inquiry") {
       const status = pick(INQUIRY_STATUSES, form.get("status"));
       if (!status) return { error: "Unknown status." };

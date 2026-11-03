@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { CSV_BOM, csvCell, exportFilename, parseExportRange, toCsv } from "@/server/owner/csv";
+import type { Order } from "@/server/services/orders";
+import {
+  CSV_BOM,
+  csvCell,
+  exportFilename,
+  orderRow,
+  ordersCsv,
+  parseExportRange,
+  toCsv,
+} from "@/server/owner/csv";
 
 describe("csvCell", () => {
   it("leaves plain text alone and blanks nullish values", () => {
@@ -66,5 +75,44 @@ describe("export helpers", () => {
       "shop-orders-2026-11-03.csv",
     );
     vi.unstubAllEnvs();
+  });
+});
+
+describe("orders csv", () => {
+  const base = {
+    id: "abcdef12-3456-4789-8abc-def012345678",
+    items: [
+      { offerId: "o", title: "Runner", quantity: 2, unitPrice: 5, currency: "KZT", lineTotal: 10 },
+    ],
+    contact: { name: "Ann", phone: "+7 701 000 11 22" },
+    fulfillment: null,
+    deliveryAddress: null,
+    city: null,
+    status: "submitted",
+    source: "storefront",
+    total: 10,
+    currency: "KZT",
+    createdAt: new Date("2026-11-02T09:00:00Z"),
+    submittedAt: new Date("2026-11-02T09:05:00Z"),
+  } as unknown as Order;
+
+  it("ends the header with Fulfillment and Address", () => {
+    const header = ordersCsv([]).replace(CSV_BOM, "").trim().split(",");
+    expect(header.slice(-2)).toEqual(["Fulfillment", "Address"]);
+    expect(header).toHaveLength(14);
+  });
+
+  it("writes the raw fulfillment and the address with the city", () => {
+    const delivery = orderRow({
+      ...base,
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 10",
+      city: "Almaty",
+    });
+    expect(delivery).toHaveLength(14);
+    expect(delivery.slice(-2)).toEqual(["delivery", "Abay 10, Almaty"]);
+    expect(orderRow({ ...base, fulfillment: "pickup" }).slice(-2)).toEqual(["pickup", ""]);
+    expect(orderRow(base).slice(-2)).toEqual(["", ""]);
+    expect(orderRow({ ...base, deliveryAddress: "Abay 10" }).at(-1)).toBe("Abay 10");
   });
 });

@@ -94,6 +94,7 @@ describe("customer agent", () => {
             idempotency_key: key,
             items: [{ offer_id: offerId, quantity: 2 }],
             contact: { name: "Aida", phone: "+77001234567" },
+            fulfillment: "pickup",
             submit,
           },
         },

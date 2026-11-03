@@ -204,6 +204,8 @@ describe("conversation stats", () => {
         idempotencyKey: `stats-key-${n++}-${conversationId}`,
         source: "storefront",
         items: [{ offerId, quantity: 1 }],
+        contact: { name: "Ann", phone: "+7 701 000 11 22" },
+        fulfillment: "pickup",
         conversationId,
       });
       if (submit) await orders.submitOrder(ctx, created.id);

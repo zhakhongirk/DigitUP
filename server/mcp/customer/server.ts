@@ -6,7 +6,14 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Services } from "@/server/container";
 import { ServiceError, type TenantContext } from "@/server/services/context";
-import type { OrderSource } from "@/server/services/orders";
+import {
+  citySchema,
+  deliveryAddressSchema,
+  fulfillmentSchema,
+  missingOrderFields,
+  type Order,
+  type OrderSource,
+} from "@/server/services/orders";
 import { attributeValueSchema } from "@/shared/business-model";
 import { runTool } from "../tools";
 import { inquiryView, orderView, policiesWithStates, priceLabel, publicOffer } from "../views";
@@ -39,6 +46,15 @@ const contactSchema = z
     note: z.string().max(2000).optional(),
   })
   .describe("How the business can reach the shopper");
+
+function orderDetailsView(order: Order) {
+  return {
+    fulfillment: order.fulfillment,
+    delivery_address: order.deliveryAddress,
+    city: order.city,
+    missing_fields: order.status === "draft" ? missingOrderFields(order) : [],
+  };
+}
 
 export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer {
   const { ctx, services, source, conversationId } = options;
@@ -207,9 +223,12 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     "create_order",
     {
       description:
-        "Create an order for offers with a confirmed price that are in stock. Call it once with submit=false " +
-        "to get the order summary, show it to the shopper, and call it again with the same idempotency_key and " +
-        "submit=true only after the shopper explicitly confirmed. For anything else use submit_inquiry.",
+        "Create an order for offers with a confirmed price that are in stock. Every order needs the shopper's " +
+        "name and phone (in contact) and a fulfillment method: 'pickup' or 'delivery'; delivery also needs " +
+        "delivery_address (city is optional). Call it with submit=false to get the order summary and " +
+        "missing_fields, ask the shopper for anything missing, show the summary, and call it again with the " +
+        "same idempotency_key, the collected details and submit=true only after the shopper explicitly " +
+        "confirmed. Submitting with missing details fails. For anything else use submit_inquiry.",
       inputSchema: {
         idempotency_key: z
           .string()
@@ -221,6 +240,9 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           .min(1)
           .max(20),
         contact: contactSchema.optional(),
+        fulfillment: fulfillmentSchema.optional().describe("pickup or delivery"),
+        delivery_address: deliveryAddressSchema.optional().describe("Required for delivery"),
+        city: citySchema.optional(),
         submit: z
           .boolean()
           .default(false)
@@ -233,16 +255,20 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           idempotencyKey: args.idempotency_key,
           items: args.items.map((item) => ({ offerId: item.offer_id, quantity: item.quantity })),
           contact: args.contact ?? {},
+          fulfillment: args.fulfillment,
+          deliveryAddress: args.delivery_address,
+          city: args.city,
           conversationId,
           source,
         });
         const final = args.submit ? await orders.submitOrder(ctx, order.id) : order;
         return {
           ...orderView(final),
+          ...orderDetailsView(final),
           already_existed: !created,
           next_step:
             final.status === "draft"
-              ? "Show this summary to the shopper and ask for explicit confirmation before submitting."
+              ? "Ask the shopper for any missing_fields, then show this summary and ask for explicit confirmation before submitting."
               : "The order was sent to the store. The owner will contact the shopper.",
         };
       }),

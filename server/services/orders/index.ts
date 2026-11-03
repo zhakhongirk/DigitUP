@@ -59,6 +59,47 @@ export const orderContactSchema = z
   .strict();
 export type OrderContact = z.infer<typeof orderContactSchema>;
 
+export const FULFILLMENTS = ["pickup", "delivery"] as const;
+export type Fulfillment = (typeof FULFILLMENTS)[number];
+
+export const fulfillmentSchema = z.enum(FULFILLMENTS);
+export const deliveryAddressSchema = z.string().trim().min(1).max(500);
+export const citySchema = z.string().trim().min(1).max(100);
+export const cancelReasonSchema = z.string().trim().min(1).max(500);
+
+export type MissingOrderField = "name" | "phone" | "fulfillment" | "address";
+
+/** Fields that must be present before a draft can be submitted. */
+export function missingOrderFields(
+  order: Pick<Order, "contact" | "fulfillment" | "deliveryAddress">,
+): MissingOrderField[] {
+  const contact = order.contact as OrderContact;
+  const missing: MissingOrderField[] = [];
+  if (!contact.name?.trim()) missing.push("name");
+  if (!contact.phone?.trim()) missing.push("phone");
+  if (!order.fulfillment) missing.push("fulfillment");
+  else if (order.fulfillment === "delivery" && !order.deliveryAddress?.trim()) {
+    missing.push("address");
+  }
+  return missing;
+}
+
+const MISSING_LABELS: Record<MissingOrderField, string> = {
+  name: "customer name",
+  phone: "phone number",
+  fulfillment: "fulfillment method (pickup or delivery)",
+  address: "delivery address",
+};
+
+export const draftDetailsSchema = z.object({
+  name: orderContactSchema.shape.name,
+  phone: orderContactSchema.shape.phone,
+  fulfillment: fulfillmentSchema.optional(),
+  deliveryAddress: deliveryAddressSchema.optional(),
+  city: citySchema.optional(),
+});
+export type DraftDetails = z.input<typeof draftDetailsSchema>;
+
 export const createOrderSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(200),
   items: z
@@ -66,6 +107,9 @@ export const createOrderSchema = z.object({
     .min(1)
     .max(50),
   contact: orderContactSchema.default({}),
+  fulfillment: fulfillmentSchema.optional(),
+  deliveryAddress: deliveryAddressSchema.optional(),
+  city: citySchema.optional(),
   conversationId: z.uuid().optional(),
   source: z.enum(["storefront", "external_agent"]),
 });
@@ -110,6 +154,8 @@ export interface OrdersService {
   ): Promise<{ order: Order; created: boolean }>;
   /** Draft → Submitted after the shopper's explicit confirmation. Idempotent. */
   submitOrder(ctx: TenantContext, orderId: string): Promise<Order>;
+  /** Overwrites contact and fulfillment details of a still-draft order, e.g. from the shopper's order card. */
+  updateDraftDetails(ctx: TenantContext, orderId: string, details: DraftDetails): Promise<Order>;
   getOrder(ctx: TenantContext, orderId: string): Promise<Order | null>;
   listOrders(
     ctx: TenantContext,
@@ -124,7 +170,16 @@ export interface OrdersService {
     },
   ): Promise<Order[]>;
   countOrdersByStatus(ctx: TenantContext): Promise<Record<OrderStatus, number>>;
-  updateOrderStatus(ctx: TenantContext, orderId: string, status: OrderStatus): Promise<Order>;
+  /**
+   * A cancellation reason is stored on the order and, when the order belongs to
+   * a conversation, posted there as a store message.
+   */
+  updateOrderStatus(
+    ctx: TenantContext,
+    orderId: string,
+    status: OrderStatus,
+    reason?: string,
+  ): Promise<Order>;
   /**
    * Owner-only aggregates over orders (by submission time, or creation time
    * for drafts) and inquiries created since the given moment.
@@ -195,6 +250,33 @@ async function postAnswerToConversation(tx: DbTx, conversationId: string, answer
     conversationId,
     role: "assistant",
     content: `${prefix}: ${answer}`,
+    createdAt: new Date(Math.max(Date.now(), last ? last.createdAt.getTime() + 1 : 0)),
+  });
+  await tx
+    .update(conversations)
+    .set({ updatedAt: sql`now()` })
+    .where(eq(conversations.id, conversationId));
+}
+
+async function postCancellationToConversation(tx: DbTx, conversationId: string, reason: string) {
+  const [lastUser] = await tx
+    .select({ content: messages.content })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversationId), eq(messages.role, "user")))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  const [last] = await tx
+    .select({ createdAt: messages.createdAt })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(desc(messages.createdAt))
+    .limit(1);
+  const russian = /[а-яё]/i.test(lastUser?.content ?? "");
+  const prefix = russian ? "Заказ отменён магазином" : "Order cancelled by the store";
+  await tx.insert(messages).values({
+    conversationId,
+    role: "assistant",
+    content: `${prefix}: ${reason}`,
     createdAt: new Date(Math.max(Date.now(), last ? last.createdAt.getTime() + 1 : 0)),
   });
   await tx
@@ -287,14 +369,15 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     return order;
   }
 
-  /** Fills empty contact fields of a still-draft order from a repeated call with the same items. */
+  /** Fills empty contact and fulfillment fields of a still-draft order from a repeated call with the same items. */
   async function mergeDraftContact(
     ctx: TenantContext,
     existing: Order,
     input: z.infer<typeof createOrderSchema>,
   ): Promise<Order> {
     const provided = Object.entries(input.contact).filter(([, value]) => value);
-    if (existing.status !== "draft" || provided.length === 0) return existing;
+    const hasExtras = Boolean(input.fulfillment || input.deliveryAddress || input.city);
+    if (existing.status !== "draft" || (provided.length === 0 && !hasExtras)) return existing;
     const wanted = new Map<string, number>();
     for (const { offerId, quantity } of input.items) {
       wanted.set(offerId, (wanted.get(offerId) ?? 0) + quantity);
@@ -312,19 +395,38 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
       if (locked.status !== "draft") return locked;
       const before = locked.contact as OrderContact;
       const missing = provided.filter(([key]) => !(before as Record<string, unknown>)[key]);
-      if (missing.length === 0) return locked;
-      const contact = { ...before, ...Object.fromEntries(missing) };
+      const patch: Partial<Pick<Order, "fulfillment" | "deliveryAddress" | "city" | "contact">> =
+        {};
+      if (missing.length > 0) patch.contact = { ...before, ...Object.fromEntries(missing) };
+      if (input.fulfillment && input.fulfillment !== locked.fulfillment) {
+        patch.fulfillment = input.fulfillment;
+      }
+      if (input.deliveryAddress && input.deliveryAddress !== locked.deliveryAddress) {
+        patch.deliveryAddress = input.deliveryAddress;
+      }
+      if (input.city && input.city !== locked.city) patch.city = input.city;
+      if (Object.keys(patch).length === 0) return locked;
       const [updated] = await tx
         .update(orders)
-        .set({ contact })
+        .set(patch)
         .where(eq(orders.id, locked.id))
         .returning();
       await recordAudit(tx, ctx, {
         action: "order.contact_updated",
         entity: "order",
         entityId: locked.id,
-        before: { contact: before },
-        after: { contact },
+        before: {
+          contact: before,
+          fulfillment: locked.fulfillment,
+          deliveryAddress: locked.deliveryAddress,
+          city: locked.city,
+        },
+        after: {
+          contact: updated!.contact,
+          fulfillment: updated!.fulfillment,
+          deliveryAddress: updated!.deliveryAddress,
+          city: updated!.city,
+        },
       });
       return updated!;
     });
@@ -347,6 +449,9 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
             conversationId: input.conversationId ?? null,
             items,
             contact: input.contact,
+            fulfillment: input.fulfillment ?? null,
+            deliveryAddress: input.deliveryAddress ?? null,
+            city: input.city ?? null,
             source: input.source,
             idempotencyKey: input.idempotencyKey,
             total,
@@ -377,6 +482,13 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         if (order.status !== "draft") {
           throw new ServiceError("conflict", `Order is already ${order.status}`);
         }
+        const missing = missingOrderFields(order);
+        if (missing.length > 0) {
+          throw new ServiceError(
+            "invalid",
+            `Cannot submit the order, missing: ${missing.map((key) => MISSING_LABELS[key]).join(", ")}`,
+          );
+        }
         const [submitted] = await tx
           .update(orders)
           .set({ status: "submitted", submittedAt: new Date() })
@@ -396,6 +508,46 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           { singletonKey: orderId },
         );
         return submitted!;
+      });
+    },
+
+    async updateDraftDetails(ctx, orderId, rawDetails) {
+      const details = parseOrThrow(draftDetailsSchema, rawDetails, "order details");
+      return db.transaction(async (tx) => {
+        const order = await loadOrderForUpdate(tx, ctx, orderId);
+        if (order.status !== "draft") return order;
+        const before = order.contact as OrderContact;
+        const contact = {
+          ...before,
+          ...(details.name ? { name: details.name } : {}),
+          ...(details.phone ? { phone: details.phone } : {}),
+        };
+        const fulfillment = details.fulfillment ?? order.fulfillment;
+        const patch = {
+          contact,
+          fulfillment,
+          deliveryAddress:
+            fulfillment === "pickup" ? null : (details.deliveryAddress ?? order.deliveryAddress),
+          city: fulfillment === "pickup" ? null : (details.city ?? order.city),
+        };
+        const [updated] = await tx
+          .update(orders)
+          .set(patch)
+          .where(eq(orders.id, orderId))
+          .returning();
+        await recordAudit(tx, ctx, {
+          action: "order.contact_updated",
+          entity: "order",
+          entityId: orderId,
+          before: {
+            contact: before,
+            fulfillment: order.fulfillment,
+            deliveryAddress: order.deliveryAddress,
+            city: order.city,
+          },
+          after: patch,
+        });
+        return updated!;
       });
     },
 
@@ -443,7 +595,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
       return result;
     },
 
-    async updateOrderStatus(ctx, orderId, status) {
+    async updateOrderStatus(ctx, orderId, status, rawReason) {
+      const reason =
+        status === "cancelled" && rawReason !== undefined
+          ? parseOrThrow(cancelReasonSchema, rawReason, "cancel reason")
+          : undefined;
       return db.transaction(async (tx) => {
         const order = await loadOrderForUpdate(tx, ctx, orderId);
         if (order.status === status) return order;
@@ -455,7 +611,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         }
         const [updated] = await tx
           .update(orders)
-          .set({ status })
+          .set({ status, ...(reason ? { cancelReason: reason } : {}) })
           .where(eq(orders.id, orderId))
           .returning();
         await recordAudit(tx, ctx, {
@@ -463,8 +619,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           entity: "order",
           entityId: orderId,
           before: { status: order.status },
-          after: { status },
+          after: { status, ...(reason ? { reason } : {}) },
         });
+        if (reason && order.conversationId) {
+          await postCancellationToConversation(tx, order.conversationId, reason);
+        }
         return updated!;
       });
     },

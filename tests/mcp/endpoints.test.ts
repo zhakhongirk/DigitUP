@@ -254,6 +254,8 @@ describe("business MCP endpoint", () => {
       {
         idempotencyKey: `key-${uniqueSlug()}`,
         items: [{ offerId: b.offerId, quantity: 1 }],
+        contact: { name: "Ann", phone: "+7 701 000 11 22" },
+        fulfillment: "pickup",
         source: "storefront",
       },
     );

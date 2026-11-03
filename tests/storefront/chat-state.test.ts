@@ -5,6 +5,7 @@ import {
   detectUiLang,
   flushNdjson,
   initialChatState,
+  isOrderDetailsValid,
   parseNdjsonChunk,
   type ChatAction,
   type ChatState,
@@ -237,5 +238,65 @@ describe("history polling", () => {
       withCard,
     );
     expect(next.items.map((i) => i.kind)).toEqual(["message", "order", "message"]);
+  });
+});
+
+describe("isOrderDetailsValid", () => {
+  const ok = {
+    name: "Aidar",
+    phone: "+7 701 000 11 22",
+    fulfillment: "pickup" as "pickup" | "delivery" | null,
+    address: "",
+  };
+
+  it("accepts pickup without an address", () => {
+    expect(isOrderDetailsValid(ok)).toBe(true);
+  });
+
+  it("requires an address for delivery", () => {
+    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery" })).toBe(false);
+    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery", address: "   " })).toBe(false);
+    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery", address: "Abay 10" })).toBe(true);
+  });
+
+  it("requires a name, a phone with at least seven digits and a fulfillment choice", () => {
+    expect(isOrderDetailsValid({ ...ok, name: "  " })).toBe(false);
+    expect(isOrderDetailsValid({ ...ok, phone: "" })).toBe(false);
+    expect(isOrderDetailsValid({ ...ok, phone: "12 34 56" })).toBe(false);
+    expect(isOrderDetailsValid({ ...ok, phone: "123-45-67" })).toBe(true);
+    expect(isOrderDetailsValid({ ...ok, fulfillment: null })).toBe(false);
+  });
+});
+
+describe("order card details", () => {
+  it("fills the card from the order view and keeps it empty for unknown values", () => {
+    const filled = run([
+      ev({
+        type: "tool_result",
+        name: "create_order",
+        data: {
+          ...draft,
+          contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+          fulfillment: "delivery",
+          delivery_address: "Abay 10",
+        },
+      }),
+    ]);
+    const card = filled.items.find((i) => i.kind === "order");
+    expect(card?.kind === "order" && card.order).toMatchObject({
+      name: "Aidar",
+      phone: "+7 701 000 11 22",
+      fulfillment: "delivery",
+      address: "Abay 10",
+    });
+
+    const bare = run([ev({ type: "tool_result", name: "create_order", data: draft })]);
+    const empty = bare.items.find((i) => i.kind === "order");
+    expect(empty?.kind === "order" && empty.order).toMatchObject({
+      name: "",
+      phone: "",
+      fulfillment: null,
+      address: "",
+    });
   });
 });

@@ -87,6 +87,8 @@ describe("seedDemoTenants", () => {
     expect(Date.now() - Math.min(...created)).toBeGreaterThan(7 * DAY);
     expect(Date.now() - Math.max(...created)).toBeLessThan(DAY);
     for (const o of placed) {
+      expect(o.fulfillment).not.toBeNull();
+      if (o.fulfillment === "delivery") expect(o.deliveryAddress).toBeTruthy();
       expect(o.submittedAt).not.toBeNull();
       expect(o.createdAt.getTime()).toBeLessThanOrEqual(o.submittedAt!.getTime() + SKEW);
       expect(o.createdAt.getTime()).toBeLessThanOrEqual(o.updatedAt.getTime() + SKEW);

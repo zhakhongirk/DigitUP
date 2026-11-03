@@ -149,6 +149,7 @@ describe("owner journey", () => {
       idempotency_key: idempotencyKey,
       items,
       contact,
+      fulfillment: "pickup",
     });
     expect(draftOrder.isError).toBe(false);
     const draftData = draftOrder.data as { order_id: string; status: string };

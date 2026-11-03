@@ -38,6 +38,9 @@ describe("orders export", () => {
       idempotencyKey: "export-order-1",
       items: [{ offerId: ids.Alpha!, quantity: 2 }],
       contact: { name: "=Anna, Иванова", phone: "+7 700 000", note: 'Say "hi"' },
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 1",
+      city: "Almaty",
       source: "storefront",
     });
     await orders.submitOrder(ctx, submitted.order.id);
@@ -63,6 +66,8 @@ describe("orders export", () => {
     expect(lines[1]).toContain("Alpha x 2");
     expect(lines[1]).toContain('"Say ""hi"""');
     expect(lines[1]).toContain(",+7 700 000,");
+    expect(lines[0]).toMatch(/,Note,Fulfillment,Address$/);
+    expect(lines[1]).toMatch(/,delivery,"Abay 1, Almaty"$/);
   });
 
   it("does not leak other tenants' orders", async () => {
@@ -70,6 +75,8 @@ describe("orders export", () => {
     const { order } = await testServices().orders.createOrder(ctx, {
       idempotencyKey: "export-order-3",
       items: [{ offerId: ids.Alpha!, quantity: 1 }],
+      contact: { name: "Ann", phone: "+7 700 000" },
+      fulfillment: "pickup",
       source: "storefront",
     });
     await testServices().orders.submitOrder(ctx, order.id);

@@ -99,6 +99,7 @@ export const orderConfirmLimiter = createRateLimiter({ limit: 20, windowMs: 60_0
 export const signInLimiter = createRateLimiter({ limit: 10, windowMs: 600_000 });
 export const signInAccountLimiter = createRateLimiter({ limit: 10, windowMs: 600_000 });
 export const passwordChangeLimiter = createRateLimiter({ limit: 5, windowMs: 600_000 });
+export const orderLookupLimiter = createRateLimiter({ limit: 10, windowMs: 600_000 });
 export const analyzeLimiter = createRateLimiter({ limit: 5, windowMs: 600_000 });
 
 export function limitRequest(limiter: RateLimiter, key: string): Response | null {

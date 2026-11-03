@@ -410,45 +410,13 @@ describe("decide", () => {
     expect(reply(decide(draft, "x"))).toContain("Размер: 42.");
   });
 
-  it("submits the pending order only after a yes", () => {
-    const history: LlmMessage[] = [
-      user("buy Runner"),
-      ...toolTurn("search_offers", {}, { total: 1, offers: [runner] }),
-      {
-        role: "assistant",
-        content: null,
-        toolCalls: [
-          {
-            id: "c2",
-            name: "create_order",
-            arguments: {
-              idempotency_key: "key-1234567",
-              items: [{ offer_id: runner.offer_id, quantity: 1 }],
-              submit: false,
-            },
-          },
-        ],
-      },
-      { role: "tool", toolCallId: "c2", name: "create_order", content: "{}" },
-    ];
-    const prompt =
-      'Your order: Runner x 1. Total 100 KZT. It is not placed yet. Press "Confirm order" below or reply yes to place it, or no to cancel. You can add a phone number, for example "yes, +7 700 000 00 00".';
-    const base = [...history, assistant(prompt)];
-    expect(readContext(base).pending).toMatchObject({ kind: "order", key: "key-1234567" });
-
-    const [call] = calls(decide([...base, user("yes, +7 700 111 22 33")], "k"));
-    expect(call?.arguments).toMatchObject({
-      idempotency_key: "key-1234567",
-      submit: true,
-      contact: { phone: "+7 700 111 22 33" },
-    });
-    expect(reply(decide([...base, user("no")], "k"))).toContain("did not place the order");
-  });
-
-  describe("contact on order confirmation", () => {
-    const prompt =
-      'Your order: Runner x 1. Total 100 KZT. It is not placed yet. Press "Confirm order" below or reply yes to place it, or no to cancel. You can add a phone number, for example "yes, +7 700 000 00 00".';
-    const order = (earlier: string[] = []): LlmMessage[] => [
+  describe("order details conversation", () => {
+    const prompts = {
+      en: 'Your order: Runner x 1. Total 100 KZT. It is not placed yet. To place it, press "Confirm order" below, or tell me your name, phone number and whether you want pickup or delivery (with the address). Reply no to cancel.',
+      ru: "Ваш заказ: Runner x 1. Итого 100 KZT. Он ещё не оформлен. Чтобы оформить, нажмите «Подтвердить заказ» ниже или напишите имя, телефон и что вам удобнее: самовывоз или доставка (с адресом). Ответьте нет, чтобы отменить.",
+    };
+    const phone = "+7 701 000 11 22";
+    const order = (earlier: string[] = [], lang: "en" | "ru" = "en"): LlmMessage[] => [
       ...earlier.map((text) => user(text)),
       {
         role: "assistant",
@@ -466,60 +434,157 @@ describe("decide", () => {
         ],
       },
       { role: "tool", toolCallId: "c2", name: "create_order", content: "{}" },
-      assistant(prompt),
+      assistant(prompts[lang]),
     ];
-    const contactOf = (history: LlmMessage[]) => calls(decide(history, "k"))[0]?.arguments.contact;
+    const argsOf = (history: LlmMessage[]) => calls(decide(history, "k"))[0]?.arguments;
+    const talk = (history: LlmMessage[], ...turns: string[]): LlmMessage[] => {
+      const out = [...history];
+      for (const turn of turns) {
+        out.push(user(turn));
+        const next = decide(out, "k");
+        if ("reply" in next) out.push(assistant(next.reply));
+      }
+      return out;
+    };
 
-    it("passes name, phone and email from the confirmation", () => {
-      expect(
-        contactOf([...order(), user("yes, my name is Aidar Nurlanuly, +7 701 000 11 22, a@b.kz")]),
-      ).toEqual({ name: "Aidar Nurlanuly", phone: "+7 701 000 11 22", email: "a@b.kz" });
-      expect(contactOf([...order(), user("Yes, I'm Dana, +7 701 000 11 22")])).toEqual({
-        name: "Dana",
-        phone: "+7 701 000 11 22",
+    it("recognises the pending order after the summary", () => {
+      expect(readContext(order()).pending).toMatchObject({
+        kind: "order",
+        key: "key-1234567",
+        asking: null,
       });
     });
 
-    it("understands Russian name phrases", () => {
-      expect(contactOf([...order(), user("да, меня зовут Айдар, +7 701 000 11 22")])).toEqual({
-        name: "Айдар",
-        phone: "+7 701 000 11 22",
+    it("asks for the details one by one after a yes", () => {
+      const history = order();
+      expect(reply(decide([...history, user("yes")], "k"))).toBe("What is your name?");
+      const named = talk(history, "yes");
+      expect(reply(decide([...named, user("Aidar")], "k"))).toBe(
+        "What phone number can the store reach you at?",
+      );
+      const phoned = talk(history, "yes", "Aidar");
+      expect(reply(decide([...phoned, user(phone)], "k"))).toBe(
+        "Would you like pickup or delivery?",
+      );
+      const chosen = talk(history, "yes", "Aidar", phone);
+      expect(reply(decide([...chosen, user("delivery")], "k"))).toBe(
+        "What is the delivery address?",
+      );
+    });
+
+    it("sends a pickup order once everything is collected", () => {
+      const history = talk(order(), "yes", "Aidar", phone);
+      expect(argsOf([...history, user("pickup")])).toEqual({
+        idempotency_key: "key-1234567",
+        items: [{ offer_id: runner.offer_id, quantity: 1 }],
+        submit: true,
+        contact: { name: "Aidar", phone },
+        fulfillment: "pickup",
       });
-      expect(contactOf([...order(), user("да, это Айдар, +7 701 000 11 22")])).toEqual({
-        name: "Айдар",
-        phone: "+7 701 000 11 22",
+    });
+
+    it("sends a delivery order with the address", () => {
+      const history = talk(order(), "yes", "Aidar Nurlanuly", phone, "delivery");
+      expect(argsOf([...history, user("Abay 10, apartment 5")])).toEqual({
+        idempotency_key: "key-1234567",
+        items: [{ offer_id: runner.offer_id, quantity: 1 }],
+        submit: true,
+        contact: { name: "Aidar Nurlanuly", phone },
+        fulfillment: "delivery",
+        delivery_address: "Abay 10, apartment 5",
       });
+    });
+
+    it("takes all details given in one message and skips the questions", () => {
+      expect(
+        argsOf([
+          ...order(),
+          user("my name is Aidar Nurlanuly, +7 701 000 11 22, delivery to Abay 10"),
+        ]),
+      ).toMatchObject({
+        submit: true,
+        contact: { name: "Aidar Nurlanuly", phone },
+        fulfillment: "delivery",
+        delivery_address: "Abay 10",
+      });
+      expect(
+        argsOf([...order(), user("I am Dana, +7 701 000 11 22, I will pick up")]),
+      ).toMatchObject({ contact: { name: "Dana", phone }, fulfillment: "pickup" });
+    });
+
+    it("asks only for what is still missing", () => {
+      expect(reply(decide([...order(), user("yes, my name is Dana")], "k"))).toBe(
+        "What phone number can the store reach you at?",
+      );
+      expect(reply(decide([...order(), user(phone)], "k"))).toBe("What is your name?");
+      expect(reply(decide([...order(), user("my name is Dana, " + phone)], "k"))).toBe(
+        "Would you like pickup or delivery?",
+      );
+      expect(
+        reply(decide([...order(), user("my name is Dana, " + phone + ", delivery")], "k")),
+      ).toBe("What is the delivery address?");
     });
 
     it("takes details given earlier in the conversation", () => {
-      expect(
-        contactOf([...order(["my name is Dana", "me@example.com"]), user("yes, +7 701 000 11 22")]),
-      ).toEqual({ name: "Dana", phone: "+7 701 000 11 22", email: "me@example.com" });
-    });
-
-    it("asks once for a phone, then sends without one", () => {
-      const ask = reply(decide([...order(), user("yes")], "k"));
-      expect(ask).toBe(
-        "Add a phone number so the store can confirm the order (or reply 'yes' to send without it).",
+      const history = order(["my name is Dana", "me@example.com"]);
+      expect(reply(decide([...history, user("yes")], "k"))).toBe(
+        "What phone number can the store reach you at?",
       );
-      expect(reply(decide([...order(), user("да")], "k"))).toContain("Добавьте номер телефона");
-      const asked = [...order(), user("yes"), assistant(ask)];
-      expect(readContext(asked).pending).toMatchObject({ kind: "order", asked: true });
-      expect(contactOf([...asked, user("yes")])).toBeUndefined();
-      expect(contactOf([...asked, user("+7 701 000 11 22")])).toEqual({
-        phone: "+7 701 000 11 22",
+      expect(argsOf([...history, user("yes, " + phone + ", pickup")])).toMatchObject({
+        contact: { name: "Dana", phone, email: "me@example.com" },
+        fulfillment: "pickup",
       });
     });
 
     it("puts the size in the order note", () => {
-      expect(contactOf([...order(["size 43"]), user("yes, +7 701 000 11 22")])).toEqual({
-        phone: "+7 701 000 11 22",
+      const history = talk(order(["size 43"]), "yes", "Aidar", phone);
+      expect(argsOf([...history, user("pickup")])?.contact).toEqual({
+        name: "Aidar",
+        phone,
         note: "Size: 43",
       });
-      expect(contactOf([...order(["нужен размер 43"]), user("да, +7 701 000 11 22")])).toEqual({
-        phone: "+7 701 000 11 22",
-        note: "Size: 43",
+    });
+
+    it("does not send without the details and cancels on no", () => {
+      expect(reply(decide([...order(), user("no")], "k"))).toContain("did not place the order");
+      const asked = talk(order(), "yes");
+      expect(reply(decide([...asked, user("no")], "k"))).toContain("did not place the order");
+      const other = decide([...asked, user("what is the weather?")], "k");
+      expect("reply" in other ? other.reply : "").not.toContain("sent to the store");
+    });
+
+    it("runs the whole flow in Russian", () => {
+      const history = order([], "ru");
+      expect(reply(decide([...history, user("да")], "k"))).toBe("Как вас зовут?");
+      const named = talk(history, "да");
+      expect(reply(decide([...named, user("Айдар")], "k"))).toBe(
+        "На какой номер телефона магазин может вам позвонить?",
+      );
+      const phoned = talk(history, "да", "Айдар");
+      expect(reply(decide([...phoned, user(`номер ${phone}`)], "k"))).toBe(
+        "Вам нужен самовывоз или доставка?",
+      );
+      const chosen = talk(history, "да", "Айдар", `номер ${phone}`);
+      expect(reply(decide([...chosen, user("доставка")], "k"))).toBe("Какой адрес доставки?");
+      const addressed = talk(history, "да", "Айдар", `номер ${phone}`, "доставка");
+      expect(argsOf([...addressed, user("ул. Абая 10, кв. 5")])).toEqual({
+        idempotency_key: "key-1234567",
+        items: [{ offer_id: runner.offer_id, quantity: 1 }],
+        submit: true,
+        contact: { name: "Айдар", phone },
+        fulfillment: "delivery",
+        delivery_address: "ул. Абая 10, кв. 5",
       });
+      expect(argsOf([...chosen, user("самовывоз")])).toMatchObject({
+        fulfillment: "pickup",
+        contact: { name: "Айдар", phone },
+      });
+    });
+
+    it("understands Russian name phrases in one message", () => {
+      expect(
+        argsOf([...order([], "ru"), user("меня зовут Айдар, +7 701 000 11 22, самовывоз")]),
+      ).toMatchObject({ contact: { name: "Айдар", phone }, fulfillment: "pickup" });
     });
   });
 
@@ -643,9 +708,20 @@ describe("storefront chat without a model", () => {
     expect(messageOf(draft)).toContain("Confirm order");
     expect(await services.orders.listOrders(ctx)).toMatchObject([{ status: "draft" }]);
 
-    expect(messageOf(await say("yes"))).toContain("Add a phone number");
-    expect(messageOf(await say("yes"))).toContain("sent to the store");
-    expect(await services.orders.listOrders(ctx)).toMatchObject([{ status: "submitted" }]);
+    expect(messageOf(await say("yes"))).toContain("What is your name?");
+    expect(messageOf(await say("Aidar"))).toContain("What phone number");
+    expect(messageOf(await say("+7 701 000 11 22"))).toContain("pickup or delivery");
+    expect(messageOf(await say("delivery"))).toContain("delivery address");
+    expect(await services.orders.listOrders(ctx)).toMatchObject([{ status: "draft" }]);
+    expect(messageOf(await say("Abay 10"))).toContain("sent to the store");
+    expect(await services.orders.listOrders(ctx)).toMatchObject([
+      {
+        status: "submitted",
+        contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+        fulfillment: "delivery",
+        deliveryAddress: "Abay 10",
+      },
+    ]);
 
     expect(messageOf(await say("do you sell tents?"))).toContain("pass this to the store owner");
     expect(messageOf(await say("me@example.com"))).toContain("sent to the store owner");
@@ -659,7 +735,7 @@ describe("storefront chat without a model", () => {
 
     const [conversation] = await services.conversations.list(ctx, { channel: "storefront" });
     const rows = await services.conversations.listMessages(ctx, conversation!.id);
-    expect(rows.filter((r) => r.role === "user")).toHaveLength(7);
-    expect(rows.filter((r) => r.role === "assistant" && r.content)).toHaveLength(7);
+    expect(rows.filter((r) => r.role === "user")).toHaveLength(10);
+    expect(rows.filter((r) => r.role === "assistant" && r.content)).toHaveLength(10);
   });
 });

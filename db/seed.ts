@@ -229,6 +229,13 @@ async function seedActivity(
       conversationId: spec.conversation ? conversationIds.get(spec.conversation) : undefined,
       items: spec.items.map((i) => ({ offerId: offerOf(i.title).id, quantity: i.quantity })),
       contact: spec.contact,
+      ...(index % 2 === 0
+        ? { fulfillment: "pickup" as const }
+        : {
+            fulfillment: "delivery" as const,
+            deliveryAddress: "Almaty, Abay Ave 150",
+            city: "Almaty",
+          }),
     });
     await orders.submitOrder(customer, order.id);
     shifts.orders.push([order.id, orderAges[index] ?? 0]);

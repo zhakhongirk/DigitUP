@@ -295,8 +295,15 @@ describe("create_order", () => {
       services.events.ofType("order.submitted").filter((e) => e.tenantId === ctx.tenantId);
     expect(mine()).toHaveLength(0);
 
-    const submitted = (await mcp.call("create_order", { idempotency_key, items, submit: true }))
-      .data as typeof d;
+    const submitted = (
+      await mcp.call("create_order", {
+        idempotency_key,
+        items,
+        submit: true,
+        contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+        fulfillment: "pickup",
+      })
+    ).data as typeof d;
     expect(submitted.order_id).toBe(d.order_id);
     expect(submitted.status).toBe("submitted");
     expect(mine()).toEqual([{ tenantId: ctx.tenantId, orderId: d.order_id }]);
@@ -315,11 +322,88 @@ describe("create_order", () => {
       items,
       submit: true,
       contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+      fulfillment: "pickup",
     });
     const data = res.data as { order_id: string; status: string };
     expect(data.status).toBe("submitted");
     const order = await services.orders.getOrder(ctx, data.order_id);
     expect(order?.contact).toMatchObject({ name: "Aidar", phone: "+7 701 000 11 22" });
+  });
+
+  it("reports missing fields on a draft and clears them once complete", async () => {
+    const { ctx, offers } = await seededTenant();
+    const offer = pick(offers, orderable);
+    const mcp = await customer(ctx);
+    const idempotency_key = key();
+    const items = [{ offer_id: offer.id, quantity: 1 }];
+    type View = {
+      status: string;
+      fulfillment: string | null;
+      delivery_address: string | null;
+      city: string | null;
+      missing_fields: string[];
+    };
+
+    const bare = (await mcp.call("create_order", { idempotency_key, items })).data as View;
+    expect(bare).toMatchObject({
+      fulfillment: null,
+      delivery_address: null,
+      city: null,
+      missing_fields: ["name", "phone", "fulfillment"],
+    });
+
+    const delivery = (
+      await mcp.call("create_order", {
+        idempotency_key,
+        items,
+        contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+        fulfillment: "delivery",
+      })
+    ).data as View;
+    expect(delivery.fulfillment).toBe("delivery");
+    expect(delivery.missing_fields).toEqual(["address"]);
+
+    const full = (
+      await mcp.call("create_order", {
+        idempotency_key,
+        items,
+        delivery_address: "Abay 1",
+        city: "Almaty",
+      })
+    ).data as View;
+    expect(full).toMatchObject({
+      status: "draft",
+      delivery_address: "Abay 1",
+      city: "Almaty",
+      missing_fields: [],
+    });
+
+    const sent = (await mcp.call("create_order", { idempotency_key, items, submit: true }))
+      .data as View;
+    expect(sent).toMatchObject({
+      status: "submitted",
+      fulfillment: "delivery",
+      missing_fields: [],
+    });
+  });
+
+  it("refuses to submit while details are missing", async () => {
+    const { ctx, offers } = await seededTenant();
+    const offer = pick(offers, orderable);
+    const mcp = await customer(ctx);
+    const res = await mcp.call("create_order", {
+      idempotency_key: key(),
+      items: [{ offer_id: offer.id, quantity: 1 }],
+      contact: { name: "Aidar", phone: "+7 701 000 11 22" },
+      fulfillment: "delivery",
+      submit: true,
+    });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain("invalid");
+    expect(res.text).toContain("delivery address");
+    expect(
+      services.events.ofType("order.submitted").filter((e) => e.tenantId === ctx.tenantId),
+    ).toHaveLength(0);
   });
 
   it("records the source given to the server on the order", async () => {

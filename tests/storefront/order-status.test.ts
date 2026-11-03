@@ -28,6 +28,10 @@ function fakeOrder(overrides: Partial<Order> = {}): Order {
       },
     ],
     contact: { name: "Ann Lee", phone: "+77001234567", email: "ann@example.com" },
+    fulfillment: "pickup",
+    deliveryAddress: null,
+    city: null,
+    cancelReason: null,
     status: "received",
     source: "storefront",
     idempotencyKey: "k",
@@ -88,6 +92,62 @@ describe("order status view", () => {
     expect(toOrderStatusView(fakeOrder({ status: "draft" }), store)).toBeNull();
   });
 
+  it("shows the cancel reason only for cancelled orders", () => {
+    const cancelled = toOrderStatusView(
+      fakeOrder({ status: "cancelled", cancelReason: "  Out of stock " }),
+      store,
+    )!;
+    expect(cancelled.cancelReason).toBe("Out of stock");
+    expect(
+      toOrderStatusView(fakeOrder({ status: "cancelled", cancelReason: null }), store)!
+        .cancelReason,
+    ).toBeNull();
+    expect(
+      toOrderStatusView(fakeOrder({ status: "received", cancelReason: "Left over" }), store)!
+        .cancelReason,
+    ).toBeNull();
+  });
+
+  describe("kaspi payment", () => {
+    const withKaspi = (kaspi: unknown) => ({ name: "Shoe Shop", contacts: { kaspi } });
+
+    it("is shown while the order is active", () => {
+      for (const status of ["submitted", "received", "processing"] as const) {
+        const view = toOrderStatusView(
+          fakeOrder({ status }),
+          withKaspi("https://pay.kaspi.kz/pay/abc"),
+        )!;
+        expect(view.kaspi).toEqual({
+          value: "https://pay.kaspi.kz/pay/abc",
+          href: "https://pay.kaspi.kz/pay/abc",
+        });
+      }
+    });
+
+    it("has no link when the value is a phone number", () => {
+      const view = toOrderStatusView(fakeOrder(), withKaspi(" +7 701 000 11 22 "))!;
+      expect(view.kaspi).toEqual({ value: "+7 701 000 11 22", href: null });
+    });
+
+    it("is hidden for completed and cancelled orders", () => {
+      for (const status of ["completed", "cancelled"] as const) {
+        expect(
+          toOrderStatusView(fakeOrder({ status }), withKaspi("https://pay.kaspi.kz/pay/abc"))!
+            .kaspi,
+        ).toBeNull();
+      }
+    });
+
+    it("is absent without store contacts or a usable value", () => {
+      expect(toOrderStatusView(fakeOrder(), store)!.kaspi).toBeNull();
+      expect(toOrderStatusView(fakeOrder(), { name: "Shop", contacts: null })!.kaspi).toBeNull();
+      expect(toOrderStatusView(fakeOrder(), withKaspi(""))!.kaspi).toBeNull();
+      expect(toOrderStatusView(fakeOrder(), withKaspi("   "))!.kaspi).toBeNull();
+      expect(toOrderStatusView(fakeOrder(), withKaspi(42))!.kaspi).toBeNull();
+      expect(toOrderStatusView(fakeOrder(), { name: "Shop", contacts: {} })!.kaspi).toBeNull();
+    });
+  });
+
   it("handles a missing buyer name", () => {
     expect(toOrderStatusView(fakeOrder({ contact: {} }), store)!.firstName).toBeNull();
   });
@@ -105,7 +165,8 @@ describe("loadOrderStatus", () => {
       idempotencyKey: `key-${randomUUID()}`,
       source: "storefront",
       items: [{ offerId: offer.id, quantity: 1 }],
-      contact: { name: "Ann Lee" },
+      contact: { name: "Ann Lee", phone: "+7 701 000 11 22" },
+      fulfillment: "pickup",
     });
     return { services, tenant, ctx, order };
   }

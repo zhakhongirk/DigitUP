@@ -8,8 +8,18 @@ import type { AgentEvent } from "@/server/agents/runtime";
 import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
 import { ServiceError } from "@/server/services/context";
-import { orderContactSchema } from "@/server/services/orders";
+import { draftDetailsSchema, missingOrderFields, type Order } from "@/server/services/orders";
 import { orderView } from "@/server/mcp/views";
+
+export function storefrontOrderView(order: Order) {
+  return {
+    ...orderView(order),
+    fulfillment: order.fulfillment,
+    delivery_address: order.deliveryAddress,
+    city: order.city,
+    missing_fields: order.status === "draft" ? missingOrderFields(order) : [],
+  };
+}
 
 export const CHAT_COOKIE = "sf_session";
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
@@ -160,30 +170,29 @@ export async function handleOrderConfirm(
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 
-  let phone: string | undefined;
-  const body: unknown = await request.json().catch(() => null);
-  const rawPhone = (body as { phone?: unknown } | null)?.phone;
-  if (typeof rawPhone === "string" && rawPhone.trim() !== "") {
-    const parsed = orderContactSchema.shape.phone.safeParse(rawPhone);
-    if (!parsed.success) return Response.json({ error: "invalid_phone" }, { status: 400 });
-    phone = parsed.data;
+  const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() !== "" ? value : undefined;
+  const parsed = draftDetailsSchema.safeParse({
+    name: text(body.name),
+    phone: text(body.phone),
+    fulfillment: text(body.fulfillment),
+    deliveryAddress: text(body.address),
+    city: text(body.city),
+  });
+  if (!parsed.success) {
+    return Response.json(
+      { error: "invalid_details", message: "Check your name, phone and delivery details." },
+      { status: 400 },
+    );
   }
 
   try {
-    if (phone && order.status === "draft") {
-      await services.orders.createOrder(ctx, {
-        idempotencyKey: order.idempotencyKey,
-        items: (order.items as { offerId: string; quantity: number }[]).map((item) => ({
-          offerId: item.offerId,
-          quantity: item.quantity,
-        })),
-        contact: { phone },
-        conversationId: order.conversationId ?? undefined,
-        source: order.source,
-      });
+    if (order.status === "draft") {
+      await services.orders.updateDraftDetails(ctx, orderId, parsed.data);
     }
     const submitted = await services.orders.submitOrder(ctx, orderId);
-    return Response.json(orderView(submitted));
+    return Response.json(storefrontOrderView(submitted));
   } catch (error) {
     if (error instanceof ServiceError) {
       return Response.json({ error: error.code, message: error.message }, { status: 409 });

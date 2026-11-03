@@ -309,19 +309,23 @@ describe("handleOrderConfirm", () => {
     return { ...store, cookie, orderId };
   }
 
+  const pickup = { name: "Aidar", phone: "+7 700 111 22 33", fulfillment: "pickup" };
+
   it("lets the owning session confirm the draft, idempotently", async () => {
     const { slug, ctx, cookie, orderId } = await draftOrder();
     expect((await services.orders.getOrder(ctx, orderId))?.status).toBe("draft");
 
-    const first = await confirm(slug, orderId, cookie);
+    const first = await confirm(slug, orderId, cookie, pickup);
     expect(first.status).toBe(200);
     expect(await first.json()).toMatchObject({
       order_id: orderId,
       status: "submitted",
       source: "storefront",
+      fulfillment: "pickup",
+      missing_fields: [],
     });
 
-    const second = await confirm(slug, orderId, cookie);
+    const second = await confirm(slug, orderId, cookie, pickup);
     expect(second.status).toBe(200);
     expect(await second.json()).toMatchObject({ order_id: orderId, status: "submitted" });
 
@@ -331,19 +335,60 @@ describe("handleOrderConfirm", () => {
     expect(submitted).toHaveLength(1);
   });
 
-  it("saves a phone sent with the confirmation as the order contact", async () => {
+  it("saves the name, phone and delivery details sent with the confirmation", async () => {
     const { slug, ctx, cookie, orderId } = await draftOrder();
-    const res = await confirm(slug, orderId, cookie, { phone: "+7 700 111 22 33" });
+    const res = await confirm(slug, orderId, cookie, {
+      name: "Aidar",
+      phone: "+7 700 111 22 33",
+      fulfillment: "delivery",
+      address: "Abay 10",
+      city: "Almaty",
+    });
     expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      status: "submitted",
+      delivery_address: "Abay 10",
+      city: "Almaty",
+    });
     expect(await services.orders.getOrder(ctx, orderId)).toMatchObject({
       status: "submitted",
-      contact: { phone: "+7 700 111 22 33" },
+      contact: { name: "Aidar", phone: "+7 700 111 22 33" },
+      fulfillment: "delivery",
+      deliveryAddress: "Abay 10",
+      city: "Almaty",
     });
   });
 
-  it("rejects an invalid phone without submitting", async () => {
+  it("answers 409 with the missing details and keeps the draft", async () => {
     const { slug, ctx, cookie, orderId } = await draftOrder();
-    expect((await confirm(slug, orderId, cookie, { phone: "1" })).status).toBe(400);
+    const none = await confirm(slug, orderId, cookie);
+    expect(none.status).toBe(409);
+    expect(await none.json()).toMatchObject({
+      error: "invalid",
+      message:
+        "Cannot submit the order, missing: customer name, phone number, fulfillment method (pickup or delivery)",
+    });
+
+    const noAddress = await confirm(slug, orderId, cookie, {
+      name: "Aidar",
+      phone: "+7 700 111 22 33",
+      fulfillment: "delivery",
+    });
+    expect(noAddress.status).toBe(409);
+    expect((await noAddress.json()).message).toContain("delivery address");
+    expect((await services.orders.getOrder(ctx, orderId))?.status).toBe("draft");
+  });
+
+  it("rejects invalid details without submitting", async () => {
+    const { slug, ctx, cookie, orderId } = await draftOrder();
+    for (const body of [
+      { ...pickup, phone: "1" },
+      { ...pickup, fulfillment: "teleport" },
+    ]) {
+      const res = await confirm(slug, orderId, cookie, body);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ error: "invalid_details" });
+    }
     expect((await services.orders.getOrder(ctx, orderId))?.status).toBe("draft");
   });
 
