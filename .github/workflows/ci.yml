@@ -2,8 +2,16 @@ name: CI
 
 on:
   push:
-    branches: [main]
   pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgres://storefront:storefront@localhost:5432/storefront
+  AUTH_SECRET: ci-only-auth-secret-not-for-production
+  NEXT_TELEMETRY_DISABLED: 1
 
 jobs:
   check:
@@ -24,10 +32,6 @@ jobs:
           --health-timeout 5s
           --health-retries 10
 
-    env:
-      DATABASE_URL: postgres://storefront:storefront@localhost:5432/storefront
-      NEXT_TELEMETRY_DISABLED: 1
-
     steps:
       - uses: actions/checkout@v4
 
@@ -35,16 +39,17 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-
-      - name: Lint
-        run: pnpm lint
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Format
         run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Typecheck
         run: pnpm typecheck

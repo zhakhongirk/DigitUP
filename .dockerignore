@@ -9,3 +9,4 @@ docs
 .env.*
 !.env.example
 *.log
+dist

@@ -25,9 +25,32 @@ COPY --from=build /app/.next/static ./.next/static
 EXPOSE 3000
 CMD ["node", "server.js"]
 
-# Event worker (runs TypeScript through tsx)
-FROM deps AS worker
-COPY . .
+# Worker bundle: esbuild (shipped with tsx) inlines the TypeScript sources and
+# resolves the @/ alias, so the runtime image needs no node_modules.
+FROM build AS worker-bundle
+RUN <<'BUNDLE'
+node --input-type=module -e '
+import { createRequire } from "node:module";
+import { cpSync } from "node:fs";
+const esbuild = createRequire(createRequire(import.meta.url).resolve("tsx"))("esbuild");
+await esbuild.build({
+  entryPoints: { worker: "server/worker.ts", migrate: "db/migrate.ts" },
+  outdir: "dist",
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node24",
+  external: ["pg-native"],
+  banner: { js: "import{createRequire as __cr}from\"node:module\";const require=__cr(import.meta.url);" },
+});
+cpSync("db/migrations", "dist/migrations", { recursive: true });
+'
+BUNDLE
+
+# Event worker (plain node on the bundle)
+FROM node:24-alpine AS worker
+WORKDIR /app
 ENV NODE_ENV=production
+COPY --from=worker-bundle /app/dist ./dist
 # The worker owns schema migrations: apply them, then start consuming jobs.
-CMD ["sh", "-c", "pnpm db:migrate && pnpm worker"]
+CMD ["sh", "-c", "node dist/migrate.js && node dist/worker.js"]
