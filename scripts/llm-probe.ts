@@ -1,21 +1,24 @@
 /**
- * Probes the configured Fireworks model for the capabilities the agents rely on
+ * Probes the configured model for the capabilities the agents rely on
  * and writes a report to docs/llm-probe.md.
  *
  *   pnpm llm:probe
  *
- * Requires FIREWORKS_API_KEY and FIREWORKS_MODEL (read from .env).
+ * Requires LLM_API_KEY and LLM_MODEL (or the legacy FIREWORKS_* names), read from .env.
+ * LLM_REASONING_EFFORT and LLM_REASONING_TOKENS apply to every probe call.
  */
 import "dotenv/config";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
 import OpenAI from "openai";
-import { createLlmClient } from "@/server/llm/client";
+import { createLlmClient, type ChatCompletionsApi } from "@/server/llm/client";
 import { readLlmConfig } from "@/server/llm/config";
 import type { LlmClient, LlmTool } from "@/server/llm/types";
 
 const RUNS = 3;
+let reasoningTokens = 0;
+let completionTokens = 0;
 const REPORT_PATH = resolve("docs/llm-probe.md");
 
 interface CheckResult {
@@ -103,18 +106,29 @@ function redSquarePng(): string {
 async function main() {
   const config = readLlmConfig();
   const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
-  const native = createLlmClient({
-    model: config.model,
-    mode: "native",
-    completions: openai.chat.completions,
-  });
-  const jsonTools = (jsonResponseFormat: boolean): LlmClient =>
+  const completions: ChatCompletionsApi = {
+    async create(params) {
+      const completion = await openai.chat.completions.create(params);
+      const usage = completion.usage;
+      completionTokens += usage?.completion_tokens ?? 0;
+      reasoningTokens += usage?.completion_tokens_details?.reasoning_tokens ?? 0;
+      return completion;
+    },
+  };
+  const build = (
+    mode: "native" | "json",
+    jsonResponseFormat = config.jsonResponseFormat,
+  ): LlmClient =>
     createLlmClient({
       model: config.model,
-      mode: "json",
+      mode,
       jsonResponseFormat,
-      completions: openai.chat.completions,
+      reasoningEffort: config.reasoningEffort,
+      reasoningTokens: config.reasoningTokens,
+      completions,
     });
+  const native = build("native");
+  const jsonTools = (jsonResponseFormat: boolean): LlmClient => build("json", jsonResponseFormat);
 
   console.log(`Probing ${config.model} at ${config.baseURL}\n`);
 
@@ -223,12 +237,17 @@ async function main() {
 
   const nativeReliable = nativeTools.passed === nativeTools.runs && nativeRoundTrip.passed === 1;
   const mode = nativeReliable ? "native" : jsonFallback.passed > 0 ? "json" : "none";
-  const recommendation =
+  const reasoningLines = [
+    config.reasoningEffort ? `LLM_REASONING_EFFORT=${config.reasoningEffort}` : "",
+    config.reasoningTokens > 0 ? `LLM_REASONING_TOKENS=${config.reasoningTokens}` : "",
+  ].filter(Boolean);
+  const toolMode =
     mode === "native"
       ? "LLM_TOOL_CALL_MODE=native"
       : mode === "json"
         ? `LLM_TOOL_CALL_MODE=json\nLLM_JSON_RESPONSE_FORMAT=${jsonMode.passed > 0}`
         : "No working tool-call mode found. Agents cannot run on this model; revisit the model choice.";
+  const recommendation = [toolMode, ...reasoningLines].join("\n");
 
   const report = [
     "# LLM probe",
@@ -236,6 +255,8 @@ async function main() {
     `- Date: ${new Date().toISOString()}`,
     `- Model: \`${config.model}\``,
     `- Endpoint: ${config.baseURL}`,
+    `- Reasoning effort: ${config.reasoningEffort ?? "default"}, token headroom: ${config.reasoningTokens}`,
+    `- Completion tokens: ${completionTokens}, of which reasoning: ${reasoningTokens}`,
     "",
     "| Check | Passed | Avg latency |",
     "|---|---|---|",

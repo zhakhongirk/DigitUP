@@ -7,6 +7,8 @@ import type {
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
+import { log } from "@/server/log";
+import type { ReasoningEffort } from "./config";
 import { parseJsonModeReply, toJsonModeMessages } from "./json-mode";
 import {
   LlmError,
@@ -31,6 +33,10 @@ export interface LlmClientOptions {
   /** Use `response_format: json_object` in JSON tool mode (disable if the model rejects it). */
   jsonResponseFormat?: boolean;
   completions: ChatCompletionsApi;
+  /** Sent as `reasoning_effort` on every request. */
+  reasoningEffort?: ReasoningEffort;
+  /** Added to every request's max_tokens so reasoning does not eat the visible answer. */
+  reasoningTokens?: number;
   newId?: () => string;
   /** Receives token usage of every call that names a usage source; failures are ignored. */
   recordUsage?: (record: LlmUsageRecord) => Promise<void> | void;
@@ -100,11 +106,17 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
   const { model, mode, completions } = options;
   const newId = options.newId ?? (() => `call_${randomUUID()}`);
   const jsonResponseFormat = options.jsonResponseFormat ?? true;
+  const reasoningTokens = options.reasoningTokens ?? 0;
+  const reasoningParams = options.reasoningEffort
+    ? { reasoning_effort: options.reasoningEffort }
+    : {};
+  const budget = (maxTokens: number | undefined) =>
+    maxTokens === undefined ? undefined : maxTokens + reasoningTokens;
 
   async function complete(params: ChatCompletionCreateParamsNonStreaming, request: LlmChatRequest) {
     let completion: ChatCompletion;
     try {
-      completion = await completions.create(params);
+      completion = await completions.create({ ...params, ...reasoningParams });
     } catch (error) {
       throw new LlmError("api_error", `LLM request failed: ${(error as Error).message}`, {
         cause: error,
@@ -119,6 +131,19 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
           cachedTokens: completion.usage.prompt_tokens_details?.cached_tokens,
         }
       : undefined;
+    if (
+      !choice.message.content &&
+      !choice.message.tool_calls?.length &&
+      choice.finish_reason === "length"
+    ) {
+      const details = completion.usage?.completion_tokens_details;
+      log.warn("llm.empty_reply_length", {
+        model,
+        promptCount: completion.usage?.prompt_tokens,
+        completionCount: completion.usage?.completion_tokens,
+        reasoningCount: details?.reasoning_tokens,
+      });
+    }
     if (usage && request.usageSource && options.recordUsage) {
       try {
         await options.recordUsage({
@@ -146,7 +171,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
           ? { response_format: { type: "json_object" as const } }
           : {}),
         temperature: request.temperature,
-        max_tokens: request.maxTokens,
+        max_tokens: budget(request.maxTokens),
       },
       request,
     );
@@ -181,7 +206,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
         messages: toOpenAiMessages(toJsonModeMessages(request.messages, tools)),
         ...(jsonResponseFormat ? { response_format: { type: "json_object" as const } } : {}),
         temperature: request.temperature,
-        max_tokens: request.maxTokens,
+        max_tokens: budget(request.maxTokens),
       },
       request,
     );
@@ -211,6 +236,8 @@ export interface FireworksClientOptions {
   mode: ToolCallMode;
   baseURL: string;
   jsonResponseFormat?: boolean;
+  reasoningEffort?: ReasoningEffort;
+  reasoningTokens?: number;
   recordUsage?: LlmClientOptions["recordUsage"];
 }
 
@@ -220,6 +247,8 @@ export function createFireworksClient(options: FireworksClientOptions): LlmClien
     model: options.model,
     mode: options.mode,
     jsonResponseFormat: options.jsonResponseFormat,
+    reasoningEffort: options.reasoningEffort,
+    reasoningTokens: options.reasoningTokens,
     completions: openai.chat.completions,
     recordUsage: options.recordUsage,
   });

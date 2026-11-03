@@ -1,12 +1,12 @@
 import { getDb } from "@/db/client";
 import { createFireworksClient } from "./client";
-import { readLlmConfig } from "./config";
+import { isLlmConfigured, readLlmConfig } from "./config";
 import type { LlmClient } from "./types";
 import { createUsageRecorder } from "./usage";
 
 export * from "./types";
 export { createLlmClient, createFireworksClient } from "./client";
-export { readLlmConfig, type LlmConfig } from "./config";
+export { isLlmConfigured, readLlmConfig, readLlmModel, type LlmConfig } from "./config";
 
 let shared: LlmClient | undefined;
 
@@ -21,6 +21,6 @@ export function getLlmClient(): LlmClient {
 
 /** Like getLlmClient, but returns null when no model is configured. */
 export function getOptionalLlmClient(): LlmClient | null {
-  if (!process.env.FIREWORKS_API_KEY || !process.env.FIREWORKS_MODEL) return null;
+  if (!isLlmConfigured()) return null;
   return getLlmClient();
 }
