@@ -13,6 +13,7 @@ export function detectUiLang(text: string): UiLang {
 
 export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
   en: {
+    find_offers: "Searching the catalog",
     search_offers: "Searching the catalog",
     get_offer_details: "Looking at the offer",
     check_availability: "Checking availability",
@@ -22,6 +23,7 @@ export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
     submit_inquiry: "Sending your inquiry",
   },
   ru: {
+    find_offers: "Ищу в каталоге",
     search_offers: "Ищу в каталоге",
     get_offer_details: "Смотрю товар",
     check_availability: "Проверяю наличие",
@@ -31,6 +33,7 @@ export const TOOL_LABELS: Record<UiLang, Record<string, string>> = {
     submit_inquiry: "Отправляю вопрос",
   },
   kk: {
+    find_offers: "Каталогтан іздеп жатырмын",
     search_offers: "Каталогтан іздеп жатырмын",
     get_offer_details: "Тауарды қарап жатырмын",
     check_availability: "Барын тексеріп жатырмын",
@@ -191,7 +194,9 @@ export function safeChatImage(value: unknown): string | null {
 export function toOfferChips(data: unknown): OfferChip[] {
   const r = asRecord(data);
   if (!r) return [];
-  const list = Array.isArray(r.offers) ? r.offers : [r];
+  const list = Array.isArray(r.offers)
+    ? [...r.offers, ...(Array.isArray(r.on_request) ? r.on_request : [])]
+    : [r];
   const chips: OfferChip[] = [];
   for (const entry of list) {
     const o = asRecord(entry);
@@ -421,7 +426,11 @@ function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
           text: UI_LABELS[lang].inquirySent,
         }));
       }
-      if (event.name === "search_offers" || event.name === "get_offer_details") {
+      if (
+        event.name === "find_offers" ||
+        event.name === "search_offers" ||
+        event.name === "get_offer_details"
+      ) {
         const seen = new Set(cleared.pendingOffers.map((o) => o.id));
         const fresh = toOfferChips(event.data).filter((o) => !seen.has(o.id));
         return { ...cleared, pendingOffers: [...cleared.pendingOffers, ...fresh] };

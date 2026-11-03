@@ -49,6 +49,8 @@ export function createCustomerAgent(deps: {
         ctx: agentCtx,
         services,
         source: channel,
+        tracking: { channel, sessionKey },
+        store: { slug: tenant.slug, baseUrl: process.env.APP_URL?.replace(/\/+$/, "") },
         conversationId: conversation.id,
         guards: {
           ...(deps.llm ? { canSubmit: () => isExplicitConfirmation(message) } : {}),

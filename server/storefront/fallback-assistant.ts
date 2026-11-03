@@ -6,7 +6,16 @@
  */
 import { randomUUID } from "node:crypto";
 import type { LlmChatRequest, LlmChatResult, LlmClient, LlmMessage } from "@/server/llm";
+import {
+  BARE_SIZE_IN_TEXT_RE,
+  BARE_SIZE_RE,
+  extractBudget,
+  SIZE_RE,
+} from "@/server/services/intent/budget";
+import { englishTerms, searchTerms } from "@/server/services/intent/lexicon";
 import { detectTextLang } from "@/shared/text-lang";
+
+export { englishTerms, extractBudget, searchTerms };
 
 export type Lang = "en" | "ru" | "kk";
 export type InfoTopic =
@@ -39,48 +48,15 @@ export interface Intent {
   size: string | null;
   /** Upper price limit the shopper named, in the store's currency. */
   maxPrice: number | null;
+  /** The message with contact details and quantity removed, as handed to the intent layer. */
+  searchText: string;
   contact: ShopperContact;
 }
-
-const STOPWORDS = new Set(
-  (
-    "a an the do does did you have has any got is are was there what which how much many cost costs price prices " +
-    "of for in on at to me i we my your our it its this that these those please show shows find looking look " +
-    "want need can could would like some with and or buy order purchase get stock available availability " +
-    "call size sizes tell about about from by be am just also pair pairs pcs piece pieces item items thanks thank " +
-    "у вас есть ли покажи покажите показать найди найдите ищу ищем хочу хотел хотела нужен нужна нужно нужны " +
-    "сколько стоит стоят цена цены цену какая какой какие какое наличии наличие в на для по и или мне можно " +
-    "пожалуйста купить куплю заказать заказ размер размеры это эти та то там что где как не а но с со из " +
-    "от до вы ты мы я он она они их ваш ваши шт штук пара пар спасибо подскажите скажите размера размере размеров " +
-    "бар ма ме ба бе па пе сізде сізде менде маған бізге керек қанша бағасы бағасын бағасы баға бағалары тұрады " +
-    "өлшем өлшемі өлшемдері өлшемін қандай қайда және мен үшін болады алғым келеді қалай берші көрсетші көрсетіңіз " +
-    "көрсет көрсетіңізші тауар тауарлар тауарды рахмет сәлем толығырақ айтып беріңіз дана жұп өлшемде немесе да де"
-  ).split(/\s+/),
-);
 
 const EMAIL_RE = /[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+/;
 const PHONE_RE = /\+?\d[\d\s().-]{5,}\d/;
 const NAME_RE =
   /(?<![\p{L}])(?:[Mm]y name is|[Ii]'m|I am|[Мм]еня зовут|[Мм]о[её] имя|[Ээ]то|[Мм]енің атым|[Аа]тым)\s+(\p{Lu}[\p{L}'-]*(?:\s+\p{Lu}[\p{L}'-]*)?)/u;
-const SIZE_RE =
-  /(?<![\p{L}])(?:(?:size|sz|eu|us|uk|размер|өлшем\p{L}*)\s*[:#-]?\s*(\d{1,3}(?:[.,]\d)?)|(\d{2}(?:[.,]\d)?)\s*-?\s*(?:го\s+)?(?:размер\p{L}*|өлшем\p{L}*|size))/iu;
-const BARE_SIZE_IN_TEXT_RE = /(?<![\p{L}\d.,/-])(?:3\d|4\d|50)(?![\d-]|[.,]\d|\p{L})/u;
-const NUMBER = String.raw`(\d{1,3}(?:[ \u00a0]\d{3})+|\d+(?:[.,]\d+)?)`;
-const THOUSANDS = String.raw`(?:\s*(k|к|тыс\p{L}*|тысяч\p{L}*|мың|thousand))?`;
-const CURRENCY = String.raw`(?:\s*(?:тең?ге\p{L}*|тг|₸|kzt|usd|руб\p{L}*|₽|\$))?`;
-const BUDGET_PREFIX_RE = new RegExp(
-  String.raw`(?<![\p{L}])(?:under|below|up to|upto|max(?:imum)?|within|less than|no more than|cheaper than|budget|до|не дороже|дешевле|не более|максимум|бюджет\p{L}*)\s*(?:of\s*)?\$?\s*` +
-    NUMBER +
-    THOUSANDS +
-    CURRENCY,
-  "iu",
-);
-const BUDGET_SUFFIX_RE = new RegExp(
-  NUMBER + THOUSANDS + CURRENCY + String.raw`\s*(?:-?\s*(?:ге|ға|ке|қа))?\s*дейін`,
-  "iu",
-);
-const BUDGET_SHORT_RE = /(?<![\p{L}\d.,])(\d+(?:[.,]\d+)?)\s*(k|к|тыс\p{L}*|мың)(?![\p{L}])/iu;
-const BARE_SIZE_RE = /^\s*(\d{2}(?:[.,]5)?)\s*$/;
 const QUANTITY_RES = [
   /(\d{1,2})\s*(?:pcs|pieces|piece|pairs?|units?|шт|штук|штуки|пар|пары|дана|жұп)(?![\p{L}])/iu,
   /(?:buy|order|take|add|also|plus|купить|заказать|беру|возьму|добав\p{L}*|ещё|еще)\s+(\d{1,2})(?=\s)/iu,
@@ -215,103 +191,6 @@ function wordCount(text: string): number {
   return text.split(/[^\p{L}\p{N}]+/u).filter(Boolean).length;
 }
 
-function stem(word: string): string {
-  if (/[а-яё]/.test(word)) {
-    if (word.length >= 6) return word.slice(0, -2);
-    if (word.length === 5) return word.slice(0, -1);
-    return word;
-  }
-  return word.length > 4 && word.endsWith("s") ? word.slice(0, -1) : word;
-}
-
-export function searchTerms(text: string): string[] {
-  const terms: string[] = [];
-  for (const raw of text.toLowerCase().split(/[^\p{L}\p{N}-]+/u)) {
-    const word = raw.replace(/^-+|-+$/g, "");
-    if (word.length < 2 || STOPWORDS.has(word) || /^\d+$/.test(word)) continue;
-    const term = stem(word);
-    if (!terms.includes(term)) terms.push(term);
-  }
-  return terms.slice(0, 6);
-}
-
-const RU_EN: [string, string[]][] = [
-  ["кроссов", ["sneaker", "shoe"]],
-  ["кед", ["sneaker", "shoe"]],
-  ["ботин", ["boot", "shoe"]],
-  ["сапог", ["boot"]],
-  ["туфл", ["shoe"]],
-  ["сандал", ["sandal"]],
-  ["босонож", ["sandal"]],
-  ["лофер", ["loafer"]],
-  ["обув", ["shoe"]],
-  ["бег", ["running"]],
-  ["детск", ["kids"]],
-  ["женск", ["women"]],
-  ["мужск", ["men"]],
-  ["зимн", ["winter"]],
-  ["летн", ["summer"]],
-  ["кожан", ["leather"]],
-  ["стриж", ["haircut"]],
-  ["бород", ["beard"]],
-  ["брит", ["shave"]],
-  ["окраш", ["coloring"]],
-  ["укладк", ["styling"]],
-  ["красн", ["red"]],
-  ["син", ["blue"]],
-  ["голуб", ["blue"]],
-  ["зелен", ["green"]],
-  ["черн", ["black"]],
-  ["бел", ["white"]],
-  ["сер", ["gray"]],
-  ["желт", ["yellow"]],
-  ["коричн", ["brown"]],
-  ["бежев", ["beige"]],
-  ["розов", ["pink"]],
-  ["оранж", ["orange"]],
-  ["фиолет", ["purple"]],
-  ["кроссовка", ["sneaker", "shoe"]],
-  ["етік", ["boot"]],
-  ["аяқ киім", ["shoe"]],
-  ["аяқ", ["shoe"]],
-  ["сандал", ["sandal"]],
-  ["балалар", ["kids"]],
-  ["әйелдер", ["women"]],
-  ["ерлер", ["men"]],
-  ["қысқы", ["winter"]],
-  ["жазғы", ["summer"]],
-  ["былғары", ["leather"]],
-  ["сақал", ["beard"]],
-  ["қызыл", ["red"]],
-  ["жасыл", ["green"]],
-  ["сары", ["yellow"]],
-  ["қоңыр", ["brown"]],
-  ["сұр", ["gray"]],
-  ["қара", ["black"]],
-  ["көк", ["blue"]],
-];
-
-function translateTerm(term: string): string[] | null {
-  const t = term.replace(/ё/g, "е");
-  if (!/[а-я]/.test(t)) return null;
-  for (const [key, english] of RU_EN) {
-    if (t.startsWith(key) && t.length <= key.length + (key.length >= 5 ? 5 : 2)) return english;
-  }
-  return null;
-}
-
-export function englishTerms(terms: string[]): { primary: string[]; all: string[] } {
-  const primary: string[] = [];
-  const all: string[] = [];
-  for (const term of terms) {
-    const english = translateTerm(term);
-    const first = english?.[0] ?? term;
-    if (!primary.includes(first)) primary.push(first);
-    for (const word of english ?? [term]) if (!all.includes(word)) all.push(word);
-  }
-  return { primary, all };
-}
-
 function shopperSize(intent: Intent, userMessages: string[]): string | null {
   if (intent.size) return intent.size;
   for (const message of [...userMessages].reverse()) {
@@ -319,25 +198,6 @@ function shopperSize(intent: Intent, userMessages: string[]): string | null {
     if (size) return size;
   }
   return null;
-}
-
-function budgetOf(match: RegExpExecArray, hasMultiplier: boolean): number | null {
-  const digits = (match[1] ?? "").replace(/[ \u00a0]/g, "");
-  const value = Number(hasMultiplier ? digits.replace(",", ".") : digits.replace(/[.,]/g, ""));
-  if (!Number.isFinite(value)) return null;
-  const amount = Math.round(hasMultiplier ? value * 1000 : value);
-  return amount >= 100 ? amount : null;
-}
-
-/** Pulls an upper price limit such as "до 75 000", "under 75k" or "75000-ге дейін" out of a message. */
-export function extractBudget(text: string): { maxPrice: number | null; rest: string } {
-  for (const re of [BUDGET_PREFIX_RE, BUDGET_SUFFIX_RE, BUDGET_SHORT_RE]) {
-    const match = re.exec(text);
-    if (!match) continue;
-    const maxPrice = budgetOf(match, Boolean(match[2]));
-    if (maxPrice !== null) return { maxPrice, rest: text.replace(match[0], " ") };
-  }
-  return { maxPrice: null, rest: text };
 }
 
 function matchName(text: string): { value: string; phrase: string } | null {
@@ -381,6 +241,7 @@ export function parseIntent(input: string): Intent {
   const { contact, rest: withoutContact } = extractContact(withoutBudget);
 
   let rest = withoutContact;
+  let searchText = extractContact(text).rest;
   const sizeMatch = SIZE_RE.exec(rest);
   let size = sizeMatch ? (sizeMatch[1] ?? sizeMatch[2] ?? "").replace(",", ".") : null;
   if (sizeMatch) rest = rest.replace(sizeMatch[0], " ");
@@ -390,6 +251,7 @@ export function parseIntent(input: string): Intent {
     if (match) {
       quantity = Math.min(Math.max(Number(match[1]), 1), MAX_LINE_QUANTITY);
       rest = rest.replace(match[0], " ");
+      searchText = searchText.replace(match[0], " ");
       break;
     }
   }
@@ -403,10 +265,16 @@ export function parseIntent(input: string): Intent {
   }
 
   const terms = searchTerms(rest);
-  const base = { lang, terms, topic: null, quantity, size, maxPrice, contact } satisfies Omit<
-    Intent,
-    "kind"
-  >;
+  const base = {
+    lang,
+    terms,
+    topic: null,
+    quantity,
+    size,
+    maxPrice,
+    searchText: searchText.replace(/\s+/g, " ").trim(),
+    contact,
+  } satisfies Omit<Intent, "kind">;
   const short = wordCount(withoutContact) <= 4;
 
   if (short && YES_RE.test(withoutContact)) return { ...base, kind: "yes", terms: [] };
@@ -432,6 +300,8 @@ const COPY = {
       "returns, or pass a question to the store owner. What are you looking for?",
     greeting: "Hi! ",
     noMatch: "I could not find that in the catalog.",
+    loosened: (steps: string) => `There was no exact match, so I loosened: ${steps}.`,
+    steps: { size: "size", color: "color", budget: "budget", category: "category" },
     found: "Here is what I found:",
     more: (n: number) => `...and ${n} more. Tell me a bit more to narrow it down.`,
     priceOnRequest: "Price on request",
@@ -499,6 +369,8 @@ const COPY = {
       "или передать вопрос владельцу магазина. Что вас интересует?",
     greeting: "Здравствуйте! ",
     noMatch: "Не нашёл этого в каталоге.",
+    loosened: (steps: string) => `Точного совпадения не было, поэтому я ослабил: ${steps}.`,
+    steps: { size: "размер", color: "цвет", budget: "бюджет", category: "категория" },
     found: "Вот что нашлось:",
     more: (n: number) => `...и ещё ${n}. Уточните запрос, чтобы сузить выбор.`,
     priceOnRequest: "Цена по запросу",
@@ -568,6 +440,8 @@ const COPY = {
       "немесе сұрағыңызды дүкен иесіне жіберемін. Сізді не қызықтырады?",
     greeting: "Сәлеметсіз бе! ",
     noMatch: "Каталогтан бұны таба алмадым.",
+    loosened: (steps: string) => `Нақты сәйкестік болмады, сондықтан жеңілдеттім: ${steps}.`,
+    steps: { size: "өлшем", color: "түс", budget: "бюджет", category: "санат" },
     found: "Мынау табылды:",
     more: (n: number) => `...және тағы ${n}. Таңдауды тарылту үшін сұрауды нақтылаңыз.`,
     priceOnRequest: "Бағасы сұраныс бойынша",
@@ -754,6 +628,7 @@ interface ShownOffer {
   availability?: "in_stock" | "out_of_stock" | "unknown";
   can_order?: boolean;
   attributes?: Record<string, unknown>;
+  matched?: { size?: boolean | null };
 }
 
 export interface DraftItem {
@@ -842,7 +717,9 @@ function offersOf(batch: ToolBatch): ShownOffer[] {
   for (const result of batch.results) {
     const data = asRecord(result.data);
     if (!data) continue;
-    const list = Array.isArray(data.offers) ? data.offers : [data];
+    const list = Array.isArray(data.offers)
+      ? [...data.offers, ...(Array.isArray(data.on_request) ? data.on_request : [])]
+      : [data];
     for (const item of list) {
       const offer = asRecord(item);
       if (offer && typeof offer.offer_id === "string" && typeof offer.title === "string") {
@@ -928,12 +805,14 @@ function addedBefore(history: LlmMessage[], askIndex: number): boolean {
   return false;
 }
 
+const SHOWS_OFFERS = new Set(["find_offers", "search_offers", "get_offer_details"]);
+
 export function readContext(history: LlmMessage[]): FallbackContext {
   const draft = openDraft(history);
   const batches = readBatches(history);
   let lastOffer: ShownOffer | null = null;
   for (const batch of batches) {
-    if (!batch.calls.some((c) => c.name === "search_offers" || c.name === "get_offer_details")) {
+    if (!batch.calls.some((c) => SHOWS_OFFERS.has(c.name))) {
       continue;
     }
     const offers = offersOf(batch);
@@ -1063,8 +942,11 @@ function sizeNote(offer: ShownOffer, intent: Intent, copy: Copy): string | null 
   const sizes = offer.attributes?.sizes;
   if (!Array.isArray(sizes) || sizes.length === 0) return null;
   const list = sizes.map(String);
-  if (intent.size)
-    return list.includes(intent.size) ? copy.sizeYes(intent.size) : copy.sizeNo(intent.size);
+  if (intent.size) {
+    const fits =
+      typeof offer.matched?.size === "boolean" ? offer.matched.size : list.includes(intent.size);
+    return fits ? copy.sizeYes(intent.size) : copy.sizeNo(intent.size);
+  }
   return intent.kind === "stock" ? copy.sizes(list.join(", ")) : null;
 }
 
@@ -1370,7 +1252,7 @@ function startDecision(
   if (removal) return removal;
   if (adding && ctx.draft) {
     if (intent.terms.length === 0) return { reply: copy.askAdd };
-    return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
+    return { calls: [{ name: "find_offers", arguments: searchArgs(intent) }] };
   }
   if (pending?.kind === "order" && intent.kind !== "no") {
     const fresh = parseOrderDetails(text, pending.asking, true);
@@ -1419,25 +1301,18 @@ function startDecision(
           calls: [{ name: "get_offer_details", arguments: { offer_id: ctx.lastOffer.offer_id } }],
         };
       }
-      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
+      return { calls: [{ name: "find_offers", arguments: searchArgs(intent) }] };
     case "search":
       if (intent.terms.length === 0 && !hasSearchFilters(intent)) {
         return { reply: copy.askProduct };
       }
-      return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms, intent) }] };
+      return { calls: [{ name: "find_offers", arguments: searchArgs(intent) }] };
   }
 }
 
-function searchArgs(terms: string[], intent?: Intent): Record<string, unknown> {
-  const filtered = intent !== undefined && intent.kind !== "buy";
-  const maxPrice = filtered ? intent.maxPrice : null;
-  const size = filtered ? intent.size : null;
-  return {
-    ...(terms.length ? { query: terms.join(" ") } : {}),
-    ...(maxPrice !== null ? { max_price: maxPrice } : {}),
-    ...(size ? { attributes: { sizes: size } } : {}),
-    limit: maxPrice !== null ? MAX_LISTED * 4 : MAX_LISTED + 1,
-  };
+function searchArgs(intent: Intent): Record<string, unknown> {
+  const text = intent.kind === "buy" ? intent.terms.join(" ") : intent.searchText;
+  return { intent: text.trim() || intent.terms.join(" "), lang: intent.lang };
 }
 
 function hasSearchFilters(intent: Intent): boolean {
@@ -1486,29 +1361,10 @@ function continueDecision(
     return { reply: added ?? orderSummary(data, copy) };
   }
 
-  if (first === "search_offers" || first === "get_offer_details") {
+  if (first === "find_offers" || first === "search_offers" || first === "get_offer_details") {
     const offers = offersOf(last);
     const failed = last.results.every((r) => r.data === null);
     if (failed) return { reply: copy.error };
-
-    if (offers.length === 0 && first === "search_offers") {
-      const translated = english.primary.join(" ") !== intent.terms.join(" ");
-      if (batches.length === 1 && translated) {
-        return {
-          calls: [{ name: "search_offers", arguments: searchArgs(english.primary, intent) }],
-        };
-      }
-      const split = translated ? english.all : intent.terms;
-      const stage = translated ? 2 : 1;
-      if (batches.length === stage && last.calls.length === 1 && split.length > 1) {
-        return {
-          calls: split.slice(0, 3).map((term) => ({
-            name: "search_offers",
-            arguments: searchArgs([term], intent),
-          })),
-        };
-      }
-    }
 
     if (intent.kind === "buy") {
       if (offers.length === 0) return { reply: `${copy.noMatch} ${handoffText(copy)}` };
@@ -1551,11 +1407,33 @@ function continueDecision(
       };
     }
 
-    const total = first === "search_offers" ? totalOf(last, offers.length) : offers.length;
-    return { reply: offersReply(offers, total, intent, copy) };
+    const total = first === "get_offer_details" ? offers.length : totalOf(last, offers.length);
+    const note = loosenedNote(last, copy);
+    const reply = offersReply(offers, total, intent, copy);
+    return {
+      reply: note
+        ? `${note}
+${reply}`
+        : reply,
+    };
   }
 
   return { reply: copy.error };
+}
+
+function loosenedNote(batch: ToolBatch, copy: Copy): string | null {
+  const names: string[] = [];
+  for (const result of batch.results) {
+    const relaxed = asRecord(result.data)?.relaxed;
+    if (!Array.isArray(relaxed)) continue;
+    for (const step of relaxed) {
+      const name = asRecord(step)?.step;
+      if (typeof name === "string" && name in copy.steps) {
+        names.push(copy.steps[name as keyof Copy["steps"]]);
+      }
+    }
+  }
+  return names.length > 0 ? copy.loosened(names.join(", ")) : null;
 }
 
 function totalOf(batch: ToolBatch, fallback: number): number {

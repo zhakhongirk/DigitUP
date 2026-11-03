@@ -127,7 +127,7 @@ describe("several items in one order", () => {
   it("searches for the product to add and then asks for its size", () => {
     const history = [...firstOrder(), user("also add Samba")];
     const [search] = calls(decide(history, "k"));
-    expect(search).toEqual({ name: "search_offers", arguments: { query: "samba", limit: 6 } });
+    expect(search).toEqual({ name: "find_offers", arguments: { intent: "samba", lang: "en" } });
     const found = [...history, ...toolTurn("search_offers", {}, { total: 1, offers: [samba] })];
     expect(reply(decide(found, "k"))).toBe("Which size? Available: 38, 39.");
   });
@@ -197,7 +197,7 @@ describe("several items in one order", () => {
     const asked = [...history, assistant("Which product would you like to add? Tell me the name.")];
     expect(readContext(asked).pending).toEqual({ kind: "add" });
     const [search] = calls(decide([...asked, user("Samba")], "k"));
-    expect(search?.arguments).toEqual({ query: "samba", limit: 6 });
+    expect(search?.arguments).toEqual({ intent: "samba", lang: "en" });
     const russian = [...firstOrder(), user("Добавить ещё товар")];
     expect(reply(decide(russian, "k"))).toBe("Какой товар добавить? Напишите название.");
   });

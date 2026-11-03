@@ -90,25 +90,36 @@ describe("russian search", () => {
     expect(englishTerms(["сервис"]).primary).toEqual(["сервис"]);
   });
 
-  it("retries in English when the Russian query finds nothing", () => {
-    const first = [
-      user("покажи кроссовки"),
-      ...toolTurn("search_offers", {}, { total: 0, offers: [] }),
-    ];
-    const [retry] = calls(decide(first, "k"));
-    expect(retry).toEqual({ name: "search_offers", arguments: { query: "sneaker", limit: 6 } });
-    const second = [
-      ...first,
-      ...toolTurn("search_offers", { query: "sneaker" }, { total: 1, offers: [runner] }),
-    ];
-    expect(reply(decide(second, "k"))).toBe("Вот что нашлось:\n- Runner: 100 KZT, в наличии");
+  it("hands the whole Russian sentence to the intent layer instead of retrying", () => {
+    const first = [user("покажи кроссовки"), ...toolTurn("find_offers", {}, { offers: [runner] })];
+    const [search] = calls(decide([user("покажи кроссовки")], "k"));
+    expect(search).toEqual({
+      name: "find_offers",
+      arguments: { intent: "покажи кроссовки", lang: "ru" },
+    });
+    expect(reply(decide(first, "k"))).toBe("Вот что нашлось:\n- Runner: 100 KZT, в наличии");
   });
 
-  it("falls back to single English synonyms", () => {
-    const empty = toolTurn("search_offers", {}, { total: 0, offers: [] });
-    const history = [user("кроссовки"), ...empty, ...empty];
-    const split = calls(decide(history, "k"));
-    expect(split.map((c) => c.arguments.query)).toEqual(["sneaker", "shoe"]);
+  it("lists on-request offers returned by the intent layer", () => {
+    const history = [
+      user("покажи кроссовки"),
+      ...toolTurn("find_offers", {}, { offers: [runner], on_request: [quote] }),
+    ];
+    const text = reply(decide(history, "k"));
+    expect(text).toContain("- Runner: 100 KZT");
+    expect(text).toContain("- Custom boot: Цена по запросу");
+  });
+
+  it("says which filters the intent layer loosened", () => {
+    const history = [
+      user("black sneakers size 46"),
+      ...toolTurn(
+        "find_offers",
+        {},
+        { offers: [runner], relaxed: [{ step: "size", from: "46", to: null }] },
+      ),
+    ];
+    expect(reply(decide(history, "k"))).toContain("There was no exact match, so I loosened: size.");
   });
 });
 
@@ -170,8 +181,8 @@ describe("decide", () => {
   it("searches the catalog for product questions", () => {
     const [call] = calls(decide([user("do you have runner shoes?")], "k"));
     expect(call).toEqual({
-      name: "search_offers",
-      arguments: { query: "runner shoe", limit: 6 },
+      name: "find_offers",
+      arguments: { intent: "do you have runner shoes?", lang: "en" },
     });
   });
 
@@ -204,16 +215,12 @@ describe("decide", () => {
     expect(reply(decide(messages, "k"))).toContain("Вот что нашлось");
   });
 
-  it("retries a multi-word search word by word, then offers the owner", () => {
-    const first = [
+  it("offers the owner when nothing is found", () => {
+    const history = [
       user("blue velvet sandals"),
-      ...toolTurn("search_offers", {}, { total: 0, offers: [] }),
+      ...toolTurn("find_offers", {}, { offers: [], on_request: [] }),
     ];
-    const retry = calls(decide(first, "k"));
-    expect(retry.map((c) => c.arguments.query)).toEqual(["blue", "velvet", "sandal"]);
-
-    const second = [...first, ...toolTurn("search_offers", {}, { total: 0, offers: [] })];
-    expect(reply(decide(second, "k"))).toContain("could not find");
+    expect(reply(decide(history, "k"))).toContain("could not find");
   });
 
   it("answers store questions from policies and flags unconfirmed ones", () => {

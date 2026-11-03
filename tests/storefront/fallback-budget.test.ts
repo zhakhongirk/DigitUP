@@ -67,13 +67,8 @@ describe("search arguments", () => {
     expect(search("sneakers under 45k size 43")).toEqual({
       calls: [
         {
-          name: "search_offers",
-          arguments: {
-            query: "sneaker",
-            max_price: 45000,
-            attributes: { sizes: "43" },
-            limit: 20,
-          },
+          name: "find_offers",
+          arguments: { intent: "sneakers under 45k size 43", lang: "en" },
         },
       ],
     });
@@ -81,19 +76,19 @@ describe("search arguments", () => {
 
   it("searches by budget alone", () => {
     expect(search("до 45 000")).toMatchObject({
-      calls: [{ name: "search_offers", arguments: { max_price: 45000 } }],
+      calls: [{ name: "find_offers", arguments: { intent: "до 45 000", lang: "ru" } }],
     });
   });
 
-  it("keeps the default limit without a budget", () => {
+  it("sends a plain query as it is", () => {
     expect(search("sneakers")).toEqual({
-      calls: [{ name: "search_offers", arguments: { query: "sneaker", limit: 6 } }],
+      calls: [{ name: "find_offers", arguments: { intent: "sneakers", lang: "en" } }],
     });
   });
 
   it("does not filter when the shopper wants to buy", () => {
     expect(search("buy sneakers size 43")).toMatchObject({
-      calls: [{ name: "search_offers", arguments: { query: "sneaker", limit: 6 } }],
+      calls: [{ name: "find_offers", arguments: { intent: "sneaker", lang: "en" } }],
     });
   });
 });
