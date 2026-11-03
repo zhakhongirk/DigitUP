@@ -1,0 +1,164 @@
+.lp-root {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 20px 72px;
+}
+
+.lp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ln-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.ln-logo:hover {
+  color: var(--text);
+}
+
+.ln-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--text);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.lp-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 16px;
+  max-width: 760px;
+  padding-top: 24px;
+}
+
+.lp-hero h1 {
+  font-size: clamp(32px, 7vw, 56px);
+  line-height: 1.04;
+  overflow-wrap: break-word;
+}
+
+.lp-hero > p {
+  color: var(--text-2);
+  font-size: 17px;
+}
+
+.lp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.lp-hero .lp-demos {
+  font-size: 14px;
+  color: var(--text-3);
+}
+
+.lp-steps,
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 14px;
+}
+
+.lp-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px;
+  border-radius: 24px;
+}
+
+.lp-card h2,
+.lp-card h3 {
+  font-size: 18px;
+}
+
+.lp-card p {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.lp-num {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.lp-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lp-block > h2 {
+  font-size: 28px;
+}
+
+.lp-lead {
+  margin-bottom: 8px;
+  color: var(--text-2);
+}
+
+.lp-endpoints {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 6px 18px;
+  border-radius: 24px;
+  list-style: none;
+}
+
+.lp-endpoints li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.lp-endpoints li:last-child {
+  border-bottom: 0;
+}
+
+.lp-endpoints code {
+  flex: 0 0 220px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.lp-endpoints span {
+  flex: 1 1 240px;
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+@media (max-width: 600px) {
+  .lp-root {
+    gap: 32px;
+  }
+
+  .lp-endpoints code {
+    flex-basis: 100%;
+  }
+}
