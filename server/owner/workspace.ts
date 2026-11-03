@@ -4,6 +4,8 @@ import type { CatalogStats } from "@/server/services/catalog";
 import type { TenantContext } from "@/server/services/context";
 import { actionLabel, auditChange } from "./audit";
 import { buildInbox, type InboxItem } from "./inbox";
+import type { Lang } from "@/server/storefront/i18n";
+import { tr, trn } from "@/shared/owner-copy";
 import { parseOps, summarize } from "./changes";
 
 export const ATTENTION_LIMIT = 4;
@@ -67,7 +69,7 @@ export function healthFromStats(stats: CatalogStats): CatalogHealth {
   };
 }
 
-export function buildSetup(input: SetupInput): SetupItem[] {
+export function buildSetup(input: SetupInput, lang: Lang = "en"): SetupItem[] {
   const { slug, contacts, policies, health } = input;
   const hasContact = Boolean(contacts.phone || contacts.email || contacts.whatsapp);
   const hasHours = Boolean(policies.working_hours);
@@ -75,24 +77,24 @@ export function buildSetup(input: SetupInput): SetupItem[] {
   return [
     {
       key: "contacts",
-      title: "Add contacts and working hours",
-      hint: "Shoppers and agents see them on your storefront.",
+      title: tr(lang, "ws.setup.contacts.title"),
+      hint: tr(lang, "ws.setup.contacts.hint"),
       href: "/app/settings",
       done: hasContact && hasHours,
     },
     {
       key: "prices",
-      title: "Set prices for offers marked price on request",
+      title: tr(lang, "ws.setup.prices.title"),
       hint:
         health.priceOnRequest > 0
-          ? `${plural(health.priceOnRequest, "offer")} without a price.`
-          : "Every offer has a price.",
+          ? `${trn(lang, "n.offersWithoutPrice", health.priceOnRequest)}.`
+          : tr(lang, "ws.setup.prices.none"),
       href: "/app/catalog",
       done: health.priceOnRequest === 0,
     },
     {
       key: "share",
-      title: "Share your storefront link",
+      title: tr(lang, "ws.setup.share.title"),
       hint: storefront,
       href: storefront,
       done: false,
@@ -101,16 +103,16 @@ export function buildSetup(input: SetupInput): SetupItem[] {
     },
     {
       key: "chat",
-      title: "Try the store chat",
-      hint: "Ask it a question the way a shopper would.",
+      title: tr(lang, "ws.setup.chat.title"),
+      hint: tr(lang, "ws.setup.chat.hint"),
       href: storefront,
       done: input.chatted,
       external: true,
     },
     {
       key: "agents",
-      title: "Connect an AI agent",
-      hint: "Create a key so an assistant can work with your store.",
+      title: tr(lang, "ws.setup.agents.title"),
+      hint: tr(lang, "ws.setup.agents.hint"),
       href: "/app/agents",
       done: input.activeKeys > 0,
     },
@@ -122,33 +124,33 @@ export function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 /** "2 orders, 1 question" for the new inbox items, or an empty string. */
-export function inboxBreakdown(orders: number, inquiries: number): string {
+export function inboxBreakdown(orders: number, inquiries: number, lang: Lang = "en"): string {
   const parts: string[] = [];
-  if (orders > 0) parts.push(plural(orders, "order"));
-  if (inquiries > 0) parts.push(plural(inquiries, "question"));
+  if (orders > 0) parts.push(trn(lang, "n.order", orders));
+  if (inquiries > 0) parts.push(trn(lang, "n.question", inquiries));
   return parts.join(", ");
 }
 
 export function feedSummary(
   view: Pick<WorkspaceView, "pendingCount" | "newOrders" | "newInquiries" | "health">,
+  lang: Lang = "en",
 ): string {
   const { health } = view;
   const waiting: string[] = [];
-  if (view.pendingCount > 0) {
-    waiting.push(
-      `${plural(view.pendingCount, "approval")} ${view.pendingCount === 1 ? "is" : "are"} waiting`,
-    );
-  }
+  if (view.pendingCount > 0) waiting.push(trn(lang, "n.waitingApprovals", view.pendingCount));
   const inbox = view.newOrders + view.newInquiries;
-  if (inbox > 0) waiting.push(`${inbox} new in your inbox`);
+  if (inbox > 0) waiting.push(tr(lang, "ws.inboxNew", { n: inbox }));
   const catalog: string[] = [];
-  if (health.priceOnRequest > 0)
-    catalog.push(`${plural(health.priceOnRequest, "offer")} priced on request`);
-  if (health.stockUnknown > 0) catalog.push(`${health.stockUnknown} with unknown stock`);
+  if (health.priceOnRequest > 0) {
+    catalog.push(trn(lang, "n.offersOnRequest", health.priceOnRequest));
+  }
+  if (health.stockUnknown > 0) {
+    catalog.push(tr(lang, "ws.stockUnknownCount", { n: health.stockUnknown }));
+  }
   const parts: string[] = [];
-  if (waiting.length > 0) parts.push(`${waiting.join(" and ")}.`);
+  if (waiting.length > 0) parts.push(`${waiting.join(tr(lang, "ws.and"))}.`);
   if (catalog.length > 0) parts.push(`${catalog.join(", ")}.`);
-  if (parts.length === 0) return "You are all caught up. Nothing is waiting on you.";
+  if (parts.length === 0) return tr(lang, "ws.allCaughtUp");
   return parts.join(" ");
 }
 
@@ -160,12 +162,12 @@ export function changeHref(id: string): string {
   return `/app/approvals?id=${encodeURIComponent(id)}`;
 }
 
-export function activityRow(event: AuditEvent): ActivityRow {
+export function activityRow(event: AuditEvent, lang: Lang = "en"): ActivityRow {
   return {
     id: event.id,
     actor: event.actor,
-    what: actionLabel(event.action),
-    change: auditChange(event),
+    what: actionLabel(event.action, lang),
+    change: auditChange(event, lang),
     at: event.createdAt,
   };
 }
@@ -173,6 +175,7 @@ export function activityRow(event: AuditEvent): ActivityRow {
 export async function loadWorkspace(
   services: Services,
   ctx: TenantContext,
+  lang: Lang = "en",
 ): Promise<WorkspaceView> {
   const [orders, inquiries, changeSets, stats, events, model, tenant, keys, chats] =
     await Promise.all([
@@ -192,26 +195,29 @@ export async function loadWorkspace(
     const ops = parseOps(cs.ops);
     return {
       id: cs.id,
-      summary: ops ? summarize(ops) : "Unreadable approval request",
+      summary: ops ? summarize(ops, lang) : tr(lang, "ws.unreadable"),
       createdAt: cs.createdAt,
     };
   });
 
   return {
-    setup: buildSetup({
-      slug: tenant.slug,
-      contacts: model.profile.contacts,
-      policies: model.policies,
-      health,
-      activeKeys: keys.filter((key) => !key.revokedAt).length,
-      chatted: chats.length > 0,
-    }),
+    setup: buildSetup(
+      {
+        slug: tenant.slug,
+        contacts: model.profile.contacts,
+        policies: model.policies,
+        health,
+        activeKeys: keys.filter((key) => !key.revokedAt).length,
+        chatted: chats.length > 0,
+      },
+      lang,
+    ),
     newOrders: orders.length,
     newInquiries: inquiries.length,
-    newItems: buildInbox(orders, inquiries).slice(0, ATTENTION_LIMIT),
+    newItems: buildInbox(orders, inquiries, undefined, lang).slice(0, ATTENTION_LIMIT),
     pendingCount: pending.length,
     pending: pending.slice(0, ATTENTION_LIMIT),
     health,
-    activity: events.map(activityRow),
+    activity: events.map((event) => activityRow(event, lang)),
   };
 }

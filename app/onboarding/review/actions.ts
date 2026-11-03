@@ -2,7 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { applyReviewEdits } from "@/server/onboarding/review";
+import { applyReviewEdits, launchMissingLabel } from "@/server/onboarding/review";
+import { ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 import { businessModelSchema, checkLaunchReadiness } from "@/shared/business-model";
@@ -13,25 +14,28 @@ export interface ReviewState {
 
 export async function confirmModel(_prev: ReviewState, form: FormData): Promise<ReviewState> {
   const services = await getServices();
+  const { t, msg, lang } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/onboarding/review");
 
   const draft = await services.catalog.getLatestDraft(owner);
   if (!draft || draft.id !== form.get("draftId")) {
-    return { errors: ["A newer draft exists. Reload the page to review it."] };
+    return { errors: [t("rv.errNewer")] };
   }
   if (draft.status === "confirmed") redirect("/onboarding/done");
   if (draft.status !== "draft") {
-    return { errors: ["This draft was replaced. Reload the page to review the latest one."] };
+    return { errors: [t("rv.errReplaced")] };
   }
 
   const original = businessModelSchema.parse(draft.payload);
-  const edited = applyReviewEdits(original, form);
+  const edited = applyReviewEdits(original, form, lang);
   if (!edited.ok) return { errors: edited.errors };
 
   const readiness = checkLaunchReadiness(edited.model);
   if (!readiness.ready) {
-    return { errors: readiness.missing.map((m) => `Add ${m} before launching.`) };
+    return {
+      errors: readiness.missing.map((m) => t("rv.errAdd", { what: launchMissingLabel(m, lang) })),
+    };
   }
 
   try {
@@ -39,7 +43,7 @@ export async function confirmModel(_prev: ReviewState, form: FormData): Promise<
     const target = unchanged ? draft : await services.catalog.saveDraft(owner, edited.model);
     await services.catalog.confirmDraft(owner, target.id);
   } catch (error) {
-    if (error instanceof ServiceError) return { errors: [error.message] };
+    if (error instanceof ServiceError) return { errors: [msg(error.message)] };
     throw error;
   }
   redirect("/onboarding/done");

@@ -2,10 +2,12 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/app/i18n-provider";
 
 const DEBOUNCE_MS = 300;
 
 export function SearchBox({ initial, filter }: { initial: string; filter: string }) {
+  const { t } = useT();
   const router = useRouter();
   const [value, setValue] = useState(initial);
   const applied = useRef(initial);
@@ -26,13 +28,13 @@ export function SearchBox({ initial, filter }: { initial: string; filter: string
 
   return (
     <label className="field ib-search">
-      <span className="sr-only">Search the inbox</span>
+      <span className="sr-only">{t("ib.searchLabel")}</span>
       <input
         type="search"
         inputMode="search"
         value={value}
         maxLength={80}
-        placeholder="Search name, phone or order number"
+        placeholder={t("ib.searchPlaceholder")}
         onChange={(event) => setValue(event.target.value)}
       />
     </label>

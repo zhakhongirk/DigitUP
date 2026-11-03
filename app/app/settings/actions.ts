@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { passwordChangeLimiter } from "@/server/http/rate-limit";
+import { ownerT } from "@/server/owner/lang";
 import { parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
 import { clearSessionCookie, currentOwner, setSessionCookie } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
@@ -16,15 +17,16 @@ export interface SettingsState {
 
 export async function saveProfile(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   const services = await getServices();
+  const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
 
   const input = parseProfileForm(form);
-  if (!input.name) return { error: "Enter a business name.", saved: false };
+  if (!input.name) return { error: t("st.errName"), saved: false };
   try {
     await services.catalog.updateProfile(owner, input);
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app", "layout");
@@ -33,13 +35,14 @@ export async function saveProfile(_prev: SettingsState, form: FormData): Promise
 
 export async function savePolicies(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   const services = await getServices();
+  const { msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
 
   try {
     await services.catalog.updatePolicies(owner, parsePoliciesForm(form));
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app", "layout");
@@ -53,12 +56,13 @@ async function telegramAction(
   ) => Promise<void>,
 ): Promise<SettingsState> {
   const services = await getServices();
+  const { msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
   try {
     await run(owner, services);
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app/settings");
@@ -85,6 +89,7 @@ export async function sendTelegramTest(): Promise<SettingsState> {
 
 export async function changePassword(_prev: SettingsState, form: FormData): Promise<SettingsState> {
   const services = await getServices();
+  const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
 
@@ -92,17 +97,17 @@ export async function changePassword(_prev: SettingsState, form: FormData): Prom
   const next = form.get("next");
   const confirm = form.get("confirm");
   if (typeof current !== "string" || typeof next !== "string" || !current || !next) {
-    return { error: "Enter your current and new password.", saved: false };
+    return { error: t("st.errPasswords"), saved: false };
   }
-  if (next !== confirm) return { error: "The new passwords do not match.", saved: false };
+  if (next !== confirm) return { error: t("st.errMismatch"), saved: false };
   if (!passwordChangeLimiter.check(`user:${owner.userId}`).ok) {
-    return { error: "Too many attempts. Try again in a few minutes.", saved: false };
+    return { error: t("err.tooManyAttempts"), saved: false };
   }
   try {
     const token = await services.tenancy.changePassword(owner, { current, next });
     await setSessionCookie(token);
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   return { error: null, saved: true, stamp: Date.now() };

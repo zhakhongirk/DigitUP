@@ -1,10 +1,9 @@
 "use client";
 
 import { useActionState } from "react";
+import { useT } from "@/app/i18n-provider";
 import { createKey, type CreateKeyState } from "./actions";
 import { CopyButton } from "@/app/onboarding/done/copy-button";
-
-const LABELS = { customer_agent: "shopping-agent", owner: "owner" } as const;
 
 export function KeyCreate({
   customerUrl,
@@ -13,6 +12,7 @@ export function KeyCreate({
   customerUrl: string;
   businessUrl: string;
 }) {
+  const { t } = useT();
   const [state, action, pending] = useActionState<CreateKeyState, FormData>(createKey, {
     key: null,
     kind: null,
@@ -41,7 +41,7 @@ export function KeyCreate({
           className="btn btn-sm"
           disabled={pending}
         >
-          {pending ? "Creating…" : "Create shopping-agent key"}
+          {pending ? t("ag.creating") : t("ag.createCustomer")}
         </button>
         <button
           type="submit"
@@ -50,7 +50,7 @@ export function KeyCreate({
           className="btn btn-sm btn-secondary"
           disabled={pending}
         >
-          Create owner key
+          {t("ag.createOwner")}
         </button>
       </form>
       {state.error ? (
@@ -60,10 +60,8 @@ export function KeyCreate({
       ) : null}
       {state.key && state.kind ? (
         <div className="ag-reveal" role="status">
-          <b>New {LABELS[state.kind]} key</b>
-          <span className="ag-hint">
-            Copy it now. It is shown once and only its hash is stored.
-          </span>
+          <b>{t(state.kind === "owner" ? "ag.newOwnerKey" : "ag.newCustomerKey")}</b>
+          <span className="ag-hint">{t("ag.shownOnce")}</span>
           <div className="ag-copy-row">
             <code>{state.key}</code>
             <CopyButton text={state.key} />

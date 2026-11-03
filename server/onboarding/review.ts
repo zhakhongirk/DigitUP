@@ -11,6 +11,8 @@ import {
   type Policies,
 } from "@/shared/business-model";
 import { CONTACT_FIELDS, POLICY_FIELDS } from "@/shared/labels";
+import type { Lang } from "@/server/storefront/i18n";
+import { tr, trn, type TextKey } from "@/shared/owner-copy";
 
 export type ReviewResult = { ok: true; model: BusinessModel } | { ok: false; errors: string[] };
 
@@ -28,7 +30,11 @@ export function primaryCurrency(model: BusinessModel): string | null {
   return [...counts].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
-export function applyReviewEdits(original: BusinessModel, form: FormData): ReviewResult {
+export function applyReviewEdits(
+  original: BusinessModel,
+  form: FormData,
+  lang: Lang = "en",
+): ReviewResult {
   const model: BusinessModel = structuredClone(original);
   const errors: string[] = [];
 
@@ -53,7 +59,7 @@ export function applyReviewEdits(original: BusinessModel, form: FormData): Revie
 
   const currencyInput = field(form, "currency")?.toUpperCase();
   if (currencyInput && !/^[A-Z]{3}$/.test(currencyInput)) {
-    errors.push("Currency must be a three-letter code such as KZT or USD.");
+    errors.push(tr(lang, "rv.errCurrency"));
   }
   const currency = currencyInput && /^[A-Z]{3}$/.test(currencyInput) ? currencyInput : null;
 
@@ -67,9 +73,9 @@ export function applyReviewEdits(original: BusinessModel, form: FormData): Revie
         const price = parsePrice(priceText);
         const offerCurrency = offer.currency ?? currency;
         if (price === null) {
-          errors.push(`"${offer.title}": the price is not a number.`);
+          errors.push(tr(lang, "rv.errPriceNumber", { title: offer.title }));
         } else if (!offerCurrency) {
-          errors.push("Set the currency for the prices you added.");
+          errors.push(tr(lang, "rv.errSetCurrency"));
         } else {
           offer.price = price;
           offer.currency = offerCurrency;
@@ -115,24 +121,33 @@ export interface ReviewGap {
   needed: boolean;
 }
 
-const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
-
-const POLICY_GAPS: [keyof Policies, string][] = [
-  ["delivery", "Add your delivery terms. Until then shoppers see 'To be confirmed'"],
-  ["payment", "Add your payment methods. Until then shoppers see 'To be confirmed'"],
-  ["returns", "Add your return policy. Until then shoppers see 'To be confirmed'"],
-  ["working_hours", "Add your working hours. Until then shoppers see 'To be confirmed'"],
+const POLICY_GAPS: [keyof Policies, TextKey][] = [
+  ["delivery", "gap.policy.delivery"],
+  ["payment", "gap.policy.payment"],
+  ["returns", "gap.policy.returns"],
+  ["working_hours", "gap.policy.working_hours"],
 ];
 
+const MISSING_KEYS: Record<string, TextKey> = {
+  "business name": "rv.miss.name",
+  "a description of what the business offers": "rv.miss.description",
+  "one contact channel (phone, email, messenger or website)": "rv.miss.contact",
+};
+
+export function launchMissingLabel(text: string, lang: Lang = "en"): string {
+  const key = MISSING_KEYS[text];
+  return key ? tr(lang, key) : text;
+}
+
 /** One plain-language item per gap, so the count shown always equals the list length. */
-export function reviewGaps(model: BusinessModel): ReviewGap[] {
+export function reviewGaps(model: BusinessModel, lang: Lang = "en"): ReviewGap[] {
   const gaps: ReviewGap[] = [];
   const { contacts } = model.profile;
 
   if (model.offers.length === 0) {
     gaps.push({
       id: "offers",
-      text: "No products or services were found. You can launch now and add them later",
+      text: tr(lang, "gap.offers"),
       target: "rv-offers",
       needed: false,
     });
@@ -142,7 +157,7 @@ export function reviewGaps(model: BusinessModel): ReviewGap[] {
   if (noPrice > 0) {
     gaps.push({
       id: "prices",
-      text: `${noPrice} ${plural(noPrice, "offer has", "offers have")} no price: ${plural(noPrice, "it", "they")} will show 'Price on request'`,
+      text: trn(lang, "gap.prices", noPrice),
       target: `rv-price-${unpriced}`,
       needed: false,
     });
@@ -152,7 +167,7 @@ export function reviewGaps(model: BusinessModel): ReviewGap[] {
   if (noStock > 0) {
     gaps.push({
       id: "stock",
-      text: `${noStock} ${plural(noStock, "offer has", "offers have")} no stock status: ${plural(noStock, "it", "they")} will show 'To be confirmed'`,
+      text: trn(lang, "gap.stock", noStock),
       target: `rv-availability-${unknown}`,
       needed: false,
     });
@@ -160,7 +175,7 @@ export function reviewGaps(model: BusinessModel): ReviewGap[] {
   if (!CONTACT_CHANNELS.some((c) => contacts[c])) {
     gaps.push({
       id: "contact",
-      text: "Add your phone number so customers can reach you",
+      text: tr(lang, "gap.phone"),
       target: "rv-contact-phone",
       needed: true,
     });
@@ -168,7 +183,7 @@ export function reviewGaps(model: BusinessModel): ReviewGap[] {
   if (!contacts.email) {
     gaps.push({
       id: "email",
-      text: "Add an email address for orders and questions",
+      text: tr(lang, "gap.email"),
       target: "rv-contact-email",
       needed: false,
     });
@@ -176,14 +191,19 @@ export function reviewGaps(model: BusinessModel): ReviewGap[] {
   if (!contacts.address) {
     gaps.push({
       id: "address",
-      text: "Add your address so the assistant can tell shoppers where you are",
+      text: tr(lang, "gap.address"),
       target: "rv-contact-address",
       needed: false,
     });
   }
-  for (const [key, text] of POLICY_GAPS) {
+  for (const [key, textKey] of POLICY_GAPS) {
     if (model.policies[key] === null) {
-      gaps.push({ id: `policy-${key}`, text, target: `rv-policy-${key}`, needed: false });
+      gaps.push({
+        id: `policy-${key}`,
+        text: tr(lang, textKey),
+        target: `rv-policy-${key}`,
+        needed: false,
+      });
     }
   }
   model.missing_info.forEach((item, i) => {

@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { CopyButton } from "@/app/onboarding/done/copy-button";
 import { appBaseUrl } from "@/server/owner/base-url";
-import { ACTOR_LABELS } from "@/server/owner/audit";
+import { actorLabel } from "@/server/owner/audit";
 import { formatWhen } from "@/server/owner/inbox";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import {
   changeHref,
@@ -13,19 +14,18 @@ import {
   inboxBreakdown,
   inboxHref,
   loadWorkspace,
-  plural,
 } from "@/server/owner/workspace";
 import "./workspace.css";
 
-export const metadata: Metadata = { title: "Workspace" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.workspace");
 
 export default async function WorkspacePage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ lang, t, tn }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app");
 
   const [view, base, unread] = await Promise.all([
-    loadWorkspace(services, owner),
+    loadWorkspace(services, owner, lang),
     appBaseUrl(),
     services.notifications.unreadCount(owner),
   ]);
@@ -43,7 +43,7 @@ export default async function WorkspacePage() {
 
   return (
     <>
-      <h1 className="sr-only">Workspace</h1>
+      <h1 className="sr-only">{t("ws.title")}</h1>
       <div className="wk-layout">
         <section className="wk-feed glass-strong" aria-labelledby="wk-feed-title">
           <header className="wk-feed-head">
@@ -61,31 +61,35 @@ export default async function WorkspacePage() {
               </svg>
             </span>
             <div className="wk-feed-title">
-              <b id="wk-feed-title">Store activity</b>
-              <span>What changed in your store. Risky edits wait for you.</span>
+              <b id="wk-feed-title">{t("ws.activity")}</b>
+              <span>{t("ws.activitySub")}</span>
             </div>
             <Link href="/app/notifications" className="wk-feed-link">
-              Notifications{unread > 0 ? ` (${unread} new)` : ""}
+              {unread > 0 ? t("ws.notificationsNew", { n: unread }) : t("ws.notifications")}
             </Link>
           </header>
 
           <div className="wk-feed-body">
-            {newest ? <span className="sys-line">{formatWhen(newest, now)}</span> : null}
-            <p className="wk-bubble">{feedSummary(view)}</p>
+            {newest ? (
+              <span className="sys-line">{formatWhen(newest, now, undefined, lang)}</span>
+            ) : null}
+            <p className="wk-bubble">{feedSummary(view, lang)}</p>
 
             {view.pending.map((change) => (
               <Link key={change.id} href={changeHref(change.id)} className="wk-card-item">
                 <span className="wk-card-row">
-                  <b>Approval · {change.summary}</b>
-                  <span className="wk-chip wk-chip-warn">Pending</span>
+                  <b>{t("ws.approval", { summary: change.summary })}</b>
+                  <span className="wk-chip wk-chip-warn">{t("ws.pending")}</span>
                 </span>
-                <span className="wk-card-text">Requested {formatWhen(change.createdAt, now)}</span>
-                <span className="wk-card-cta">Review changes</span>
+                <span className="wk-card-text">
+                  {t("ws.requested", { when: formatWhen(change.createdAt, now, undefined, lang) })}
+                </span>
+                <span className="wk-card-cta">{t("ws.reviewChanges")}</span>
               </Link>
             ))}
             {view.pendingCount > view.pending.length ? (
               <Link href="/app/approvals" className="wk-more">
-                See all {view.pendingCount} approvals
+                {t("ws.seeAllApprovals", { n: view.pendingCount })}
               </Link>
             ) : null}
 
@@ -95,22 +99,22 @@ export default async function WorkspacePage() {
                   <b>
                     {item.label} · {item.who}
                   </b>
-                  <span className="wk-chip wk-chip-info">New</span>
+                  <span className="wk-chip wk-chip-info">{t("ws.new")}</span>
                 </span>
                 <span className="wk-card-text wk-clip">{item.preview}</span>
-                <span className="wk-card-cta">Open in inbox</span>
+                <span className="wk-card-cta">{t("ws.openInInbox")}</span>
               </Link>
             ))}
             {newCount > view.newItems.length ? (
               <Link href="/app/inbox?filter=new" className="wk-more">
-                See all {newCount} in inbox
+                {t("ws.seeAllInbox", { n: newCount })}
               </Link>
             ) : null}
 
             {setupLeft > 0 ? (
               <>
                 <p className="wk-bubble">
-                  Finish setting up your store · {setupTotal - setupLeft}/{setupTotal}
+                  {t("ws.finishSetup", { done: setupTotal - setupLeft, total: setupTotal })}
                 </p>
                 <ol className="wk-list wk-setup">
                   {view.setup.map((item) => (
@@ -126,7 +130,9 @@ export default async function WorkspacePage() {
                         <span>
                           <b>
                             {item.title}
-                            <span className="sr-only">{item.done ? " (done)" : " (to do)"}</span>
+                            <span className="sr-only">
+                              {t(item.done ? "ws.stepDone" : "ws.stepTodo")}
+                            </span>
                           </b>
                           <small>{item.hint}</small>
                         </span>
@@ -140,7 +146,7 @@ export default async function WorkspacePage() {
 
             {view.activity.length > 0 ? (
               <>
-                <p className="wk-bubble">Latest changes:</p>
+                <p className="wk-bubble">{t("ws.latest")}</p>
                 <div className="wk-list wk-changes">
                   <ul>
                     {view.activity.map((row) => (
@@ -149,15 +155,17 @@ export default async function WorkspacePage() {
                           ✓
                         </span>
                         <span className="wk-change-text">
-                          {ACTOR_LABELS[row.actor]}: {row.what}
+                          {actorLabel(row.actor, lang)}: {row.what}
                           {row.change ? ` ${row.change}` : ""}
                         </span>
-                        <time dateTime={row.at.toISOString()}>{formatWhen(row.at, now)}</time>
+                        <time dateTime={row.at.toISOString()}>
+                          {formatWhen(row.at, now, undefined, lang)}
+                        </time>
                       </li>
                     ))}
                   </ul>
                   <Link href="/app/audit" className="wk-more">
-                    See in audit log
+                    {t("ws.seeAudit")}
                   </Link>
                 </div>
               </>
@@ -167,21 +175,21 @@ export default async function WorkspacePage() {
           <div className="wk-suggest">
             {view.pendingCount > 0 ? (
               <Link href="/app/approvals" className="suggestion">
-                Review approvals
+                {t("ws.sugApprovals")}
               </Link>
             ) : null}
             {view.newInquiries > 0 ? (
               <Link href="/app/inbox?filter=new" className="suggestion">
-                Answer new questions
+                {t("ws.sugQuestions")}
               </Link>
             ) : null}
             {health.priceOnRequest > 0 ? (
               <Link href="/app/catalog" className="suggestion">
-                Set missing prices
+                {t("ws.sugPrices")}
               </Link>
             ) : null}
             <Link href="/app/agents" className="suggestion">
-              Connect an AI agent
+              {t("ws.sugAgent")}
             </Link>
           </div>
 
@@ -199,7 +207,7 @@ export default async function WorkspacePage() {
                 <path d="M12 5v14M5 12h14" />
               </svg>
             </span>
-            <span className="wk-composer-text">Upload a new price list or catalog</span>
+            <span className="wk-composer-text">{t("ws.composer")}</span>
             <span className="wk-composer-btn wk-composer-go" aria-hidden="true">
               <svg
                 width="15"
@@ -219,26 +227,26 @@ export default async function WorkspacePage() {
 
         <aside className="wk-aside">
           <section className="wk-side glass" aria-labelledby="wk-health">
-            <b id="wk-health">Catalog health</b>
+            <b id="wk-health">{t("ws.health")}</b>
             <dl className="wk-rows">
               <div>
-                <dt>Active offers</dt>
+                <dt>{t("ws.activeOffers")}</dt>
                 <dd>{health.active}</dd>
               </div>
               <div>
-                <dt>Price on request</dt>
+                <dt>{t("ws.priceOnRequest")}</dt>
                 <dd className={health.priceOnRequest > 0 ? "wk-warn" : undefined}>
                   {health.priceOnRequest}
                 </dd>
               </div>
               <div>
-                <dt>Stock unknown</dt>
+                <dt>{t("ws.stockUnknown")}</dt>
                 <dd className={health.stockUnknown > 0 ? "wk-warn" : undefined}>
                   {health.stockUnknown}
                 </dd>
               </div>
               <div>
-                <dt>Open questions</dt>
+                <dt>{t("ws.openQuestions")}</dt>
                 <dd className={view.newInquiries > 0 ? "wk-warn" : undefined}>
                   {view.newInquiries}
                 </dd>
@@ -247,24 +255,24 @@ export default async function WorkspacePage() {
           </section>
 
           <section className="wk-side glass" aria-labelledby="wk-needs">
-            <b id="wk-needs">Needs you</b>
+            <b id="wk-needs">{t("ws.needsYou")}</b>
             {nothingWaiting ? (
-              <p className="wk-empty">Nothing is waiting on you.</p>
+              <p className="wk-empty">{t("ws.nothingWaiting")}</p>
             ) : (
               <>
                 {view.pendingCount > 0 ? (
                   <Link href="/app/approvals" className="wk-tile wk-tile-warn">
                     <b>
-                      {plural(view.pendingCount, "approval")}
+                      {tn("n.approval", view.pendingCount)}
                       {view.pending[0] ? ` · ${view.pending[0].summary}` : ""}
                     </b>
-                    <span>Awaiting approval</span>
+                    <span>{t("ws.awaitingApproval")}</span>
                   </Link>
                 ) : null}
                 {newCount > 0 ? (
                   <Link href="/app/inbox?filter=new" className="wk-tile wk-tile-info">
-                    <b>{newCount} new in inbox</b>
-                    <span>{inboxBreakdown(view.newOrders, view.newInquiries)}</span>
+                    <b>{t("ws.newInInbox", { n: newCount })}</b>
+                    <span>{inboxBreakdown(view.newOrders, view.newInquiries, lang)}</span>
                   </Link>
                 ) : null}
               </>

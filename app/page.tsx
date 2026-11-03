@@ -1,58 +1,43 @@
 import Link from "next/link";
+import { LangSwitch } from "@/app/lang-switch";
+import { ownerT } from "@/server/owner/lang";
 import "./landing.css";
 
-const STEPS = [
-  ["1", "Upload", "/onboarding", "Price lists, catalogs and policies as XLSX, CSV, PDF or Word."],
-  [
-    "2",
-    "Review",
-    "/onboarding/review",
-    "A draft business model: profile, offers, policies and what is still missing.",
-  ],
-  [
-    "3",
-    "Go live",
-    "/s/:slug",
-    "A storefront with a store assistant, plus MCP endpoints for AI agents.",
-  ],
-] as const;
+export default async function HomePage() {
+  const { t, lang } = await ownerT();
 
-const WORKSPACE = [
-  ["Inbox", "/app/inbox", "Orders and shopper questions the assistant could not answer."],
-  [
-    "Approvals",
-    "/app/approvals",
-    "Price changes, deletions and bulk edits from agents wait for your approval.",
-  ],
-  ["Catalog", "/app/catalog", "Edit offers, prices and policies after launch."],
-  ["Analytics", "/app/analytics", "See what shoppers and agents ask for."],
-  ["Audit log", "/app/audit", "Every change to the store, and who made it."],
-] as const;
+  const steps = [
+    ["1", t("lp.step1"), "/onboarding", t("lp.step1Text")],
+    ["2", t("lp.step2"), "/onboarding/review", t("lp.step2Text")],
+    ["3", t("lp.step3"), "/s/:slug", t("lp.step3Text")],
+  ] as const;
 
-const ENDPOINTS = [
-  ["MCP", "Public", "/mcp/public/:slug", "No key. Talk to the store assistant."],
-  [
-    "MCP",
-    "Customer Agent",
-    "/mcp/customer/:slug",
-    "Customer Agent key. Search offers, check stock, place orders.",
-  ],
-  ["MCP", "Business agent", "/mcp/business", "Owner key. Manage the catalog and review approvals."],
-] as const;
+  const workspace = [
+    [t("nav.inbox"), "/app/inbox", t("lp.wsInbox")],
+    [t("nav.approvals"), "/app/approvals", t("lp.wsApprovals")],
+    [t("nav.catalog"), "/app/catalog", t("lp.wsCatalog")],
+    [t("nav.analytics"), "/app/analytics", t("lp.wsAnalytics")],
+    [t("nav.audit"), "/app/audit", t("lp.wsAudit")],
+  ] as const;
 
-const DEMOS = [
-  ["Stride Shoes", "/s/stride-shoes", "A shoe store with prices on request and a chat."],
-  ["Fade Factory", "/s/fade-factory", "A barbershop with bookable services."],
-] as const;
+  const endpoints = [
+    ["MCP", t("lp.epPublic"), "/mcp/public/:slug", t("lp.epPublicText")],
+    ["MCP", t("lp.epCustomer"), "/mcp/customer/:slug", t("lp.epCustomerText")],
+    ["MCP", t("lp.epBusiness"), "/mcp/business", t("lp.epBusinessText")],
+  ] as const;
 
-const PRINCIPLES = [
-  ["No invented prices or stock", "Missing facts stay missing and show as to be confirmed."],
-  ["The buyer confirms", "An agent can draft an order, but only the buyer makes it final."],
-  ["Risky edits need approval", "Price changes and deletions wait for the owner."],
-  ["Order lifecycle", "Every order moves through clear statuses you can follow."],
-] as const;
+  const demos = [
+    ["Stride Shoes", "/s/stride-shoes", t("lp.demoShoes")],
+    ["Fade Factory", "/s/fade-factory", t("lp.demoBarber")],
+  ] as const;
 
-export default function HomePage() {
+  const principles = [
+    [t("lp.p1"), t("lp.p1Text")],
+    [t("lp.p2"), t("lp.p2Text")],
+    [t("lp.p3"), t("lp.p3Text")],
+    [t("lp.p4"), t("lp.p4Text")],
+  ] as const;
+
   return (
     <main className="lp-root">
       <header className="lp-top">
@@ -60,33 +45,32 @@ export default function HomePage() {
           <span className="ln-logo-mark" aria-hidden="true">
             AS
           </span>
-          Agentic Storefront
+          {t("auth.brand")}
         </Link>
-        <Link href="/signin" className="btn btn-sm btn-secondary">
-          Sign in
-        </Link>
+        <span className="lp-top-actions">
+          <LangSwitch lang={lang} />
+          <Link href="/signin" className="btn btn-sm btn-secondary">
+            {t("lp.signIn")}
+          </Link>
+        </span>
       </header>
 
       <section className="lp-hero">
-        <h1>Your price lists, as a store that talks.</h1>
-        <p>
-          Upload the files you already have. Review the business model drafted from them, then
-          launch a storefront. Shoppers get a store assistant, and other agents get MCP endpoints.
-          Nothing is invented: missing prices stay missing.
-        </p>
+        <h1>{t("lp.heroTitle")}</h1>
+        <p>{t("lp.heroBody")}</p>
         <div className="lp-actions">
           <Link href="/onboarding" className="btn">
-            Create your store
+            {t("lp.create")}
           </Link>
         </div>
       </section>
 
       <section className="lp-group" aria-labelledby="lp-how">
         <h2 id="lp-how" className="lp-label">
-          How it works
+          {t("lp.how")}
         </h2>
         <div className="lp-grid">
-          {STEPS.map(([n, title, route, text]) => (
+          {steps.map(([n, title, route, text]) => (
             <div key={n} className="lp-card glass">
               <span className="lp-num">{n}</span>
               <h3>{title}</h3>
@@ -99,11 +83,11 @@ export default function HomePage() {
 
       <section className="lp-group" aria-labelledby="lp-workspace">
         <h2 id="lp-workspace" className="lp-label">
-          Your workspace
+          {t("lp.workspace")}
         </h2>
         <div className="lp-grid">
-          {WORKSPACE.map(([title, route, text]) => (
-            <div key={title} className="lp-card glass">
+          {workspace.map(([title, route, text]) => (
+            <div key={route} className="lp-card glass">
               <h3>{title}</h3>
               <code className="lp-route">{route}</code>
               <p>{text}</p>
@@ -114,10 +98,10 @@ export default function HomePage() {
 
       <section className="lp-group" aria-labelledby="lp-agents">
         <h2 id="lp-agents" className="lp-label">
-          For AI agents
+          {t("lp.agents")}
         </h2>
         <div className="lp-grid">
-          {ENDPOINTS.map(([kicker, title, route, text]) => (
+          {endpoints.map(([kicker, title, route, text]) => (
             <div key={route} className="lp-card glass">
               <span className="lp-num">{kicker}</span>
               <h3>{title}</h3>
@@ -130,10 +114,10 @@ export default function HomePage() {
 
       <section className="lp-group" aria-labelledby="lp-demo">
         <h2 id="lp-demo" className="lp-label">
-          Try a demo store
+          {t("lp.demo")}
         </h2>
         <div className="lp-grid">
-          {DEMOS.map(([title, route, text]) => (
+          {demos.map(([title, route, text]) => (
             <Link key={route} href={route} className="lp-card lp-card-link glass">
               <h3>{title}</h3>
               <code className="lp-route">{route}</code>
@@ -143,8 +127,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="lp-principles" aria-label="Principles">
-        {PRINCIPLES.map(([title, text]) => (
+      <section className="lp-principles" aria-label={t("lp.principles")}>
+        {principles.map(([title, text]) => (
           <div key={title}>
             <b>{title}</b>
             <p>{text}</p>

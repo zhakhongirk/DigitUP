@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { formatWhen } from "@/server/owner/inbox";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { CopyButton } from "@/app/onboarding/done/copy-button";
 import { KeyCreate } from "./key-create";
@@ -10,12 +11,12 @@ import { RevokeButton } from "./revoke-button";
 import "./agents.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Connect agents" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.agents");
 
-const KIND_LABELS: Record<string, string> = {
-  customer_agent: "Shopping agent",
-  owner: "Owner key",
-};
+const KIND_KEYS = {
+  customer_agent: "ag.kindCustomer",
+  owner: "ag.kindOwner",
+} as const;
 
 const CUSTOMER_TOOLS = [
   "search_offers",
@@ -54,7 +55,7 @@ const BUSINESS_TOOLS = [
 
 export default async function AgentsPage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/agents");
 
   const [tenant, keys, base] = await Promise.all([
@@ -69,26 +70,26 @@ export default async function AgentsPage() {
 
   const endpoints = [
     {
-      title: "Any AI assistant (no key)",
-      auth: "No key needed",
-      text: "Can chat with your store assistant. It sees no more than shoppers see on your storefront.",
-      who: "Share this address with anyone.",
+      title: t("ag.pubTitle"),
+      auth: t("ag.pubAuth"),
+      text: t("ag.pubText"),
+      who: t("ag.pubWho"),
       url: publicUrl,
       tools: ["talk_to_store"],
     },
     {
-      title: "Shopping agents (key)",
-      auth: "Shopping-agent key",
-      text: "Can search, compare and draft orders for a buyer. Buyers still confirm every order, and agents can read your answers to their questions.",
-      who: "Give a key to a customer or partner whose assistant should shop at your store.",
+      title: t("ag.cusTitle"),
+      auth: t("ag.cusAuth"),
+      text: t("ag.cusText"),
+      who: t("ag.cusWho"),
       url: customerUrl,
       tools: CUSTOMER_TOOLS,
     },
     {
-      title: "Your business assistant (owner key)",
-      auth: "Owner key",
-      text: "Can update your catalog, orders and questions. Price changes, deletions and bulk edits wait in Approvals for your approval. Agents cannot approve their own changes.",
-      who: "Keep this key to yourself or your own trusted assistant. It acts for the business.",
+      title: t("ag.bizTitle"),
+      auth: t("ag.bizAuth"),
+      text: t("ag.bizText"),
+      who: t("ag.bizWho"),
       url: businessUrl,
       tools: BUSINESS_TOOLS,
     },
@@ -97,11 +98,8 @@ export default async function AgentsPage() {
   return (
     <>
       <div className="ws-title">
-        <h1>Connect agents</h1>
-        <p className="ws-sub">
-          AI assistants like ChatGPT or Claude can shop at {tenant.name} or help you run it. Pick
-          what you need.
-        </p>
+        <h1>{t("ag.title")}</h1>
+        <p className="ws-sub">{t("ag.sub", { store: tenant.name })}</p>
       </div>
 
       <div className="ag-endpoints">
@@ -114,13 +112,13 @@ export default async function AgentsPage() {
             <p className="ag-text">{endpoint.text}</p>
             <p className="ag-text">{endpoint.who}</p>
             <details>
-              <summary>Technical details</summary>
-              <p className="ag-hint">Address of the MCP server to add in the assistant.</p>
+              <summary>{t("ag.technical")}</summary>
+              <p className="ag-hint">{t("ag.addressHint")}</p>
               <div className="ag-copy-row">
                 <code>{endpoint.url}</code>
                 <CopyButton text={endpoint.url} />
               </div>
-              <ul className="ag-tools" aria-label={`${endpoint.title} tools`}>
+              <ul className="ag-tools" aria-label={t("ag.toolsLabel", { title: endpoint.title })}>
                 {endpoint.tools.map((tool) => (
                   <li key={tool}>
                     <code>{tool}</code>
@@ -134,23 +132,21 @@ export default async function AgentsPage() {
 
       <section className="ag-keys glass" aria-labelledby="ag-keys-title">
         <div className="ag-keys-head">
-          <h2 id="ag-keys-title">API keys</h2>
-          <span className="ag-hint">
-            A key is shown once. Revoking it cuts off that assistant at once.
-          </span>
+          <h2 id="ag-keys-title">{t("ag.keys")}</h2>
+          <span className="ag-hint">{t("ag.keysHint")}</span>
         </div>
         <KeyCreate customerUrl={customerUrl} businessUrl={businessUrl} />
         {keys.length === 0 ? (
-          <p className="ag-empty">No keys yet.</p>
+          <p className="ag-empty">{t("ag.noKeys")}</p>
         ) : (
           <div className="ag-table-wrap">
             <table className="ag-table">
               <thead>
                 <tr>
-                  <th>Key</th>
-                  <th>Type</th>
-                  <th>Created</th>
-                  <th>Status</th>
+                  <th>{t("ag.colKey")}</th>
+                  <th>{t("ag.colType")}</th>
+                  <th>{t("ag.colCreated")}</th>
+                  <th>{t("ag.colStatus")}</th>
                   <th />
                 </tr>
               </thead>
@@ -160,13 +156,17 @@ export default async function AgentsPage() {
                     <td>
                       <code>{key.prefix}…</code>
                     </td>
-                    <td>{KIND_LABELS[key.kind] ?? key.kind}</td>
-                    <td>{formatWhen(key.createdAt, now)}</td>
+                    <td>
+                      {key.kind in KIND_KEYS
+                        ? t(KIND_KEYS[key.kind as keyof typeof KIND_KEYS])
+                        : key.kind}
+                    </td>
+                    <td>{formatWhen(key.createdAt, now, undefined, lang)}</td>
                     <td>
                       {key.revokedAt ? (
-                        <span className="ag-chip ag-chip-revoked">Revoked</span>
+                        <span className="ag-chip ag-chip-revoked">{t("ag.revoked")}</span>
                       ) : (
-                        <span className="ag-chip ag-chip-active">Active</span>
+                        <span className="ag-chip ag-chip-active">{t("ag.active")}</span>
                       )}
                     </td>
                     <td className="ag-act">

@@ -2,27 +2,29 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { CHANGE_STATUS_LABELS, loadChanges, type ChangeSetView } from "@/server/owner/changes";
+import { changeStatusLabel, loadChanges, type ChangeSetView } from "@/server/owner/changes";
 import { formatWhen } from "@/server/owner/inbox";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
+import type { Translator } from "@/shared/owner-copy";
 import { ChangeRows } from "./change-rows";
 
-export const metadata: Metadata = { title: "Approvals" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("ap.title");
 
-function Banner({ view }: { view: ChangeSetView }) {
+function Banner({ view, t }: { view: ChangeSetView; t: Translator["t"] }) {
   if (view.status === "applied") {
     return (
       <div className="cs-banner cs-banner-ok">
-        <b>Applied</b>
-        <span>These changes are live on the storefront and the agent endpoints.</span>
+        <b>{t("ap.statusApplied")}</b>
+        <span>{t("ap.bannerApplied")}</span>
       </div>
     );
   }
   if (view.status === "rejected") {
     return (
       <div className="cs-banner cs-banner-bad">
-        <b>Rejected</b>
-        <span>Nothing in the catalog changed.</span>
+        <b>{t("ap.statusRejected")}</b>
+        <span>{t("ap.bannerRejected")}</span>
       </div>
     );
   }
@@ -30,22 +32,24 @@ function Banner({ view }: { view: ChangeSetView }) {
   const n = view.flagged.length;
   return (
     <div className="cs-banner cs-banner-warn">
-      <b>
-        {n} {n === 1 ? "price moves" : "prices move"} by more than 10%
-      </b>
-      <span>{view.flagged.join(", ")}. Check against the supplier file before approving.</span>
+      <b>{t(n === 1 ? "ap.bannerFlaggedOne" : "ap.bannerFlaggedMany", { n })}</b>
+      <span>{t("ap.bannerCheck", { names: view.flagged.join(", ") })}</span>
     </div>
   );
 }
 
-function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
+function Detail({ view, now, tr }: { view: ChangeSetView; now: Date; tr: Translator }) {
+  const { t, lang } = tr;
   const pending = view.status === "pending";
   return (
     <div className="cs-detail">
       <div className="ws-title">
         <div className="cs-head">
           <span className="cs-meta">
-            Requested by {view.requestedBy} · {formatWhen(view.createdAt, now)}
+            {t("ap.requestedBy", {
+              who: view.requestedBy,
+              when: formatWhen(view.createdAt, now, undefined, lang),
+            })}
           </span>
           <h1>{view.summary}</h1>
         </div>
@@ -53,18 +57,20 @@ function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
       </div>
       {view.reason ? <p className="cs-reason">{view.reason}</p> : null}
 
-      <Banner view={view} />
+      <Banner view={view} t={t} />
 
-      <section className="cs-panel glass" aria-label="Requested changes">
-        {view.invalid ? (
-          <p className="cs-note">This request can&apos;t be read and can only be rejected.</p>
-        ) : null}
+      <section className="cs-panel glass" aria-label={t("ap.requestedChanges")}>
+        {view.invalid ? <p className="cs-note">{t("ap.unreadable")}</p> : null}
         <ChangeRows
           id={view.id}
           groups={view.groups}
           pending={pending}
           canApprove={!view.invalid}
-          footNote={view.resolvedAt ? `Decided ${formatWhen(view.resolvedAt, now)}.` : ""}
+          footNote={
+            view.resolvedAt
+              ? t("ap.decided", { when: formatWhen(view.resolvedAt, now, undefined, lang) })
+              : ""
+          }
         />
       </section>
     </div>
@@ -78,25 +84,23 @@ export default async function ChangesPage({
 }) {
   const params = await searchParams;
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [tr, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/approvals");
+  const { t, lang } = tr;
 
   const selectedId = typeof params.id === "string" ? params.id : undefined;
-  const page = await loadChanges(services, owner, selectedId);
+  const page = await loadChanges(services, owner, selectedId, lang);
   const now = new Date();
 
   if (!page.selected) {
     return (
       <>
         <div className="ws-title">
-          <h1>Approvals</h1>
+          <h1>{t("ap.title")}</h1>
         </div>
         <section className="ib-empty glass">
-          <h2>No approvals yet</h2>
-          <p>
-            When the business agent wants to change prices or remove offers, it asks here first.
-            Nothing changes until you approve.
-          </p>
+          <h2>{t("ap.emptyTitle")}</h2>
+          <p>{t("ap.emptyBody")}</p>
         </section>
       </>
     );
@@ -104,9 +108,9 @@ export default async function ChangesPage({
 
   return (
     <div className="cs-layout">
-      <Detail view={page.selected} now={now} />
-      <aside className="cs-history glass" aria-label="All approvals">
-        <b>All approvals</b>
+      <Detail view={page.selected} now={now} tr={tr} />
+      <aside className="cs-history glass" aria-label={t("ap.all")}>
+        <b>{t("ap.all")}</b>
         {page.list.map((item) => (
           <Link
             key={item.id}
@@ -116,9 +120,9 @@ export default async function ChangesPage({
             <span className="cs-history-summary">{item.summary}</span>
             <span className="cs-history-meta">
               <span className={`cs-chip cs-chip-${item.status}`}>
-                {CHANGE_STATUS_LABELS[item.status]}
+                {changeStatusLabel(lang, item.status)}
               </span>
-              {formatWhen(item.createdAt, now)}
+              {formatWhen(item.createdAt, now, undefined, lang)}
             </span>
           </Link>
         ))}

@@ -228,6 +228,32 @@ describe("owner notifications over telegram", () => {
     expect(text).toContain(`https://app.example/app/inbox?item=order:${order!.id}`);
   });
 
+  it("writes in the language the owner saved", async () => {
+    const { db, service, client, ctx } = await connected();
+    await service.setLanguage(ctx, "ru");
+    const [order] = await db
+      .insert(orders)
+      .values({
+        tenantId: ctx.tenantId,
+        items: [],
+        contact: { name: "Aigerim" },
+        status: "submitted",
+        source: "storefront",
+        idempotencyKey: randomUUID(),
+        total: 15000,
+        currency: "KZT",
+      })
+      .returning();
+
+    await handlers[EVENTS.orderSubmitted](
+      { tenantId: ctx.tenantId, orderId: order!.id },
+      { db, telegram: service },
+    );
+
+    expect(client.sent[0]!.text).toContain("Новый заказ");
+    expect(client.sent[0]!.text).toContain("15 000 ₸");
+  });
+
   it("sends inquiries and change sets once each", async () => {
     const { db, service, client, ctx } = await connected();
     const [inquiry] = await db

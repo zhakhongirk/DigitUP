@@ -1033,3 +1033,11 @@
 .cs-link:hover {
   text-decoration: underline;
 }
+
+.lang-switch {
+  align-self: flex-start;
+}
+
+.ws-lang {
+  margin: 8px 0 0 12px;
+}

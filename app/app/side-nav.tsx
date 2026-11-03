@@ -3,27 +3,37 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+import { useT } from "@/app/i18n-provider";
+import type { TextKey } from "@/shared/owner-copy";
 
 const SECTIONS = [
   {
-    label: "Main",
+    label: "nav.main",
     links: [
-      { href: "/app", label: "Workspace", badge: null, exact: true },
-      { href: "/app/inbox", label: "Inbox", badge: "inbox" },
-      { href: "/app/approvals", label: "Approvals", badge: "changes" },
-      { href: "/app/analytics", label: "Analytics", badge: null },
-      { href: "/app/audit", label: "Audit log", badge: null },
+      { href: "/app", label: "nav.workspace", badge: null, exact: true },
+      { href: "/app/inbox", label: "nav.inbox", badge: "inbox" },
+      { href: "/app/approvals", label: "nav.approvals", badge: "changes" },
+      { href: "/app/analytics", label: "nav.analytics", badge: null },
+      { href: "/app/audit", label: "nav.audit", badge: null },
     ],
   },
   {
-    label: "Store",
+    label: "nav.store",
     links: [
-      { href: "/app/catalog", label: "Catalog", badge: null },
-      { href: "/app/settings", label: "Settings", badge: null },
-      { href: "/app/agents", label: "Connect agents", badge: null },
+      { href: "/app/catalog", label: "nav.catalog", badge: null },
+      { href: "/app/settings", label: "nav.settings", badge: null },
+      { href: "/app/agents", label: "nav.agents", badge: null },
     ],
   },
-] as const;
+] as const satisfies readonly {
+  label: TextKey;
+  links: readonly {
+    href: string;
+    label: TextKey;
+    badge: "inbox" | "changes" | null;
+    exact?: true;
+  }[];
+}[];
 
 export function SideNav({
   slug,
@@ -32,6 +42,7 @@ export function SideNav({
   slug: string;
   counts: { inbox: number; changes: number };
 }) {
+  const { t } = useT();
   const path = usePathname();
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -43,7 +54,7 @@ export function SideNav({
   return (
     <div className="ws-links" ref={root}>
       {SECTIONS.map((section) => (
-        <div key={section.label} className="ws-section" role="group" aria-label={section.label}>
+        <div key={section.label} className="ws-section" role="group" aria-label={t(section.label)}>
           {section.links.map((link) => (
             <Link
               key={link.href}
@@ -54,11 +65,13 @@ export function SideNav({
                   : undefined
               }
             >
-              {link.label}
+              {t(link.label)}
               {link.badge && counts[link.badge] > 0 ? (
                 <span
                   className={link.badge === "changes" ? "ws-badge ws-badge-warn" : "ws-badge"}
-                  aria-label={`${counts[link.badge]} ${link.badge === "changes" ? "pending" : "new"}`}
+                  aria-label={t(link.badge === "changes" ? "nav.badgePending" : "nav.badgeNew", {
+                    n: counts[link.badge],
+                  })}
                 >
                   {counts[link.badge]}
                 </span>
@@ -68,7 +81,7 @@ export function SideNav({
         </div>
       ))}
       <a href={`/s/${slug}`} target="_blank" rel="noreferrer" className="ws-external">
-        View storefront ↗
+        {t("nav.storefront")}
       </a>
     </div>
   );

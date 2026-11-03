@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/app/i18n-provider";
 
-export function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) {
+export function CopyButton({ text, label }: { text: string; label?: string }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -18,7 +20,7 @@ export function CopyButton({ text, label = "Copy" }: { text: string; label?: str
         }
       }}
     >
-      {copied ? "Copied" : label}
+      {copied ? t("common.copied") : (label ?? t("common.copy"))}
     </button>
   );
 }

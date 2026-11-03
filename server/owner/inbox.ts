@@ -11,7 +11,9 @@ import type {
   OrderStatus,
 } from "@/server/services/orders";
 import { appTimeZone } from "@/server/time";
+import type { Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
+import { LOCALES, tr, trn, type TextKey } from "@/shared/owner-copy";
 
 export const INBOX_FILTERS = ["all", "new", "in_progress", "completed"] as const;
 export type InboxFilter = (typeof INBOX_FILTERS)[number];
@@ -31,6 +33,36 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   completed: "Completed",
   cancelled: "Cancelled",
 };
+
+const BUCKET_KEYS: Record<InboxBucket, TextKey> = {
+  new: "ib.bucketNew",
+  in_progress: "ib.bucketInProgress",
+  completed: "ib.bucketCompleted",
+};
+
+const ORDER_STATUS_KEYS: Record<OrderStatus, TextKey> = {
+  draft: "ib.orderDraft",
+  submitted: "ib.orderSubmitted",
+  received: "ib.orderReceived",
+  processing: "ib.orderProcessing",
+  completed: "ib.orderCompleted",
+  cancelled: "ib.orderCancelled",
+};
+
+const NEXT_KEYS: Record<string, TextKey> = {
+  received: "ib.markReceived",
+  processing: "ib.startProcessing",
+  completed: "ib.markCompleted",
+  in_progress: "ib.markInProgress",
+};
+
+export function bucketLabel(lang: Lang, bucket: InboxBucket): string {
+  return tr(lang, BUCKET_KEYS[bucket]);
+}
+
+export function orderStatusLabel(lang: Lang, status: OrderStatus): string {
+  return tr(lang, ORDER_STATUS_KEYS[status]);
+}
 
 const ORDER_STEPS: OrderStatus[] = ["submitted", "received", "processing", "completed"];
 
@@ -109,110 +141,119 @@ function contactLine(contact: OrderContact): string | null {
   return parts.length > 0 ? parts.join(", ") : null;
 }
 
-function orderSteps(status: OrderStatus): InboxStep[] {
+function orderSteps(status: OrderStatus, lang: Lang): InboxStep[] {
   if (status === "cancelled") {
     return [
-      { name: ORDER_STATUS_LABELS.submitted, state: "todo" },
-      { name: ORDER_STATUS_LABELS.cancelled, state: "cancelled" },
+      { name: orderStatusLabel(lang, "submitted"), state: "todo" },
+      { name: orderStatusLabel(lang, "cancelled"), state: "cancelled" },
     ];
   }
   const index = ORDER_STEPS.indexOf(status);
   return ORDER_STEPS.map((step, i) => ({
-    name: ORDER_STATUS_LABELS[step],
+    name: orderStatusLabel(lang, step),
     state: i < index ? "done" : i === index ? "current" : "todo",
   }));
 }
 
-export function orderItem(order: Order): OrderInboxItem {
+export function orderItem(order: Order, lang: Lang = "en"): OrderInboxItem {
   const contact = contactOf(order.contact);
   const lines = (Array.isArray(order.items) ? order.items : []) as OrderItem[];
   const total = order.total === null ? null : formatPrice(order.total, order.currency);
   const external = order.source === "external_agent";
   const first = lines[0];
-  const summary =
-    lines.length === 1 && first
-      ? first.title
-      : `${lines.length} ${lines.length === 1 ? "item" : "items"}`;
+  const summary = lines.length === 1 && first ? first.title : trn(lang, "n.item", lines.length);
 
   const facts = [
     {
-      label: "Items",
-      value: lines.map((line) => `${line.title} × ${line.quantity}`).join("; ") || "None",
+      label: tr(lang, "ib.items"),
+      value:
+        lines.map((line) => `${line.title} × ${line.quantity}`).join("; ") ||
+        tr(lang, "ib.noItems"),
     },
   ];
-  if (total) facts.push({ label: "Total", value: total });
+  if (total) facts.push({ label: tr(lang, "ib.total"), value: total });
   const reach = contactLine(contact);
-  if (reach) facts.push({ label: "Contact", value: reach });
-  if (contact.note) facts.push({ label: "Note", value: contact.note });
-  if (contact.name) facts.push({ label: "Name", value: contact.name });
+  if (reach) facts.push({ label: tr(lang, "ib.contact"), value: reach });
+  if (contact.note) facts.push({ label: tr(lang, "ib.note"), value: contact.note });
+  if (contact.name) facts.push({ label: tr(lang, "ib.name"), value: contact.name });
   if (order.fulfillment) {
     facts.push({
-      label: "Fulfillment",
-      value: order.fulfillment === "delivery" ? "Delivery" : "Pickup",
+      label: tr(lang, "ib.fulfillment"),
+      value: tr(lang, order.fulfillment === "delivery" ? "ib.delivery" : "ib.pickup"),
     });
   }
   if (order.deliveryAddress) {
     facts.push({
-      label: "Address",
+      label: tr(lang, "ib.address"),
       value: [order.deliveryAddress, order.city].filter(Boolean).join(", "),
     });
   }
-  if (order.cancelReason) facts.push({ label: "Cancel reason", value: order.cancelReason });
+  if (order.cancelReason) {
+    facts.push({ label: tr(lang, "ib.cancelReason"), value: order.cancelReason });
+  }
+  const nextOrder = ORDER_NEXT[order.status];
 
   return {
     kind: "order",
     key: `order:${order.id}`,
     id: order.id,
-    label: `Order ${orderNumber(order.id)}`,
-    who: customerName(contact, external ? "External agent" : "Customer"),
-    source: external ? "External agent" : "Storefront chat",
+    label: tr(lang, "ib.orderLabel", { number: orderNumber(order.id) }),
+    who: customerName(contact, tr(lang, external ? "common.externalAgent" : "common.customer")),
+    source: tr(lang, external ? "common.externalAgent" : "common.storefrontChat"),
     bucket: orderBucket(order.status),
     status: order.status,
-    statusLabel: ORDER_STATUS_LABELS[order.status],
+    statusLabel: orderStatusLabel(lang, order.status),
     preview: total ? `${summary} · ${total}` : summary,
     at: order.submittedAt ?? order.createdAt,
     conversationId: order.conversationId,
     facts,
-    next: ORDER_NEXT[order.status] ?? null,
+    next: nextOrder
+      ? { status: nextOrder.status, label: tr(lang, NEXT_KEYS[nextOrder.status]!) }
+      : null,
     canCancel: ["submitted", "received", "processing"].includes(order.status),
-    steps: orderSteps(order.status),
+    steps: orderSteps(order.status, lang),
   };
 }
 
-const CHANNEL_LABELS: Record<ConversationChannel, string> = {
-  storefront: "Storefront chat",
-  external_agent: "External agent",
-  workspace: "Workspace",
+const CHANNEL_KEYS: Record<ConversationChannel, TextKey> = {
+  storefront: "common.storefrontChat",
+  external_agent: "common.externalAgent",
+  workspace: "common.workspaceChannel",
 };
 
 export function inquiryItem(
   inquiry: Inquiry,
   channel?: ConversationChannel | null,
+  lang: Lang = "en",
 ): InquiryInboxItem {
   const contact = contactOf(inquiry.contact);
-  const facts = [{ label: "Subject", value: inquiry.subject }];
-  if (inquiry.details) facts.push({ label: "Details", value: inquiry.details });
+  const facts = [{ label: tr(lang, "ib.subject"), value: inquiry.subject }];
+  if (inquiry.details) facts.push({ label: tr(lang, "ib.details"), value: inquiry.details });
   const reach = contactLine(contact);
-  if (reach) facts.push({ label: "Contact", value: reach });
-  if (contact.note) facts.push({ label: "Note", value: contact.note });
-  if (inquiry.answer) facts.push({ label: "Your answer", value: inquiry.answer });
+  if (reach) facts.push({ label: tr(lang, "ib.contact"), value: reach });
+  if (contact.note) facts.push({ label: tr(lang, "ib.note"), value: contact.note });
+  if (inquiry.answer) facts.push({ label: tr(lang, "ib.yourAnswer"), value: inquiry.answer });
+  const nextInquiry = INQUIRY_NEXT[inquiry.status];
   const bucket = inquiryBucket(inquiry.status);
 
   return {
     kind: "inquiry",
     key: `inquiry:${inquiry.id}`,
     id: inquiry.id,
-    label: "Question",
-    who: customerName(contact, "Customer"),
-    source: channel ? CHANNEL_LABELS[channel] : "Customer Agent",
+    label: tr(lang, "ib.questionLabel"),
+    who: customerName(contact, tr(lang, "common.customer")),
+    source: tr(lang, channel ? CHANNEL_KEYS[channel] : "common.customerAgent"),
     bucket,
     status: inquiry.status,
-    statusLabel: BUCKET_LABELS[bucket],
+    statusLabel: bucketLabel(lang, bucket),
     preview: inquiry.subject,
     at: inquiry.createdAt,
     conversationId: inquiry.conversationId,
     facts,
-    next: inquiry.answer ? null : (INQUIRY_NEXT[inquiry.status] ?? null),
+    next:
+      inquiry.answer || !nextInquiry
+        ? null
+        : { status: nextInquiry.status, label: tr(lang, NEXT_KEYS[nextInquiry.status]!) },
     answer: inquiry.answer,
     answeredAt: inquiry.answeredAt,
   };
@@ -223,11 +264,16 @@ export function buildInbox(
   orders: Order[],
   inquiries: Inquiry[],
   channels: ReadonlyMap<string, ConversationChannel> = new Map(),
+  lang: Lang = "en",
 ): InboxItem[] {
   const items: InboxItem[] = [
-    ...orders.filter((order) => order.status !== "draft").map(orderItem),
+    ...orders.filter((order) => order.status !== "draft").map((order) => orderItem(order, lang)),
     ...inquiries.map((inquiry) =>
-      inquiryItem(inquiry, inquiry.conversationId ? channels.get(inquiry.conversationId) : null),
+      inquiryItem(
+        inquiry,
+        inquiry.conversationId ? channels.get(inquiry.conversationId) : null,
+        lang,
+      ),
     ),
   ];
   return items.sort(
@@ -274,8 +320,14 @@ export function transcript(messages: Message[]): TranscriptLine[] {
 
 const DAY = 24 * 3600 * 1000;
 
-/** "14:09" today, "Yesterday", then "30 Oct". */
-export function formatWhen(at: Date, now: Date, timeZone: string = appTimeZone()): string {
+/** "14:09" today, "Yesterday", then "Oct 30". */
+export function formatWhen(
+  at: Date,
+  now: Date,
+  timeZone: string = appTimeZone(),
+  lang: Lang = "en",
+): string {
+  const locale = LOCALES[lang];
   const day = (date: Date) =>
     date.toLocaleDateString("en-CA", {
       timeZone,
@@ -285,11 +337,16 @@ export function formatWhen(at: Date, now: Date, timeZone: string = appTimeZone()
     });
   const today = day(now);
   if (day(at) === today) {
-    return at.toLocaleTimeString("en-GB", { timeZone, hour: "2-digit", minute: "2-digit" });
+    return at.toLocaleTimeString(locale, {
+      timeZone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
   }
-  if (day(at) === day(new Date(now.getTime() - DAY))) return "Yesterday";
+  if (day(at) === day(new Date(now.getTime() - DAY))) return tr(lang, "common.yesterday");
   const sameYear = day(at).slice(0, 4) === today.slice(0, 4);
-  return at.toLocaleDateString("en-GB", {
+  return at.toLocaleDateString(locale, {
     timeZone,
     day: "numeric",
     month: "short",
@@ -351,8 +408,9 @@ export function mergeKeyset(
   inquiries: Inquiry[],
   size: number = INBOX_PAGE_SIZE,
   channels?: ReadonlyMap<string, ConversationChannel>,
+  lang: Lang = "en",
 ): { items: InboxItem[]; next: ListCursor | null } {
-  const merged = buildInbox(orders, inquiries, channels);
+  const merged = buildInbox(orders, inquiries, channels, lang);
   const items = merged.slice(0, size);
   const last = items[items.length - 1];
   const next = merged.length > size && last ? { at: last.at.getTime(), id: last.id } : null;
@@ -392,8 +450,10 @@ export async function loadInbox(
     page?: number;
     before?: ListCursor | null;
     search?: string;
+    lang?: Lang;
   },
 ): Promise<InboxView> {
+  const lang = options.lang ?? "en";
   const search = options.search?.trim() || undefined;
   const [orderTotals, inquiryTotals, foundOrders, foundInquiries] = await Promise.all([
     services.orders.countOrdersByStatus(ctx),
@@ -420,10 +480,11 @@ export async function loadInbox(
     services.conversations.list(ctx, { agent: "customer", limit: CHANNEL_LIMIT }),
   ]);
   const channels = new Map(conversations.map((c) => [c.id, c.channel]));
-  const { items, next } = mergeKeyset(orders, inquiries, INBOX_PAGE_SIZE, channels);
+  const { items, next } = mergeKeyset(orders, inquiries, INBOX_PAGE_SIZE, channels, lang);
 
   let selected = items.find((item) => item.key === options.selected) ?? null;
-  if (!selected && options.selected) selected = await findItem(services, ctx, options.selected);
+  if (!selected && options.selected)
+    selected = await findItem(services, ctx, options.selected, lang);
   selected ??= items[0] ?? null;
 
   let conversation: TranscriptLine[] = [];
@@ -448,16 +509,17 @@ async function findItem(
   services: Services,
   ctx: TenantContext,
   key: string,
+  lang: Lang,
 ): Promise<InboxItem | null> {
   const [kind, id] = key.split(":");
   if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return null;
   if (kind === "order") {
     const order = await services.orders.getOrder(ctx, id);
-    return order && order.status !== "draft" ? orderItem(order) : null;
+    return order && order.status !== "draft" ? orderItem(order, lang) : null;
   }
   if (kind === "inquiry") {
     const inquiry = await services.orders.getInquiry(ctx, id);
-    return inquiry ? inquiryItem(inquiry) : null;
+    return inquiry ? inquiryItem(inquiry, null, lang) : null;
   }
   return null;
 }

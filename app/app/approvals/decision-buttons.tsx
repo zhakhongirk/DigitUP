@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useT } from "@/app/i18n-provider";
 import { decideChangeSet, type ActionState } from "../actions";
 import { Flash } from "../flash";
 
@@ -21,6 +22,7 @@ export function DecisionButtons({
   selected: string[];
   total: number;
 }) {
+  const { t } = useT();
   const [state, action, pending] = useActionState<DecisionState, FormData>(
     async (_prev, form) => {
       const result = await decideChangeSet({ error: null }, form);
@@ -45,7 +47,7 @@ export function DecisionButtons({
             className="btn btn-danger"
             disabled={pending}
           >
-            Reject
+            {t("ap.reject")}
           </button>
           {canApprove ? (
             <button
@@ -56,17 +58,17 @@ export function DecisionButtons({
               disabled={pending || selected.length === 0}
             >
               {pending
-                ? "Saving…"
+                ? t("common.saving")
                 : selected.length === total
-                  ? "Approve all"
-                  : `Apply ${selected.length} selected`}
+                  ? t("ap.approveAll")
+                  : t("ap.applySelected", { n: selected.length })}
             </button>
           ) : null}
         </>
       ) : null}
       <span role="status" aria-live="polite">
-        {state.decision === "approve" ? <Flash>Approved, changes are live</Flash> : null}
-        {state.decision === "reject" ? <Flash tone="warn">Rejected, nothing changed</Flash> : null}
+        {state.decision === "approve" ? <Flash>{t("ap.approvedFlash")}</Flash> : null}
+        {state.decision === "reject" ? <Flash tone="warn">{t("ap.rejectedFlash")}</Flash> : null}
       </span>
       {state.error ? (
         <p className="ib-error" role="alert">

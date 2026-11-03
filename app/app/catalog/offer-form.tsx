@@ -1,11 +1,12 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useT } from "@/app/i18n-provider";
 import {
   AVAILABILITIES,
-  AVAILABILITY_LABELS,
   OFFER_STATUSES,
-  STATUS_LABELS,
+  availabilityLabel,
+  offerStatusLabel,
   type OfferFormValues,
 } from "@/server/owner/catalog";
 import { archiveOffer, saveOffer, type CatalogActionState } from "./actions";
@@ -23,26 +24,31 @@ export function OfferForm({
   archived: boolean;
   categories: string[];
 }) {
+  const { t, lang } = useT();
   const [saveState, save, saving] = useActionState(saveOffer, INITIAL);
   const [archiveState, archive, archiving] = useActionState(archiveOffer, INITIAL);
   const [onRequest, setOnRequest] = useState(values.priceOnRequest);
   const error = saveState.error ?? archiveState.error;
-  const confirmation = archiveState.saved ? "Offer archived" : saveState.saved ? "Saved" : null;
+  const confirmation = archiveState.saved
+    ? t("ct.offerArchived")
+    : saveState.saved
+      ? t("common.saved")
+      : null;
 
   return (
     <div className="ct-form">
       <form action={save} className="ct-fields">
         <input type="hidden" name="id" value={id} />
         <label className="ct-label ct-wide">
-          Title
+          {t("ct.fTitle")}
           <input name="title" defaultValue={values.title} required maxLength={200} />
         </label>
         <label className="ct-label ct-wide">
-          Description
+          {t("ct.fDescription")}
           <textarea name="description" defaultValue={values.description} rows={4} />
         </label>
         <label className="ct-label ct-wide">
-          Category
+          {t("ct.fCategory")}
           <input name="category" defaultValue={values.category} list="ct-categories" />
           <datalist id="ct-categories">
             {categories.map((category) => (
@@ -51,17 +57,17 @@ export function OfferForm({
           </datalist>
         </label>
         <label className="ct-label">
-          Price
+          {t("ct.fPrice")}
           <input
             name="price"
             inputMode="decimal"
             defaultValue={values.price}
             disabled={onRequest}
-            placeholder={onRequest ? "On request" : "0"}
+            placeholder={onRequest ? t("ct.fOnRequest") : "0"}
           />
         </label>
         <label className="ct-label">
-          Currency
+          {t("ct.fCurrency")}
           <input
             name="currency"
             defaultValue={values.currency}
@@ -77,31 +83,31 @@ export function OfferForm({
             checked={onRequest}
             onChange={(event) => setOnRequest(event.target.checked)}
           />
-          Price on request
+          {t("ct.priceOnRequest")}
         </label>
         <label className="ct-label">
-          Availability
+          {t("ct.fAvailability")}
           <select name="availability" defaultValue={values.availability}>
             {AVAILABILITIES.map((value) => (
               <option key={value} value={value}>
-                {AVAILABILITY_LABELS[value]}
+                {availabilityLabel(lang, value)}
               </option>
             ))}
           </select>
         </label>
         <label className="ct-label">
-          Status
+          {t("ct.fStatus")}
           <select name="status" defaultValue={values.status}>
             {OFFER_STATUSES.map((value) => (
               <option key={value} value={value}>
-                {STATUS_LABELS[value]}
+                {offerStatusLabel(lang, value)}
               </option>
             ))}
           </select>
         </label>
         <div className="ct-actions ct-wide">
           <button type="submit" className="btn btn-sm" disabled={saving || archiving}>
-            {saving ? "Saving..." : "Save changes"}
+            {saving ? t("common.saving") : t("ct.saveChanges")}
           </button>
           {confirmation && !error ? (
             <span className="ct-saved" role="status">
@@ -123,12 +129,12 @@ export function OfferForm({
             className="btn btn-sm btn-danger"
             disabled={saving || archiving}
             onClick={(event) => {
-              if (!window.confirm("Archive this offer? It will no longer be shown to customers.")) {
+              if (!window.confirm(t("ct.archiveConfirm"))) {
                 event.preventDefault();
               }
             }}
           >
-            Archive offer
+            {t("ct.archive")}
           </button>
         </form>
       )}

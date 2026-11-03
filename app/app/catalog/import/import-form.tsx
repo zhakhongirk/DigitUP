@@ -1,17 +1,20 @@
 "use client";
 
 import { useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useT } from "@/app/i18n-provider";
+import type { Translator } from "@/shared/owner-copy";
 
 type Outcome = { kind: "same"; missing: string[] } | { kind: "error"; message: string } | null;
 
 const SHOWN = 12;
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatSize(bytes: number, t: Translator["t"]): string {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} ${t("common.unitKb")}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t("common.unitMb")}`;
 }
 
 export function ImportForm() {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -36,9 +39,9 @@ export function ImportForm() {
         return;
       }
       if (response.ok) setOutcome({ kind: "same", missing: body.missing ?? [] });
-      else setOutcome({ kind: "error", message: body.error ?? "The import failed." });
+      else setOutcome({ kind: "error", message: body.error ?? t("ri.failed") });
     } catch {
-      setOutcome({ kind: "error", message: "The import failed. Check your connection." });
+      setOutcome({ kind: "error", message: t("ri.failedNetwork") });
     }
     setBusy(false);
   }
@@ -73,7 +76,7 @@ export function ImportForm() {
       onDrop={onDrop}
     >
       <div className="ri-file" data-active={dragging}>
-        <span className="ri-file-title">Price list</span>
+        <span className="ri-file-title">{t("ri.priceList")}</span>
         <div className="ri-file-row">
           <input
             ref={inputRef}
@@ -87,15 +90,15 @@ export function ImportForm() {
             onChange={(e) => setFile(e.currentTarget.files?.[0] ?? null)}
           />
           <label htmlFor="ri-file" className="btn btn-sm btn-secondary ri-file-button">
-            Choose file
+            {t("ri.choose")}
           </label>
           <span id="ri-file-name" className={file ? "ri-file-name" : "ri-file-name ri-file-empty"}>
-            {file ? `${file.name} · ${formatSize(file.size)}` : "No file selected"}
+            {file ? `${file.name} · ${formatSize(file.size, t)}` : t("ri.noFile")}
           </span>
         </div>
       </div>
       <button type="submit" className="btn" disabled={busy}>
-        {busy ? "Reading file…" : "Create approval request"}
+        {busy ? t("ri.reading") : t("ri.create")}
       </button>
 
       {outcome?.kind === "error" ? (
@@ -106,18 +109,18 @@ export function ImportForm() {
 
       {outcome?.kind === "same" ? (
         <div className="ri-result" role="status">
-          <b>Everything already matches the catalog</b>
-          <span>No approval request was created.</span>
+          <b>{t("ri.allMatch")}</b>
+          <span>{t("ri.noRequest")}</span>
           {outcome.missing.length > 0 ? (
             <div className="ri-missing">
-              <h2>Not in the file ({outcome.missing.length})</h2>
+              <h2>{t("ri.notInFile", { n: outcome.missing.length })}</h2>
               <ul>
                 {outcome.missing.slice(0, SHOWN).map((title, index) => (
                   <li key={`${index}:${title}`}>{title}</li>
                 ))}
               </ul>
               {outcome.missing.length > SHOWN ? (
-                <span>and {outcome.missing.length - SHOWN} more</span>
+                <span>{t("ri.more", { n: outcome.missing.length - SHOWN })}</span>
               ) : null}
             </div>
           ) : null}

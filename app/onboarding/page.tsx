@@ -2,17 +2,18 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { onboardingStatus } from "@/server/onboarding/flow";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { OnboardingHeader } from "./header";
 import { OnboardingFlow } from "./onboarding-flow";
 import "./onboarding.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Set up your store" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("ob.pageTitle");
 
 export default async function OnboardingPage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   const status = owner ? await onboardingStatus(services, owner) : null;
   if (status?.business.live) redirect("/onboarding/done");
 
@@ -20,11 +21,8 @@ export default async function OnboardingPage() {
     <main className="ob-root">
       <OnboardingHeader step={1} />
       <div className="ob-intro">
-        <h1>{status ? `Set up ${status.business.name}.` : "Set up your store."}</h1>
-        <p>
-          Tell us about the business and drop in what you already have. The Business Agent drafts a
-          catalog; nothing goes live until you confirm it.
-        </p>
+        <h1>{status ? t("ob.setUpNamed", { name: status.business.name }) : t("ob.setUp")}</h1>
+        <p>{t("ob.intro")}</p>
       </div>
       <OnboardingFlow initial={status} />
     </main>

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
+import { LangSwitch } from "@/app/lang-switch";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import {
   PasswordForm,
@@ -11,11 +13,11 @@ import {
 } from "./settings-forms";
 import "./settings.css";
 
-export const metadata: Metadata = { title: "Settings" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.settings");
 
 export default async function SettingsPage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/settings");
 
   const [model, telegram] = await Promise.all([
@@ -26,10 +28,15 @@ export default async function SettingsPage() {
   return (
     <>
       <div className="ws-title">
-        <h1>Settings</h1>
-        <p className="ws-sub">What shoppers and agents see about your store.</p>
+        <h1>{t("st.title")}</h1>
+        <p className="ws-sub">{t("st.sub")}</p>
       </div>
       <div className="st-stack">
+        <section className="st-panel glass" aria-labelledby="st-language">
+          <h2 id="st-language">{t("st.language")}</h2>
+          <p>{t("st.languageBody")}</p>
+          <LangSwitch lang={lang} />
+        </section>
         <ProfileForm profile={model.profile} />
         <PoliciesForm policies={model.policies} />
         <TelegramPanel

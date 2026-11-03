@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { OnboardingHeader } from "../header";
 import { CopyButton } from "./copy-button";
@@ -11,21 +12,21 @@ import { LiveWait } from "./live-wait";
 import "../onboarding.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Store launched" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("dn.pageTitle");
 
 const TOOLS = [
-  ["search_offers", "Find offers by query, category or attributes"],
-  ["get_offer_details", "One offer with all attributes"],
-  ["check_availability", "Stock as stored; unknown stays unknown"],
-  ["compare_offers", "Side by side for two or more offers"],
-  ["get_business_info", "Profile, contacts, policies, hours"],
-  ["create_order", "Draft order; the buyer confirms it"],
-  ["submit_inquiry", "Question to the owner, e.g. a price"],
+  "search_offers",
+  "get_offer_details",
+  "check_availability",
+  "compare_offers",
+  "get_business_info",
+  "create_order",
+  "submit_inquiry",
 ] as const;
 
 export default async function DonePage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, tn }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/onboarding/done");
 
   const [tenant, draft] = await Promise.all([
@@ -40,12 +41,10 @@ export default async function DonePage() {
         <OnboardingHeader step={3} />
         <section className="ob-panel glass" aria-live="polite">
           <div className="ob-progress-head">
-            <b>Launching {tenant.name}…</b>
+            <b>{t("dn.launching", { name: tenant.name })}</b>
             <LiveWait />
           </div>
-          <p className="ob-hint">
-            Publishing your catalog and setting up the store assistant. This takes a few seconds.
-          </p>
+          <p className="ob-hint">{t("dn.launchingBody")}</p>
         </section>
       </main>
     );
@@ -61,30 +60,30 @@ export default async function DonePage() {
 
   const cards = [
     {
-      who: "For customers",
-      title: "Storefront",
-      text: "Catalog, search and the store assistant chat.",
+      who: t("dn.forCustomers"),
+      title: t("dn.storefront"),
+      text: t("dn.storefrontText"),
       url: storeUrl,
       href: `/s/${tenant.slug}`,
-      cta: "Open storefront",
+      cta: t("dn.openStorefront"),
       primary: true,
     },
     {
-      who: "For you",
-      title: "Workspace",
-      text: "Orders and customer questions arrive in your inbox. Review approvals and edit the catalog.",
+      who: t("dn.forYou"),
+      title: t("dn.workspace"),
+      text: t("dn.workspaceText"),
       url: `${base}/app`,
       href: "/app",
-      cta: "Open workspace",
+      cta: t("dn.openWorkspace"),
       primary: false,
     },
     {
-      who: "For other AI agents",
-      title: "Agent endpoint",
-      text: "MCP server scoped to this store only.",
+      who: t("dn.forAgents"),
+      title: t("dn.endpoint"),
+      text: t("dn.endpointText"),
       url: publicUrl,
       href: "#connect",
-      cta: "Setup steps below",
+      cta: t("dn.setupBelow"),
       primary: false,
     },
   ];
@@ -106,12 +105,10 @@ export default async function DonePage() {
           </svg>
         </span>
         <div className="ob-intro">
-          <h1>{tenant.name} is live.</h1>
+          <h1>{t("dn.live", { name: tenant.name })}</h1>
           <p>
-            {offers} {offers === 1 ? "offer" : "offers"} published.
-            {open > 0
-              ? ` ${open} open ${open === 1 ? "question is" : "questions are"} shown to customers as "to be confirmed".`
-              : ""}
+            {tn("dn.published", offers)}
+            {open > 0 ? tn("dn.openQuestions", open) : ""}
           </p>
         </div>
       </div>
@@ -139,30 +136,23 @@ export default async function DonePage() {
         aria-labelledby="ob-connect-title"
       >
         <div className="ob-intro">
-          <h2 id="ob-connect-title">Connect an AI agent</h2>
-          <p className="ob-hint">
-            AI assistants can search your catalog, ask you questions and draft orders. A draft only
-            becomes an order after the buyer confirms it.
-          </p>
+          <h2 id="ob-connect-title">{t("dn.connect")}</h2>
+          <p className="ob-hint">{t("dn.connectBody")}</p>
         </div>
         <div className="ob-connect">
           <KeyPanel slug={tenant.slug} publicUrl={publicUrl} customerUrl={customerUrl} />
           <div className="ob-connect-steps">
-            <b>Tools on /mcp/customer/{tenant.slug}</b>
+            <b>{t("dn.toolsOn", { slug: tenant.slug })}</b>
             <ul className="ob-tools">
-              {TOOLS.map(([name, text]) => (
+              {TOOLS.map((name) => (
                 <li key={name}>
                   <code>{name}</code>
-                  <span>{text}</span>
+                  <span>{t(`dn.tool.${name}` as const)}</span>
                 </li>
               ))}
             </ul>
-            <span className="ob-hint">
-              Your own Business Agent uses <code>/mcp/business</code> with an owner key.
-            </span>
-            <span className="ob-hint">
-              Try: &quot;Find something in my size at {tenant.name} and compare two options.&quot;
-            </span>
+            <span className="ob-hint">{t("dn.businessHint", { path: "/mcp/business" })}</span>
+            <span className="ob-hint">{t("dn.try", { name: tenant.name })}</span>
           </div>
         </div>
       </section>

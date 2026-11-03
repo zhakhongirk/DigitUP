@@ -2,6 +2,7 @@
 
 import { useActionState, useTransition } from "react";
 import { useFormStatus } from "react-dom";
+import { useT } from "@/app/i18n-provider";
 import { Flash } from "../flash";
 import type { BusinessModel } from "@/shared/business-model";
 import { CONTACT_FIELDS, POLICY_FIELDS } from "@/shared/labels";
@@ -21,45 +22,48 @@ import {
 const INITIAL: SettingsState = { error: null, saved: false };
 
 function SaveButton() {
+  const { t } = useT();
   const { pending } = useFormStatus();
   return (
     <button type="submit" className="btn" disabled={pending}>
-      {pending ? "Saving…" : "Save"}
+      {pending ? t("common.saving") : t("common.save")}
     </button>
   );
 }
 
-function Feedback({ state, done = "Saved" }: { state: SettingsState; done?: string }) {
+function Feedback({ state, done }: { state: SettingsState; done?: string }) {
+  const { t } = useT();
   return (
     <div className="st-feedback" role="status" aria-live="polite">
       {state.error ? <p className="st-error">{state.error}</p> : null}
-      {state.saved ? <Flash key={state.stamp}>{done}</Flash> : null}
+      {state.saved ? <Flash key={state.stamp}>{done ?? t("common.saved")}</Flash> : null}
     </div>
   );
 }
 
 export function ProfileForm({ profile }: { profile: BusinessModel["profile"] }) {
+  const { t } = useT();
   const [state, action] = useActionState(saveProfile, INITIAL);
   return (
     <form action={action} className="st-panel glass" aria-labelledby="st-profile">
-      <h2 id="st-profile">Store profile</h2>
+      <h2 id="st-profile">{t("st.profile")}</h2>
       <div className="st-grid">
         <label className="st-label">
-          Business name
+          {t("st.businessName")}
           <input name="name" className="st-input" defaultValue={profile.name} required />
         </label>
         <label className="st-label">
-          Category
+          {t("st.category")}
           <input
             name="category"
             className="st-input"
             defaultValue={profile.category ?? ""}
-            placeholder="For example, shoe store"
+            placeholder={t("st.categoryPlaceholder")}
           />
         </label>
-        {CONTACT_FIELDS.map(([key, label]) => (
+        {CONTACT_FIELDS.map(([key]) => (
           <label key={key} className="st-label">
-            {label}
+            {t(`f.${key}` as const)}
             <input
               name={`contact.${key}`}
               className="st-input"
@@ -70,7 +74,7 @@ export function ProfileForm({ profile }: { profile: BusinessModel["profile"] }) 
         ))}
       </div>
       <label className="st-label">
-        Description
+        {t("st.description")}
         <textarea
           name="description"
           rows={3}
@@ -87,19 +91,20 @@ export function ProfileForm({ profile }: { profile: BusinessModel["profile"] }) 
 }
 
 export function PoliciesForm({ policies }: { policies: BusinessModel["policies"] }) {
+  const { t } = useT();
   const [state, action] = useActionState(savePolicies, INITIAL);
   return (
     <form action={action} className="st-panel glass" aria-labelledby="st-policies">
-      <h2 id="st-policies">Policies</h2>
-      {POLICY_FIELDS.map(([key, label]) => (
+      <h2 id="st-policies">{t("st.policies")}</h2>
+      {POLICY_FIELDS.map(([key]) => (
         <label key={key} className="st-policy">
-          <b>{label}</b>
+          <b>{t(`f.${key}` as const)}</b>
           <textarea
             name={`policy.${key}`}
             rows={2}
             className="st-textarea"
             defaultValue={policies[key] ?? ""}
-            placeholder="Not provided · shown as to be confirmed"
+            placeholder={t("st.policyPlaceholder")}
           />
         </label>
       ))}
@@ -112,6 +117,7 @@ export function PoliciesForm({ policies }: { policies: BusinessModel["policies"]
 }
 
 export function PasswordForm() {
+  const { t } = useT();
   const [state, action] = useActionState(changePassword, INITIAL);
   return (
     <form
@@ -120,10 +126,10 @@ export function PasswordForm() {
       className="st-panel glass"
       aria-labelledby="st-password"
     >
-      <h2 id="st-password">Password</h2>
+      <h2 id="st-password">{t("st.password")}</h2>
       <div className="st-grid">
         <label className="st-label">
-          Current password
+          {t("st.currentPassword")}
           <input
             name="current"
             type="password"
@@ -133,7 +139,7 @@ export function PasswordForm() {
           />
         </label>
         <label className="st-label">
-          New password
+          {t("st.newPassword")}
           <input
             name="next"
             type="password"
@@ -144,7 +150,7 @@ export function PasswordForm() {
           />
         </label>
         <label className="st-label">
-          Confirm new password
+          {t("st.confirmPassword")}
           <input
             name="confirm"
             type="password"
@@ -157,20 +163,21 @@ export function PasswordForm() {
       </div>
       <div className="st-actions">
         <SaveButton />
-        <Feedback state={state} done="Password changed" />
+        <Feedback state={state} done={t("st.passwordChanged")} />
       </div>
     </form>
   );
 }
 
 export function SignOutEverywhereForm() {
+  const { t } = useT();
   return (
     <form action={signOutEverywhere} className="st-panel glass" aria-labelledby="st-sessions">
-      <h2 id="st-sessions">Sessions</h2>
-      <p>Sign out on every device, including this one.</p>
+      <h2 id="st-sessions">{t("st.sessions")}</h2>
+      <p>{t("st.sessionsBody")}</p>
       <div className="st-actions">
         <button type="submit" className="btn">
-          Sign out everywhere
+          {t("st.signOutEverywhere")}
         </button>
       </div>
     </form>
@@ -182,22 +189,22 @@ export function TelegramPanel({
 }: {
   status: Pick<TelegramStatus, "configured" | "connected"> & { linkUrl: string | null };
 }) {
+  const { t } = useT();
   const [state, setState] = useActionState(
     async (_prev: SettingsState, run: () => Promise<SettingsState>) => run(),
     INITIAL,
   );
   const [pending, startTransition] = useTransition();
-  const run = (action: () => Promise<SettingsState>) =>
-    startTransition(() => setState(action));
+  const run = (action: () => Promise<SettingsState>) => startTransition(() => setState(action));
 
   return (
     <section className="st-panel glass" aria-labelledby="st-telegram">
-      <h2 id="st-telegram">Telegram notifications</h2>
+      <h2 id="st-telegram">{t("st.tgTitle")}</h2>
       {!status.configured ? (
-        <p>Telegram notifications are not configured on this server.</p>
+        <p>{t("st.tgOff")}</p>
       ) : status.connected ? (
         <>
-          <p>New orders, questions and approvals are sent to your Telegram chat.</p>
+          <p>{t("st.tgConnected")}</p>
           <div className="st-actions">
             <button
               type="button"
@@ -205,7 +212,7 @@ export function TelegramPanel({
               disabled={pending}
               onClick={() => run(sendTelegramTest)}
             >
-              Send test message
+              {t("st.tgSendTest")}
             </button>
             <button
               type="button"
@@ -213,24 +220,21 @@ export function TelegramPanel({
               disabled={pending}
               onClick={() => run(disconnectTelegram)}
             >
-              Disconnect
+              {t("st.tgDisconnect")}
             </button>
-            <Feedback state={state} done="Done" />
+            <Feedback state={state} done={t("common.done")} />
           </div>
         </>
       ) : (
         <>
-          <p>
-            Get a message in Telegram when a customer orders, asks a question or an agent proposes
-            changes.
-          </p>
+          <p>{t("st.tgIntro")}</p>
           {status.linkUrl ? (
             <p>
-              Open{" "}
+              {t("st.tgOpen")}{" "}
               <a href={status.linkUrl} target="_blank" rel="noopener noreferrer">
                 {status.linkUrl}
               </a>{" "}
-              and press Start. The link works for 15 minutes.
+              {t("st.tgPressStart")}
             </p>
           ) : null}
           <div className="st-actions">
@@ -240,7 +244,7 @@ export function TelegramPanel({
               disabled={pending}
               onClick={() => run(connectTelegram)}
             >
-              {status.linkUrl ? "New link" : "Connect Telegram"}
+              {status.linkUrl ? t("st.tgNewLink") : t("st.tgConnect")}
             </button>
             {status.linkUrl ? (
               <button
@@ -249,10 +253,10 @@ export function TelegramPanel({
                 disabled={pending}
                 onClick={() => run(refreshTelegram)}
               >
-                I pressed Start
+                {t("st.tgPressed")}
               </button>
             ) : null}
-            <Feedback state={state} done="Done" />
+            <Feedback state={state} done={t("common.done")} />
           </div>
         </>
       )}

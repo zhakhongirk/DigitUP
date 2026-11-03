@@ -1,6 +1,8 @@
 import type { OfferView } from "@/server/services/catalog";
 import type { Availability, OfferStatus } from "@/shared/business-model";
+import type { Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
+import { tr, type TextKey } from "@/shared/owner-copy";
 
 export const PAGE_SIZE = 20;
 
@@ -14,7 +16,28 @@ export const STATUS_FILTER_LABELS: Record<StatusFilter, string> = {
   all: "All",
 };
 
+const FILTER_KEYS: Record<StatusFilter, TextKey> = {
+  active: "ct.filterActive",
+  draft: "ct.filterDraft",
+  archived: "ct.filterArchived",
+  all: "ct.filterAll",
+};
+
+export function statusFilterLabel(lang: Lang, filter: StatusFilter): string {
+  return tr(lang, FILTER_KEYS[filter]);
+}
+
 export const OFFER_STATUSES: OfferStatus[] = ["active", "draft", "archived"];
+
+const OFFER_STATUS_KEYS: Record<OfferStatus, TextKey> = {
+  active: "ct.statusActive",
+  draft: "ct.statusDraft",
+  archived: "ct.statusArchived",
+};
+
+export function offerStatusLabel(lang: Lang, status: OfferStatus): string {
+  return tr(lang, OFFER_STATUS_KEYS[status]);
+}
 
 export const STATUS_LABELS: Record<OfferStatus, string> = {
   active: "Active",
@@ -29,6 +52,16 @@ export const AVAILABILITY_LABELS: Record<Availability, string> = {
   out_of_stock: "Out of stock",
   unknown: "Unknown",
 };
+
+const AVAILABILITY_KEYS: Record<Availability, TextKey> = {
+  in_stock: "ct.stockIn",
+  out_of_stock: "ct.stockOut",
+  unknown: "ct.stockUnknown",
+};
+
+export function availabilityLabel(lang: Lang, availability: Availability): string {
+  return tr(lang, AVAILABILITY_KEYS[availability]);
+}
 
 export const AVAILABILITY_FILTERS = ["in_stock", "out_of_stock", "unknown"] as const;
 
@@ -106,9 +139,9 @@ export function commonOfferType(
   return best;
 }
 
-export function newOfferInput(offerType: string): Record<string, unknown> {
+export function newOfferInput(offerType: string, lang: Lang = "en"): Record<string, unknown> {
   return {
-    title: "New offer",
+    title: tr(lang, "ct.newOfferTitle"),
     description: "",
     category: null,
     offer_type: offerType,
@@ -137,20 +170,25 @@ export interface OfferRow {
   statusLabel: string;
 }
 
-export function priceLabel(offer: Pick<OfferView, "price" | "currency">): string {
-  return offer.price === null ? "On request" : formatPrice(offer.price, offer.currency);
+export function priceLabel(
+  offer: Pick<OfferView, "price" | "currency">,
+  lang: Lang = "en",
+): string {
+  return offer.price === null
+    ? tr(lang, "common.onRequest")
+    : formatPrice(offer.price, offer.currency, lang);
 }
 
-export function toRow(offer: OfferView): OfferRow {
+export function toRow(offer: OfferView, lang: Lang = "en"): OfferRow {
   return {
     id: offer.id,
     title: offer.title,
     category: offer.category ?? "",
-    price: priceLabel(offer),
+    price: priceLabel(offer, lang),
     availability: offer.availability,
-    availabilityLabel: AVAILABILITY_LABELS[offer.availability],
+    availabilityLabel: availabilityLabel(lang, offer.availability),
     status: offer.status,
-    statusLabel: STATUS_LABELS[offer.status],
+    statusLabel: offerStatusLabel(lang, offer.status),
   };
 }
 
@@ -194,14 +232,18 @@ export function parsePrice(raw: string): number | null {
 export type OfferInputResult = { input: Record<string, unknown> } | { error: string };
 
 /** Full upsert payload: the edited fields on top of what the offer already has. */
-export function buildOfferInput(current: OfferView, form: FormLike): OfferInputResult {
+export function buildOfferInput(
+  current: OfferView,
+  form: FormLike,
+  lang: Lang = "en",
+): OfferInputResult {
   const title = text(form, "title");
-  if (!title) return { error: "Enter a title." };
+  if (!title) return { error: tr(lang, "ct.errTitle") };
 
   const availability = AVAILABILITIES.find((a) => a === text(form, "availability"));
   const status = OFFER_STATUSES.find((s) => s === text(form, "status"));
-  if (!availability) return { error: "Choose an availability." };
-  if (!status) return { error: "Choose a status." };
+  if (!availability) return { error: tr(lang, "ct.errAvailability") };
+  if (!status) return { error: tr(lang, "ct.errStatus") };
 
   const onRequest = form.get("priceOnRequest") === "on";
   const rawPrice = text(form, "price");
@@ -209,10 +251,10 @@ export function buildOfferInput(current: OfferView, form: FormLike): OfferInputR
   let price: number | null = null;
 
   if (!onRequest) {
-    if (!rawPrice) return { error: "Enter a price or tick price on request." };
+    if (!rawPrice) return { error: tr(lang, "ct.errPrice") };
     price = parsePrice(rawPrice);
-    if (price === null) return { error: "Price must be a number such as 1250 or 1250.50." };
-    if (!currency) return { error: "Enter a currency such as KZT." };
+    if (price === null) return { error: tr(lang, "ct.errPriceFormat") };
+    if (!currency) return { error: tr(lang, "ct.errCurrency") };
   }
 
   return {

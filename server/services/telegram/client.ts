@@ -3,6 +3,7 @@ export interface TelegramUpdate {
   message?: {
     text?: string;
     chat: { id: number | string; type?: string };
+    from?: { language_code?: string };
   };
 }
 

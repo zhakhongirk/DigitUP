@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useT } from "@/app/i18n-provider";
 import { updateStatus, type ActionState } from "../actions";
 
 const initial: ActionState = { error: null };
@@ -16,6 +17,7 @@ export function StatusActions({
   next: { status: string; label: string } | null;
   canCancel: boolean;
 }) {
+  const { t } = useT();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateStatus, initial);
   const [reasonOpen, setReasonOpen] = useState(false);
   const saved = state !== initial && !state.error;
@@ -43,7 +45,7 @@ export function StatusActions({
           disabled={pending}
           onClick={() => setReasonOpen(true)}
         >
-          Cancel order
+          {t("ib.cancelOrder")}
         </button>
       ) : null}
       {canCancel && reasonOpen ? (
@@ -60,8 +62,8 @@ export function StatusActions({
               background: "transparent",
               color: "inherit",
             }}
-            aria-label="Cancellation reason"
-            placeholder="Reason shown to the customer"
+            aria-label={t("ib.reasonLabel")}
+            placeholder={t("ib.reasonPlaceholder")}
             maxLength={500}
             required
             autoFocus
@@ -73,7 +75,7 @@ export function StatusActions({
             className="btn btn-sm btn-danger"
             disabled={pending}
           >
-            Confirm cancellation
+            {t("ib.confirmCancel")}
           </button>
           <button
             type="button"
@@ -81,13 +83,13 @@ export function StatusActions({
             disabled={pending}
             onClick={() => setReasonOpen(false)}
           >
-            Keep order
+            {t("ib.keepOrder")}
           </button>
         </>
       ) : null}
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">
-          Saved
+          {t("common.saved")}
         </span>
       ) : null}
       {state.error ? (

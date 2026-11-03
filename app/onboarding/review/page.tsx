@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { primaryCurrency, reviewGaps, sourceProvenance } from "@/server/onboarding/review";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { businessModelSchema } from "@/shared/business-model";
 import { OnboardingHeader } from "../header";
@@ -9,11 +10,11 @@ import { ReviewForm } from "./review-form";
 import "../onboarding.css";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Review your business model" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("rv.pageTitle");
 
 export default async function ReviewPage() {
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, tn, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/onboarding/review");
 
   const [tenant, draft, sources] = await Promise.all([
@@ -25,7 +26,7 @@ export default async function ReviewPage() {
   if (!draft || draft.status !== "draft") redirect("/onboarding");
 
   const model = businessModelSchema.parse(draft.payload);
-  const gaps = reviewGaps(model);
+  const gaps = reviewGaps(model, lang);
   const provenance = sourceProvenance(model, sources);
   const files = sources.filter((s) => s.kind !== "note").length;
 
@@ -34,14 +35,11 @@ export default async function ReviewPage() {
       <OnboardingHeader step={2} />
       <div className="ob-intro">
         <span className="ob-kicker">
-          Proposed by the Business Agent
-          {files > 0 ? ` from ${files} ${files === 1 ? "file" : "files"}` : ""}
+          {t("rv.proposed")}
+          {files > 0 ? tn("rv.fromFiles", files) : ""}
         </span>
-        <h1>Review your business model.</h1>
-        <p>
-          Edit anything that is off. Gaps stay visible to customers as clear states, never as
-          guesses.
-        </p>
+        <h1>{t("rv.title")}</h1>
+        <p>{t("rv.intro")}</p>
       </div>
       <ReviewForm
         draftId={draft.id}

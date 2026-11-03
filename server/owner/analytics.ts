@@ -3,7 +3,9 @@ import type { TenantContext } from "@/server/services/context";
 import type { Conversation, ConversationStats, DayCount } from "@/server/services/conversations";
 import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
 import { appTimeZone } from "@/server/time";
+import type { Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
+import { tr, type TextKey } from "@/shared/owner-copy";
 
 export const ANALYTICS_RANGES = [7, 30] as const;
 export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
@@ -27,16 +29,25 @@ const CHANNEL_LABELS: Record<Conversation["channel"], string> = {
   workspace: "Workspace",
 };
 
-export function channelCounts(byChannel: ConversationStats["byChannel"]): ChannelCount[] {
+const CHANNEL_KEYS: Record<Conversation["channel"], TextKey> = {
+  storefront: "common.storefrontChat",
+  external_agent: "common.externalAgents",
+  workspace: "common.workspaceChannel",
+};
+
+export function channelCounts(
+  byChannel: ConversationStats["byChannel"],
+  lang: Lang = "en",
+): ChannelCount[] {
   return (["storefront", "external_agent"] as const).map((channel) => ({
     channel,
-    label: CHANNEL_LABELS[channel],
+    label: lang === "en" ? CHANNEL_LABELS[channel] : tr(lang, CHANNEL_KEYS[channel]),
     count: byChannel[channel],
   }));
 }
 
-export function orderValue(value: OrderStats["value"]): string[] {
-  return value.map(({ currency, total }) => formatPrice(total, currency));
+export function orderValue(value: OrderStats["value"], lang: Lang = "en"): string[] {
+  return value.map(({ currency, total }) => formatPrice(total, currency, lang));
 }
 
 export interface AgentOutcome {
@@ -170,6 +181,7 @@ export async function loadAnalytics(
   ctx: TenantContext,
   range: AnalyticsRange,
   now = new Date(),
+  lang: Lang = "en",
 ): Promise<AnalyticsView> {
   const since = new Date(now.getTime() - range * DAY);
   const timeZone = appTimeZone();
@@ -191,10 +203,10 @@ export async function loadAnalytics(
     range,
     since,
     until: now,
-    channels: channelCounts(conversations.byChannel),
+    channels: channelCounts(conversations.byChannel, lang),
     conversations: conversations.total,
     orders: placed,
-    orderValue: orderValue(orders.value),
+    orderValue: orderValue(orders.value, lang),
     inquiries: orders.inquiries.total,
     outcome: agentOutcome(conversations, orders.inquiries),
     offers: orders.topOffers,

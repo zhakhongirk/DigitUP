@@ -11,6 +11,7 @@ import {
   newOfferInput,
   statusesFor,
 } from "@/server/owner/catalog";
+import { ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 
@@ -33,20 +34,21 @@ export async function saveOffer(
   form: FormData,
 ): Promise<CatalogActionState> {
   const services = await getServices();
+  const { t, msg, lang } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/catalog");
 
   const id = offerId(form);
-  if (!id) return { error: "Nothing selected.", saved: false };
-  if (!isUuid(id)) return { error: "Not found.", saved: false };
+  if (!id) return { error: t("err.nothingSelected"), saved: false };
+  if (!isUuid(id)) return { error: t("err.notFound"), saved: false };
   try {
     const current = await services.catalog.getOffer(owner, id);
-    if (!current) return { error: "This offer no longer exists.", saved: false };
-    const result = buildOfferInput(current, form);
+    if (!current) return { error: t("ct.errGone"), saved: false };
+    const result = buildOfferInput(current, form, lang);
     if ("error" in result) return { error: result.error, saved: false };
     await services.catalog.upsertOffers(owner, [result.input]);
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app", "layout");
@@ -55,6 +57,7 @@ export async function saveOffer(
 
 export async function addOffer(): Promise<void> {
   const services = await getServices();
+  const { lang } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/catalog");
 
@@ -66,7 +69,7 @@ export async function addOffer(): Promise<void> {
     ]);
     const type = commonOfferType(types, existing.items);
     if (!type) redirect("/app/catalog");
-    const [created] = await services.catalog.upsertOffers(owner, [newOfferInput(type)]);
+    const [created] = await services.catalog.upsertOffers(owner, [newOfferInput(type, lang)]);
     target = catalogHref({ status: "draft", offerId: created!.id });
   } catch (error) {
     if (!(error instanceof ServiceError)) throw error;
@@ -80,16 +83,17 @@ export async function archiveOffer(
   form: FormData,
 ): Promise<CatalogActionState> {
   const services = await getServices();
+  const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/catalog");
 
   const id = offerId(form);
-  if (!id) return { error: "Nothing selected.", saved: false };
-  if (!isUuid(id)) return { error: "Not found.", saved: false };
+  if (!id) return { error: t("err.nothingSelected"), saved: false };
+  if (!isUuid(id)) return { error: t("err.notFound"), saved: false };
   try {
     await services.catalog.archiveOffers(owner, [id]);
   } catch (error) {
-    if (error instanceof ServiceError) return { error: error.message, saved: false };
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app", "layout");

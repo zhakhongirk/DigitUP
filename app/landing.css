@@ -165,3 +165,9 @@
     padding: 28px 16px 48px;
   }
 }
+
+.lp-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}

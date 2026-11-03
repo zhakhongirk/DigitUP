@@ -5,25 +5,26 @@ import { getServices } from "@/server/container";
 import type { OfferView } from "@/server/services/catalog";
 import {
   AVAILABILITIES,
-  AVAILABILITY_LABELS,
   PAGE_SIZE,
   type CatalogParams,
   STATUS_FILTERS,
-  STATUS_FILTER_LABELS,
+  availabilityLabel,
   catalogHref,
   matchesFilters,
   pageCount,
   parseCatalogParams,
+  statusFilterLabel,
   statusesFor,
   toFormValues,
   toRow,
 } from "@/server/owner/catalog";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { addOffer } from "./actions";
 import { OfferForm } from "./offer-form";
 import "./catalog.css";
 
-export const metadata: Metadata = { title: "Catalog" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.catalog");
 
 type Services = Awaited<ReturnType<typeof getServices>>;
 type Owner = NonNullable<Awaited<ReturnType<typeof currentOwner>>>;
@@ -51,7 +52,7 @@ export default async function CatalogPage({
 }) {
   const params = parseCatalogParams(await searchParams);
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, tn, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/catalog");
 
   const base = {
@@ -74,7 +75,7 @@ export default async function CatalogPage({
     services.catalog.searchOffers(owner, { statuses: statusesFor("all"), limit: 1 }),
   ]);
 
-  const rows = result.items.map(toRow);
+  const rows = result.items.map((offer) => toRow(offer, lang));
   const pages = pageCount(result.total);
   const filtered = Boolean(
     params.q || params.category || params.status !== "active" || needsInfoFilter,
@@ -85,46 +86,49 @@ export default async function CatalogPage({
     <>
       <div className="ws-title">
         <div>
-          <h1>Catalog</h1>
-          <p className="ws-sub">
-            {result.total} {result.total === 1 ? "offer" : "offers"}
-          </p>
+          <h1>{t("ct.title")}</h1>
+          <p className="ws-sub">{tn("ct.count", result.total)}</p>
         </div>
         <div className="ct-head-actions">
           <form action={addOffer} className="ct-add">
             <button type="submit" className="btn btn-sm">
-              Add offer
+              {t("ct.addOffer")}
             </button>
           </form>
           <a href="/app/export/catalog" className="btn btn-sm btn-secondary" download>
-            Export CSV
+            {t("ct.exportCsv")}
           </a>
           <Link href="/app/catalog/import" className="btn btn-sm btn-secondary">
-            Update from file
+            {t("ct.updateFromFile")}
           </Link>
         </div>
       </div>
 
       {everything.total === 0 ? (
         <section className="ib-empty glass">
-          <h2>No offers yet</h2>
-          <p>Offers appear here once your business model is set up.</p>
+          <h2>{t("ct.emptyTitle")}</h2>
+          <p>{t("ct.emptyBody")}</p>
         </section>
       ) : (
         <div className="ct-grid">
-          <section className="ct-list glass" aria-label="Offers">
+          <section className="ct-list glass" aria-label={t("ct.offers")}>
             <form className="ct-filters" action="/app/catalog" method="get">
               <label className="field ct-search">
-                <span className="sr-only">Search offers</span>
-                <input type="search" name="q" defaultValue={params.q} placeholder="Search offers" />
+                <span className="sr-only">{t("ct.searchLabel")}</span>
+                <input
+                  type="search"
+                  name="q"
+                  defaultValue={params.q}
+                  placeholder={t("ct.searchPlaceholder")}
+                />
               </label>
               <select
                 name="category"
                 defaultValue={params.category}
                 className="ct-select"
-                aria-label="Category"
+                aria-label={t("ct.category")}
               >
-                <option value="">All categories</option>
+                <option value="">{t("ct.allCategories")}</option>
                 {categories.map((category) => (
                   <option key={category} value={category}>
                     {category}
@@ -135,12 +139,12 @@ export default async function CatalogPage({
                 name="availability"
                 defaultValue={params.availability}
                 className="ct-filter-select"
-                aria-label="Availability"
+                aria-label={t("ct.availability")}
               >
-                <option value="">Any availability</option>
+                <option value="">{t("ct.anyAvailability")}</option>
                 {AVAILABILITIES.map((value) => (
                   <option key={value} value={value}>
-                    {AVAILABILITY_LABELS[value]}
+                    {availabilityLabel(lang, value)}
                   </option>
                 ))}
               </select>
@@ -151,39 +155,35 @@ export default async function CatalogPage({
                   value="on_request"
                   defaultChecked={params.priceOnRequest}
                 />
-                Price on request
+                {t("ct.priceOnRequest")}
               </label>
               {params.status !== "active" ? (
                 <input type="hidden" name="status" value={params.status} />
               ) : null}
               <button type="submit" className="btn btn-sm">
-                Search
+                {t("ct.search")}
               </button>
             </form>
 
-            <nav className="segmented ct-status" aria-label="Status">
+            <nav className="segmented ct-status" aria-label={t("ct.status")}>
               {STATUS_FILTERS.map((status) => (
                 <Link
                   key={status}
                   href={catalogHref({ ...params, status, page: 1, offerId: null })}
                   aria-current={status === params.status ? "page" : undefined}
                 >
-                  {STATUS_FILTER_LABELS[status]}
+                  {statusFilterLabel(lang, status)}
                 </Link>
               ))}
             </nav>
 
             {rows.length === 0 ? (
               <div className="ct-none">
-                <h2>{filtered ? "No offers match" : "No active offers"}</h2>
-                <p>
-                  {filtered
-                    ? "Try a different search, category, status or filter."
-                    : "Switch the status filter to see drafts and archived offers."}
-                </p>
+                <h2>{t(filtered ? "ct.noMatch" : "ct.noActive")}</h2>
+                <p>{t(filtered ? "ct.tryOther" : "ct.switchStatus")}</p>
                 {filtered ? (
                   <Link href="/app/catalog" className="btn btn-sm btn-secondary">
-                    Clear filters
+                    {t("ct.clearFilters")}
                   </Link>
                 ) : null}
               </div>
@@ -192,11 +192,11 @@ export default async function CatalogPage({
                 <table className="ct-table">
                   <thead>
                     <tr>
-                      <th>Title</th>
-                      <th className="ct-wide">Category</th>
-                      <th className="ct-num">Price</th>
-                      <th>Availability</th>
-                      <th className="ct-wide">Status</th>
+                      <th>{t("ct.colTitle")}</th>
+                      <th className="ct-wide">{t("ct.colCategory")}</th>
+                      <th className="ct-num">{t("ct.colPrice")}</th>
+                      <th>{t("ct.colAvailability")}</th>
+                      <th className="ct-wide">{t("ct.colStatus")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -210,7 +210,7 @@ export default async function CatalogPage({
                             {row.title}
                           </Link>
                         </td>
-                        <td className="ct-muted ct-wide">{row.category || "None"}</td>
+                        <td className="ct-muted ct-wide">{row.category || t("ct.noCategory")}</td>
                         <td className="ct-num">{row.price}</td>
                         <td>
                           <span className={`status status-${row.availability}`}>
@@ -228,26 +228,26 @@ export default async function CatalogPage({
             )}
 
             {pages > 1 ? (
-              <nav className="ct-pager" aria-label="Pages">
+              <nav className="ct-pager" aria-label={t("pager.label")}>
                 {params.page > 1 ? (
                   <Link
                     href={catalogHref({ ...params, page: params.page - 1, offerId: null })}
                     className="btn btn-sm btn-secondary"
                   >
-                    Previous
+                    {t("pager.previous")}
                   </Link>
                 ) : (
                   <span />
                 )}
                 <span className="ct-muted">
-                  Page {params.page} of {pages}
+                  {t("pager.status", { page: params.page, total: pages })}
                 </span>
                 {params.page < pages ? (
                   <Link
                     href={catalogHref({ ...params, page: params.page + 1, offerId: null })}
                     className="btn btn-sm btn-secondary"
                   >
-                    Next
+                    {t("pager.next")}
                   </Link>
                 ) : (
                   <span />
@@ -257,7 +257,7 @@ export default async function CatalogPage({
           </section>
 
           {params.offerId ? (
-            <aside className="ct-panel glass" aria-label="Edit offer">
+            <aside className="ct-panel glass" aria-label={t("ct.editOffer")}>
               {selected ? (
                 <>
                   <header className="ct-panel-head">
@@ -266,7 +266,7 @@ export default async function CatalogPage({
                       <h2>{selected.title}</h2>
                     </div>
                     <Link href={closeHref} className="btn btn-sm btn-secondary">
-                      Close
+                      {t("common.close")}
                     </Link>
                   </header>
                   <OfferForm
@@ -279,10 +279,10 @@ export default async function CatalogPage({
                 </>
               ) : (
                 <div className="ct-none">
-                  <h2>Offer not found</h2>
-                  <p>It may have been removed.</p>
+                  <h2>{t("ct.notFound")}</h2>
+                  <p>{t("ct.mayBeRemoved")}</p>
                   <Link href={closeHref} className="btn btn-sm btn-secondary">
-                    Close
+                    {t("common.close")}
                   </Link>
                 </div>
               )}

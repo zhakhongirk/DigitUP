@@ -6,7 +6,9 @@ import type { Services } from "@/server/container";
 import { BodyTooLargeError, boundedFormData } from "@/server/http/bounded-form";
 import { analyzeLimiter, limitRequest } from "@/server/http/rate-limit";
 import { sessionCookie } from "@/server/mcp/http";
+import { langFromRequest } from "@/server/owner/lang-resolve";
 import { sessionCookieHeader } from "@/server/owner/session";
+import { localizeMessage, type Lang } from "@/shared/owner-copy";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 import { RUN_SLOW_MS, sourceOrder, type UploadedFile } from "@/server/services/ingestion";
 
@@ -38,10 +40,10 @@ const STATUS_BY_CODE: Record<ServiceError["code"], number> = {
   conflict: 409,
 };
 
-function errorResponse(error: unknown): Response {
+function errorResponse(error: unknown, lang: Lang = "en"): Response {
   if (error instanceof ServiceError) {
     return Response.json(
-      { error: error.code, message: error.message },
+      { error: error.code, message: localizeMessage(lang, error.message) },
       { status: STATUS_BY_CODE[error.code] },
     );
   }
@@ -121,9 +123,10 @@ export async function handleOnboardingUpload(
   request: Request,
   services: Services,
 ): Promise<Response> {
+  const lang = langFromRequest(request);
   if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
     return Response.json(
-      { error: "invalid", message: "Upload at most 60 MB at a time" },
+      { error: "invalid", message: localizeMessage(lang, "Upload at most 60 MB at a time") },
       { status: 413 },
     );
   }
@@ -133,11 +136,14 @@ export async function handleOnboardingUpload(
   } catch (error) {
     if (error instanceof BodyTooLargeError) {
       return Response.json(
-        { error: "invalid", message: "Upload at most 60 MB at a time" },
+        { error: "invalid", message: localizeMessage(lang, "Upload at most 60 MB at a time") },
         { status: 413 },
       );
     }
-    return Response.json({ error: "invalid", message: "Expected a form upload" }, { status: 400 });
+    return Response.json(
+      { error: "invalid", message: localizeMessage(lang, "Expected a form upload") },
+      { status: 400 },
+    );
   }
 
   try {
@@ -164,6 +170,7 @@ export async function handleOnboardingUpload(
       });
       ctx = await services.tenancy.contextFromSession(token);
       if (!ctx) throw new Error("A new session did not resolve");
+      await services.telegram.setLanguage(ctx, lang);
       headers.append("set-cookie", sessionCookieHeader(token));
     } else if ((await services.tenancy.getTenant(ctx)).status === "live") {
       throw new ServiceError("conflict", "This store is already live");
@@ -172,7 +179,7 @@ export async function handleOnboardingUpload(
     await services.ingestion.addSources(ctx, { note: about, files });
     return Response.json(await onboardingStatus(services, ctx), { status: 201, headers });
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, lang);
   }
 }
 
@@ -197,6 +204,6 @@ export async function handleOnboardingAnalyze(
     await services.ingestion.startRun(ctx);
     return Response.json(await onboardingStatus(services, ctx));
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, langFromRequest(request));
   }
 }

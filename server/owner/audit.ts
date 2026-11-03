@@ -2,6 +2,8 @@ import type { Services } from "@/server/container";
 import type { TenantContext } from "@/server/services/context";
 import type { AuditEvent } from "@/server/services/audit";
 import { parseOps, summarize } from "./changes";
+import type { Lang } from "@/server/storefront/i18n";
+import { lookup, tr, type TextKey } from "@/shared/owner-copy";
 import { orderNumber } from "./inbox";
 
 export const ACTOR_LABELS: Record<AuditEvent["actor"], string> = {
@@ -45,9 +47,24 @@ const ACTION_LABELS: Record<string, string> = {
   "user.created": "Created the owner account",
 };
 
-export function actionLabel(action: string): string {
-  return ACTION_LABELS[action] ?? action;
+export function actionLabel(action: string, lang: Lang = "en"): string {
+  if (lang === "en") return ACTION_LABELS[action] ?? action;
+  return lookup(lang, `au.action.${action}`) ?? action;
 }
+
+const ACTOR_KEYS: Record<AuditEvent["actor"], TextKey> = {
+  owner: "common.you",
+  business_agent: "common.businessAgent",
+  customer_agent: "common.customerAgent",
+  system: "common.system",
+};
+
+export function actorLabel(actor: AuditEvent["actor"], lang: Lang = "en"): string {
+  return tr(lang, ACTOR_KEYS[actor]);
+}
+
+const STATUS_PHRASE = (lang: Lang, value: string): string =>
+  lookup(lang, `au.status.${value}`) ?? value.replace(/_/g, " ");
 
 function statusOf(value: unknown): string | null {
   if (value && typeof value === "object" && "status" in value) {
@@ -58,11 +75,14 @@ function statusOf(value: unknown): string | null {
 }
 
 /** Short "before → after" note for status changes, empty otherwise. */
-export function auditChange(event: Pick<AuditEvent, "before" | "after">): string {
+export function auditChange(
+  event: Pick<AuditEvent, "before" | "after">,
+  lang: Lang = "en",
+): string {
   const before = statusOf(event.before);
   const after = statusOf(event.after);
   if (before && after && before !== after) {
-    return `${before.replace(/_/g, " ")} → ${after.replace(/_/g, " ")}`;
+    return `${STATUS_PHRASE(lang, before)} → ${STATUS_PHRASE(lang, after)}`;
   }
   return "";
 }
@@ -91,6 +111,7 @@ export async function resolveAuditTargets(
   services: Services,
   ctx: TenantContext,
   events: AuditRef[],
+  lang: Lang = "en",
 ): Promise<Map<string, AuditTarget>> {
   const targets = new Map<string, AuditTarget>();
   const offerIds = new Set<string>();
@@ -112,13 +133,13 @@ export async function resolveAuditTargets(
     if (!id) continue;
     if (event.entity === "order") {
       targets.set(event.id, {
-        name: `Order ${orderNumber(id)}`,
+        name: tr(lang, "ib.orderLabel", { number: orderNumber(id) }),
         href: `/app/inbox?item=${encodeURIComponent(`order:${id}`)}`,
       });
     } else if (event.entity === "inquiry") {
       const subject = field(event.after, "subject");
       targets.set(event.id, {
-        name: subject ? `Question: ${subject}` : "Question",
+        name: subject ? tr(lang, "au.questionNamed", { subject }) : tr(lang, "au.question"),
         href: `/app/inbox?item=${encodeURIComponent(`inquiry:${id}`)}`,
       });
     } else if (event.entity === "offer") {
@@ -134,7 +155,7 @@ export async function resolveAuditTargets(
       const changeSet = changeSetById.get(id);
       const ops = changeSet ? parseOps(changeSet.ops) : null;
       targets.set(event.id, {
-        name: ops ? summarize(ops) : "Approval",
+        name: ops ? summarize(ops, lang) : tr(lang, "au.approval"),
         href: changeSet ? `/app/approvals?id=${id}` : null,
       });
     }

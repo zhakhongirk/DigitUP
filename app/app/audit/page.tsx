@@ -2,17 +2,23 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { ACTOR_LABELS, actionLabel, auditChange, resolveAuditTargets } from "@/server/owner/audit";
+import { actionLabel, actorLabel, auditChange, resolveAuditTargets } from "@/server/owner/audit";
 import { formatWhen } from "@/server/owner/inbox";
 import { parsePage } from "@/server/owner/inbox";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { Pager } from "../pager";
 
-export const metadata: Metadata = { title: "Audit log" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.audit");
 
 const PAGE_SIZE = 50;
 
-const ACTOR_INITIALS = { owner: "You", business_agent: "BA", customer_agent: "CA", system: "SY" };
+const ACTOR_INITIALS = {
+  owner: "au.initialsOwner",
+  business_agent: "au.initialsBusiness",
+  customer_agent: "au.initialsCustomer",
+  system: "au.initialsSystem",
+} as const;
 
 export default async function AuditPage({
   searchParams,
@@ -21,7 +27,7 @@ export default async function AuditPage({
 }) {
   const params = await searchParams;
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/audit");
 
   const all = params.all === "1";
@@ -34,46 +40,46 @@ export default async function AuditPage({
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
-  const targets = await resolveAuditTargets(services, owner, events);
+  const targets = await resolveAuditTargets(services, owner, events, lang);
   const now = new Date();
 
   return (
     <>
       <div className="ws-title">
         <div className="ws-heading">
-          <h1>Audit log</h1>
-          <p className="ws-sub">Every change to the store: who, what, before and after.</p>
+          <h1>{t("au.title")}</h1>
+          <p className="ws-sub">{t("au.sub")}</p>
         </div>
-        <nav className="segmented segmented-sm" aria-label="Audit filter">
+        <nav className="segmented segmented-sm" aria-label={t("au.filterLabel")}>
           <Link href="/app/audit" aria-current={all ? undefined : "page"}>
-            Changes
+            {t("au.changes")}
           </Link>
           <Link href="/app/audit?all=1" aria-current={all ? "page" : undefined}>
-            All activity
+            {t("au.all")}
           </Link>
         </nav>
       </div>
-      <section className="au-list glass" aria-label="Recent changes">
+      <section className="au-list glass" aria-label={t("au.listLabel")}>
         {events.length === 0 ? (
-          <p className="au-empty">No changes recorded yet.</p>
+          <p className="au-empty">{t("au.empty")}</p>
         ) : (
           <ol>
             {events.map((event) => {
-              const change = auditChange(event);
+              const change = auditChange(event, lang);
               const target = targets.get(event.id);
               return (
                 <li key={event.id}>
                   <time dateTime={event.createdAt.toISOString()} className="au-when">
-                    {formatWhen(event.createdAt, now)}
+                    {formatWhen(event.createdAt, now, undefined, lang)}
                   </time>
                   <span className="au-actor">
                     <span className={`au-avatar au-avatar-${event.actor}`} aria-hidden="true">
-                      {ACTOR_INITIALS[event.actor]}
+                      {t(ACTOR_INITIALS[event.actor])}
                     </span>
-                    {ACTOR_LABELS[event.actor]}
+                    {actorLabel(event.actor, lang)}
                   </span>
                   <span className="au-action" title={event.action}>
-                    {actionLabel(event.action)}
+                    {actionLabel(event.action, lang)}
                   </span>
                   <span className="au-what">
                     {target ? (

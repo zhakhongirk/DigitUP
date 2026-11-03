@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useT } from "@/app/i18n-provider";
 import type { ChangeGroup } from "@/server/owner/changes";
 import { DecisionButtons } from "./decision-buttons";
 
-function deltaClass(delta: string | null): string {
+function deltaClass(delta: string | null, newlyPriced: string): string {
   if (!delta) return "";
-  if (delta === "Newly priced") return " cs-delta-new";
+  if (delta === newlyPriced) return " cs-delta-new";
   if (delta.startsWith("+")) return " cs-delta-up";
   if (delta.startsWith("-")) return " cs-delta-down";
   return "";
@@ -25,6 +26,7 @@ export function ChangeRows({
   canApprove: boolean;
   footNote: string;
 }) {
+  const { t, tn } = useT();
   const allKeys = groups.flatMap((group) => group.rows.map((row) => row.key));
   const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set(allKeys));
   const selectable = pending && canApprove;
@@ -50,16 +52,16 @@ export function ChangeRows({
             <div className="cs-group-head">
               <h2>{group.title}</h2>
               <span className="cs-group-count">
-                {group.rows.length} {group.rows.length === 1 ? "offer" : "offers"}
+                {tn("ap.offersCount", group.rows.length)}
                 {selectable ? (
                   <>
                     {" · "}
                     <button type="button" className="cs-link" onClick={() => toggle(keys, true)}>
-                      Select all
+                      {t("ap.selectAll")}
                     </button>
                     {" · "}
                     <button type="button" className="cs-link" onClick={() => toggle(keys, false)}>
-                      Select none
+                      {t("ap.selectNone")}
                     </button>
                   </>
                 ) : null}
@@ -73,16 +75,16 @@ export function ChangeRows({
                       <th className="cs-check">
                         <input
                           type="checkbox"
-                          aria-label={`Select every row in ${group.title}`}
+                          aria-label={t("ap.selectEvery", { group: group.title })}
                           checked={picked === keys.length}
                           onChange={(e) => toggle(keys, e.currentTarget.checked)}
                         />
                       </th>
                     ) : null}
-                    <th>Offer</th>
-                    {pending ? <th className="cs-num">Now</th> : null}
-                    <th className="cs-num">{pending ? "After" : "Set to"}</th>
-                    {pending ? <th className="cs-num">Change</th> : null}
+                    <th>{t("ap.colOffer")}</th>
+                    {pending ? <th className="cs-num">{t("ap.colNow")}</th> : null}
+                    <th className="cs-num">{t(pending ? "ap.colAfter" : "ap.colSetTo")}</th>
+                    {pending ? <th className="cs-num">{t("ap.colChange")}</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -92,7 +94,7 @@ export function ChangeRows({
                         <td className="cs-check">
                           <input
                             type="checkbox"
-                            aria-label={`Apply ${row.title}`}
+                            aria-label={t("ap.apply", { title: row.title })}
                             checked={selected.has(row.key)}
                             onChange={(e) => toggle([row.key], e.currentTarget.checked)}
                           />
@@ -101,14 +103,16 @@ export function ChangeRows({
                       <td>{row.title}</td>
                       {pending ? (
                         <td
-                          className={`cs-num cs-before${row.before === "On request" ? " cs-before-none" : ""}`}
+                          className={`cs-num cs-before${row.before === t("common.onRequest") ? " cs-before-none" : ""}`}
                         >
                           {row.before ?? ""}
                         </td>
                       ) : null}
                       <td className="cs-num cs-after">{row.after}</td>
                       {pending ? (
-                        <td className={`cs-num cs-delta${deltaClass(row.delta)}`}>
+                        <td
+                          className={`cs-num cs-delta${deltaClass(row.delta, t("ap.newlyPriced"))}`}
+                        >
                           {row.delta ?? ""}
                         </td>
                       ) : null}
@@ -123,7 +127,7 @@ export function ChangeRows({
       <div className="cs-foot">
         <span>
           {pending && canApprove
-            ? `${selected.size} of ${allKeys.length} selected. Unselected changes are dropped.`
+            ? t("ap.selectedOf", { n: selected.size, total: allKeys.length })
             : footNote}
         </span>
         <DecisionButtons

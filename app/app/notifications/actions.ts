@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { notificationView } from "@/server/owner/notifications";
+import { ownerLang } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 
@@ -18,7 +19,7 @@ export async function openNotification(form: FormData): Promise<void> {
   let target = "/app/notifications";
   try {
     const item = await services.notifications.markRead(owner, id);
-    target = notificationView(item).href;
+    target = notificationView(item, await ownerLang()).href;
   } catch (error) {
     if (!(error instanceof ServiceError)) throw error;
   }

@@ -2,9 +2,13 @@ import { randomBytes } from "node:crypto";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { changeSets, inquiries, kv, notifications, orders, tenants } from "@/db/schema";
+import { negotiateLang, type Lang } from "@/server/storefront/i18n";
 import { orderNumber } from "@/server/storefront/order-status";
+import { formatPrice } from "@/shared/format";
+import { tr, trn } from "@/shared/owner-copy";
 import { ServiceError, assertOwner, type TenantContext } from "../context";
 import type { TelegramClient, TelegramUpdate } from "./client";
+import { readTenantLang, saveTenantLang } from "./lang";
 
 export * from "./client";
 
@@ -25,6 +29,7 @@ export interface TelegramService {
   issueLinkCode(ctx: TenantContext): Promise<{ code: string; url: string; expiresAt: Date }>;
   disconnect(ctx: TenantContext): Promise<void>;
   sendTest(ctx: TenantContext): Promise<void>;
+  setLanguage(ctx: TenantContext, lang: Lang): Promise<void>;
   handleUpdates(updates: TelegramUpdate[]): Promise<void>;
   pollOnce(signal?: AbortSignal): Promise<number>;
   runPolling(signal: AbortSignal, onError?: (error: unknown) => void): Promise<void>;
@@ -54,8 +59,9 @@ function sleepUnlessAborted(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-function money(total: number | null, currency: string | null): string {
-  if (total === null) return "to be confirmed";
+function money(total: number | null, currency: string | null, lang: Lang): string {
+  if (total === null) return tr(lang, "tg.toBeConfirmed");
+  if (lang === "ru") return formatPrice(total, currency, lang);
   return `${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${currency ?? ""}`.trim();
 }
 
@@ -85,13 +91,16 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
     return row?.chatId ?? null;
   }
 
-  async function consumeCode(code: string, chatId: string): Promise<string | null> {
+  async function consumeCode(
+    code: string,
+    chatId: string,
+  ): Promise<{ id: string; name: string } | null> {
     const [row] = await db
       .update(tenants)
       .set({ telegramChatId: chatId, telegramLinkCode: null, telegramLinkExpiresAt: null })
       .where(and(eq(tenants.telegramLinkCode, code), gt(tenants.telegramLinkExpiresAt, now())))
-      .returning({ name: tenants.name });
-    return row?.name ?? null;
+      .returning({ id: tenants.id, name: tenants.name });
+    return row ?? null;
   }
 
   async function handleUpdate(update: TelegramUpdate) {
@@ -101,33 +110,34 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
     const match = /^\/start(?:@\w+)?\s+(\S+)$/.exec(text);
     const chatId = String(message.chat.id);
     const api = requireClient();
+    const spoken = negotiateLang(message.from?.language_code);
     if (!match?.[1]) {
-      await api.sendMessage(
-        chatId,
-        "To link this chat, open Settings in your store dashboard, press Connect Telegram and follow the link.",
-      );
+      await api.sendMessage(chatId, tr(spoken, "tg.link"));
       return;
     }
-    const name = await consumeCode(match[1], chatId);
+    const tenant = await consumeCode(match[1], chatId);
+    const lang = tenant ? await readTenantLang(db, tenant.id) : spoken;
     await api.sendMessage(
       chatId,
-      name
-        ? `Connected. New orders, questions and approvals for ${name} will arrive here.`
-        : "This link is invalid or has expired. Generate a new one in Settings.",
+      tenant ? tr(lang, "tg.connected", { name: tenant.name }) : tr(lang, "tg.invalid"),
     );
   }
 
-  async function describe(tenantId: string, kind: string, refId: string) {
+  async function describe(tenantId: string, kind: string, refId: string, lang: Lang) {
     const link = (path: string) => (base ? `\n${base}${path}` : "");
     if (kind === "order") {
       const [order] = await db
         .select()
         .from(orders)
         .where(and(eq(orders.id, refId), eq(orders.tenantId, tenantId)));
-      if (!order) return `New order\nOpen your inbox to review it.${link("/app/inbox")}`;
+      if (!order) return `${tr(lang, "tg.orderOpen")}${link("/app/inbox")}`;
       const contact = (order.contact ?? {}) as { name?: string; phone?: string };
-      const who = contact.name ?? contact.phone ?? "Customer";
-      return `New order ${orderNumber(order.id)}\nFrom: ${oneLine(who, 80)}\nTotal: ${money(order.total, order.currency)}${link(`/app/inbox?item=order:${order.id}`)}`;
+      const who = contact.name ?? contact.phone ?? tr(lang, "tg.customer");
+      return `${tr(lang, "tg.order", {
+        number: orderNumber(order.id),
+        who: oneLine(who, 80),
+        total: money(order.total, order.currency, lang),
+      })}${link(`/app/inbox?item=order:${order.id}`)}`;
     }
     if (kind === "inquiry") {
       const [inquiry] = await db
@@ -135,11 +145,13 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
         .from(inquiries)
         .where(and(eq(inquiries.id, refId), eq(inquiries.tenantId, tenantId)));
       if (!inquiry) {
-        return `New customer question\nOpen your inbox to answer it.${link("/app/inbox")}`;
+        return `${tr(lang, "tg.inquiryOpen")}${link("/app/inbox")}`;
       }
       const contact = (inquiry.contact ?? {}) as { name?: string; phone?: string };
       const who = contact.name ?? contact.phone;
-      const head = who ? `New question from ${oneLine(who, 80)}` : "New customer question";
+      const head = who
+        ? tr(lang, "tg.inquiryFrom", { who: oneLine(who, 80) })
+        : tr(lang, "tg.inquiryHead");
       return `${head}\n${oneLine(inquiry.subject, 200)}${link(`/app/inbox?item=inquiry:${inquiry.id}`)}`;
     }
     if (kind === "change_set") {
@@ -148,8 +160,8 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
         .from(changeSets)
         .where(and(eq(changeSets.id, refId), eq(changeSets.tenantId, tenantId)));
       const count = Array.isArray(changeSet?.ops) ? changeSet.ops.length : 0;
-      const what = count === 1 ? "1 proposed change" : `${count} proposed changes`;
-      return `An agent proposed changes to your store\n${count > 0 ? what : "Review them in Approvals."}${link(`/app/approvals?id=${refId}`)}`;
+      const what = trn(lang, "tg.changeCount", count);
+      return `${tr(lang, "tg.changeHead")}\n${count > 0 ? what : tr(lang, "tg.changeReview")}${link(`/app/approvals?id=${refId}`)}`;
     }
     return null;
   }
@@ -204,11 +216,16 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
       const chatId = await chatOf(ctx.tenantId);
       if (!chatId) throw new ServiceError("invalid", "Telegram is not connected");
       try {
-        await api.sendMessage(chatId, "Test message. Notifications from your store are working.");
+        await api.sendMessage(chatId, tr(await readTenantLang(db, ctx.tenantId), "tg.test"));
       } catch (error) {
         note("telegram.test_failed", { error });
         throw new ServiceError("invalid", "Telegram did not accept the message. Try again.");
       }
+    },
+
+    async setLanguage(ctx, lang) {
+      assertOwner(ctx);
+      await saveTenantLang(db, ctx.tenantId, lang);
     },
 
     async handleUpdates(updates) {
@@ -274,7 +291,7 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
         .returning({ id: notifications.id });
       if (!claimed) return false;
       try {
-        const text = await describe(tenantId, kind, refId);
+        const text = await describe(tenantId, kind, refId, await readTenantLang(db, tenantId));
         if (!text) return false;
         await client.sendMessage(chatId, text);
         return true;

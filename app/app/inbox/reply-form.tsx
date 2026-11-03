@@ -1,11 +1,13 @@
 "use client";
 
 import { useActionState } from "react";
+import { useT } from "@/app/i18n-provider";
 import { answerInquiry, type ActionState } from "../actions";
 
 const initial: ActionState = { error: null };
 
 export function ReplyForm({ id, answered }: { id: string; answered: boolean }) {
+  const { t } = useT();
   const [state, action, pending] = useActionState<ActionState, FormData>(answerInquiry, initial);
   const saved = state !== initial && !state.error;
 
@@ -14,28 +16,25 @@ export function ReplyForm({ id, answered }: { id: string; answered: boolean }) {
       <form action={action} className="composer ib-reply">
         <input type="hidden" name="id" value={id} />
         <label className="sr-only" htmlFor={`answer-${id}`}>
-          {answered ? "Edit your answer" : "Your answer"}
+          {t(answered ? "ib.editAnswer" : "ib.answer")}
         </label>
         <textarea
           id={`answer-${id}`}
           name="answer"
           rows={1}
           maxLength={5000}
-          placeholder="Reply to the customer"
+          placeholder={t("ib.replyPlaceholder")}
           required
           disabled={pending}
         />
         <button type="submit" className="btn btn-sm ib-reply-submit" disabled={pending}>
-          {pending ? "Saving..." : "Save answer"}
+          {pending ? t("common.saving") : t("ib.saveAnswer")}
         </button>
       </form>
-      <p className="ib-reply-hint">
-        Saved to this question. Agents can read it; contact the customer directly using the contact
-        details for this question.
-      </p>
+      <p className="ib-reply-hint">{t("ib.replyHint")}</p>
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">
-          Answer saved
+          {t("ib.answerSaved")}
         </span>
       ) : null}
       {state.error ? (

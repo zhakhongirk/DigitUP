@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useT } from "@/app/i18n-provider";
 import { createCustomerKey, type KeyState } from "./actions";
 import { CopyButton } from "./copy-button";
 
@@ -19,6 +20,7 @@ export function KeyPanel({
   publicUrl: string;
   customerUrl: string;
 }) {
+  const { t } = useT();
   const [state, action, pending] = useActionState<KeyState>(createCustomerKey, {
     key: null,
     error: null,
@@ -28,20 +30,15 @@ export function KeyPanel({
 
   return (
     <div className="ob-connect-steps">
-      <b>1. Talk to the store, no key needed</b>
-      <span className="ob-hint">
-        The public endpoint has one tool, talk_to_store, that passes messages to your store
-        assistant.
-      </span>
+      <b>{t("dn.key1")}</b>
+      <span className="ob-hint">{t("dn.key1Body")}</span>
       <pre className="ob-pre">{publicConfig}</pre>
       <div>
-        <CopyButton text={publicConfig} label="Copy config" />
+        <CopyButton text={publicConfig} label={t("common.copyConfig")} />
       </div>
 
-      <b>2. Or give an agent direct catalog tools</b>
-      <span className="ob-hint">
-        Create a customer-agent key. It is shown once; only its hash is stored.
-      </span>
+      <b>{t("dn.key2")}</b>
+      <span className="ob-hint">{t("dn.key2Body")}</span>
       {state.key ? (
         <div className="ob-copy-row">
           <code>{state.key}</code>
@@ -50,7 +47,7 @@ export function KeyPanel({
       ) : (
         <form action={action}>
           <button type="submit" className="btn btn-sm" disabled={pending}>
-            {pending ? "Creating…" : "Create key"}
+            {pending ? t("dn.creating") : t("dn.createKey")}
           </button>
         </form>
       )}
@@ -62,7 +59,7 @@ export function KeyPanel({
       <pre className="ob-pre">{customerConfig}</pre>
       {state.key ? (
         <div>
-          <CopyButton text={customerConfig} label="Copy config" />
+          <CopyButton text={customerConfig} label={t("common.copyConfig")} />
         </div>
       ) : null}
     </div>

@@ -1,12 +1,15 @@
 "use client";
 
+import { useT } from "@/app/i18n-provider";
+
 export default function AppError({ reset }: { reset: () => void }) {
+  const { t } = useT();
   return (
     <section className="ib-empty glass" role="alert">
-      <h2>Something went wrong</h2>
-      <p>Try again. If this keeps happening, reload the page.</p>
+      <h2>{t("common.errorTitle")}</h2>
+      <p>{t("common.errorBody")}</p>
       <button type="button" className="btn" onClick={() => reset()}>
-        Try again
+        {t("common.tryAgain")}
       </button>
     </section>
   );

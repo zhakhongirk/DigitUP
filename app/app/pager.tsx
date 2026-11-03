@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ownerT } from "@/server/owner/lang";
 import "./pager.css";
 
 function Step({ href, label, rel }: { href: string | null; label: string; rel?: "prev" | "next" }) {
@@ -13,7 +14,7 @@ function Step({ href, label, rel }: { href: string | null; label: string; rel?: 
   );
 }
 
-export function Pager({
+export async function Pager({
   page,
   pageCount,
   href,
@@ -29,16 +30,19 @@ export function Pager({
   olderHref?: string | null;
 }) {
   if (pageCount <= 1) return null;
+  const { t } = await ownerT();
   const newer = newerHref !== undefined ? newerHref : page > 1 && href ? href(page - 1) : null;
   const older =
     olderHref !== undefined ? olderHref : page < pageCount && href ? href(page + 1) : null;
   return (
-    <nav className="pager" aria-label="Pages">
-      <Step href={newer} label={newerHref !== undefined ? "Newest" : "Newer"} rel="prev" />
-      <span className="pager-status">
-        Page {page} of {pageCount}
-      </span>
-      <Step href={older} label="Older" rel="next" />
+    <nav className="pager" aria-label={t("pager.label")}>
+      <Step
+        href={newer}
+        label={t(newerHref !== undefined ? "pager.newest" : "pager.newer")}
+        rel="prev"
+      />
+      <span className="pager-status">{t("pager.status", { page, total: pageCount })}</span>
+      <Step href={older} label={t("pager.older")} rel="next" />
     </nav>
   );
 }

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
+import { useT } from "@/app/i18n-provider";
 import type { OnboardingStatus } from "@/server/onboarding/flow";
+import type { Translator } from "@/shared/owner-copy";
 
 const ACCEPT = ".xlsx,.csv,.pdf,.docx,.txt,.md";
 const POLL_MS = 1500;
@@ -10,10 +12,10 @@ const SLOW_AFTER_MS = 45_000;
 
 type CheckState = "pending" | "active" | "done" | "failed";
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function formatSize(bytes: number, t: Translator["t"]): string {
+  if (bytes < 1024) return `${bytes} ${t("common.unitB")}`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} ${t("common.unitKb")}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t("common.unitMb")}`;
 }
 
 function extension(name: string): string {
@@ -34,50 +36,56 @@ function isBusy(status: OnboardingStatus | null): boolean {
   return reading || drafting;
 }
 
-function checklist(status: OnboardingStatus) {
+function checklist(status: OnboardingStatus, tr: Translator) {
+  const { t, tn, msg } = tr;
   const items: { key: string; text: string; state: CheckState }[] = status.sources.map((s) => {
-    const what = s.kind === "note" ? "your description" : s.filename;
+    const what = s.kind === "note" ? t("ob.yourDescription") : s.filename;
     const text =
-      s.status === "failed" ? `${s.filename}: ${s.error ?? "could not be read"}` : `Read ${what}`;
+      s.status === "failed"
+        ? `${s.filename}: ${s.error ? msg(s.error) : t("ob.couldNotRead")}`
+        : t("ob.readItem", { what });
     return { key: s.id, text, state: SOURCE_STATE[s.status] };
   });
   const run = status.run;
   let draftState: CheckState = "pending";
-  let draftText = "Draft the business model";
+  let draftText = t("ob.draftItem");
   if (run?.status === "running") draftState = "active";
   if (run?.status === "failed") {
     draftState = "failed";
-    draftText = run.error ?? "Could not draft the business model";
+    draftText = run.error ? msg(run.error) : t("ob.draftFailed");
   }
   if (status.draft) {
     draftState = "done";
     const { offers, questions } = status.draft;
-    draftText = `Drafted ${offers} ${offers === 1 ? "offer" : "offers"} and ${questions} open ${
-      questions === 1 ? "question" : "questions"
-    }`;
+    draftText = t("ob.drafted", {
+      offers: tn("n.offer", offers),
+      questions: tn("ob.openQuestions", questions),
+    });
   }
   items.push({ key: "draft", text: draftText, state: draftState });
   return items;
 }
 
-function headline(status: OnboardingStatus): string {
-  if (status.draft) return "Draft business model ready";
-  if (status.run?.status === "failed") return "The draft could not be finished";
+function headline(status: OnboardingStatus, t: Translator["t"]): string {
+  if (status.draft) return t("ob.draftReady");
+  if (status.run?.status === "failed") return t("ob.draftNotFinished");
   if (status.sources.some((s) => s.status === "uploaded" || s.status === "processing")) {
-    return "Reading your files…";
+    return t("ob.readingFiles");
   }
-  return "Drafting your business model…";
+  return t("ob.drafting");
 }
 
-async function readError(response: Response): Promise<string> {
+async function readError(response: Response, tr: Translator): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string };
-    if (body.message) return body.message;
+    if (body.message) return tr.msg(body.message);
   } catch {}
-  return "Something went wrong. Please try again.";
+  return tr.t("ob.genericError");
 }
 
 export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }) {
+  const tr = useT();
+  const { t } = tr;
   const [status, setStatus] = useState(initial);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -131,7 +139,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
     try {
       const response = await fetch("/api/onboarding", { method: "POST", body: form });
       if (!response.ok) {
-        setError(await readError(response));
+        setError(await readError(response, tr));
         return;
       }
       setStatus((await response.json()) as OnboardingStatus);
@@ -139,7 +147,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
       setShowForm(false);
       setSlow(false);
     } catch {
-      setError("Could not reach the server. Check your connection and try again.");
+      setError(t("ob.networkError"));
     } finally {
       setSubmitting(false);
     }
@@ -149,7 +157,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
     setError(null);
     const response = await fetch("/api/onboarding/analyze", { method: "POST" });
     if (!response.ok) {
-      setError(await readError(response));
+      setError(await readError(response, tr));
       return;
     }
     setStatus((await response.json()) as OnboardingStatus);
@@ -157,7 +165,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
   }
 
   const signedIn = status !== null;
-  const items = status && status.sources.length > 0 ? checklist(status) : [];
+  const items = status && status.sources.length > 0 ? checklist(status, tr) : [];
   const doneCount = items.filter((i) => i.state === "done").length;
   const pct = items.length > 0 ? Math.round((doneCount / items.length) * 100) : 0;
 
@@ -168,7 +176,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
           {!signedIn ? (
             <>
               <label className="ob-label" htmlFor="ob-name">
-                Business name
+                {t("ob.businessName")}
                 <input
                   id="ob-name"
                   name="businessName"
@@ -180,7 +188,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
               </label>
               <div className="ob-grid">
                 <label className="ob-label" htmlFor="ob-email">
-                  Your email
+                  {t("ob.yourEmail")}
                   <input
                     id="ob-email"
                     name="email"
@@ -191,7 +199,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
                   />
                 </label>
                 <label className="ob-label" htmlFor="ob-password">
-                  Password
+                  {t("ob.password")}
                   <input
                     id="ob-password"
                     name="password"
@@ -201,21 +209,21 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
                     minLength={8}
                     autoComplete="new-password"
                   />
-                  <span className="ob-hint">At least 8 characters. You sign in with it later.</span>
+                  <span className="ob-hint">{t("ob.passwordHint")}</span>
                 </label>
               </div>
             </>
           ) : null}
 
           <label className="ob-label" htmlFor="ob-about">
-            About the business
+            {t("ob.about")}
             <textarea
               id="ob-about"
               name="about"
               rows={4}
               className="ob-textarea"
               maxLength={20000}
-              placeholder="What you sell, where you are, how to reach you, delivery, payment and returns."
+              placeholder={t("ob.aboutPlaceholder")}
             />
           </label>
 
@@ -241,8 +249,8 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
             >
               <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
             </svg>
-            <b>Drop price lists, catalogs or policies</b>
-            <span className="ob-hint">XLSX, CSV, PDF, DOCX or TXT · up to 20 MB each</span>
+            <b>{t("ob.drop")}</b>
+            <span className="ob-hint">{t("ob.dropHint")}</span>
             <input
               id="ob-files"
               type="file"
@@ -257,18 +265,18 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
           </label>
 
           {files.length > 0 ? (
-            <ul className="ob-files" aria-label="Selected files">
+            <ul className="ob-files" aria-label={t("ob.selectedFiles")}>
               {files.map((file) => (
                 <li key={file.name} className="ob-file">
                   <span className="ob-file-ext">{extension(file.name)}</span>
                   <span className="ob-file-text">
                     <span className="ob-file-name">{file.name}</span>
-                    <span className="ob-file-meta">{formatSize(file.size)}</span>
+                    <span className="ob-file-meta">{formatSize(file.size, t)}</span>
                   </span>
                   <button
                     type="button"
                     className="ob-remove"
-                    aria-label={`Remove ${file.name}`}
+                    aria-label={t("ob.remove", { name: file.name })}
                     onClick={() => setFiles((current) => current.filter((f) => f !== file))}
                   >
                     ×
@@ -285,7 +293,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
           ) : null}
 
           <div className="ob-actions">
-            <span className="ob-hint">Nothing is published until you confirm the review.</span>
+            <span className="ob-hint">{t("ob.publishHint")}</span>
             <div className="ob-actions-buttons">
               {signedIn && status.sources.length > 0 ? (
                 <button
@@ -293,11 +301,11 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
                   className="btn btn-secondary"
                   onClick={() => setShowForm(false)}
                 >
-                  Cancel
+                  {t("ob.cancel")}
                 </button>
               ) : null}
               <button type="submit" className="btn" disabled={submitting}>
-                {submitting ? "Uploading…" : signedIn ? "Add and analyze" : "Create my store"}
+                {submitting ? t("ob.uploading") : t(signedIn ? "ob.addAnalyze" : "ob.create")}
               </button>
             </div>
           </div>
@@ -307,7 +315,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
       {status && items.length > 0 ? (
         <section className="ob-panel glass" aria-live="polite">
           <div className="ob-progress-head">
-            <b>{headline(status)}</b>
+            <b>{headline(status, t)}</b>
             <span>{pct}%</span>
           </div>
           <div className="ob-bar" aria-hidden="true">
@@ -320,17 +328,12 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
               </li>
             ))}
           </ul>
-          {busy && (slow || status.run?.slow) ? (
-            <p className="ob-note">
-              This is taking longer than expected. You can leave this page; the draft keeps building
-              and you can come back to it. If nothing changes in a few minutes, you will be able to
-              try again.
-            </p>
-          ) : null}
+          {busy && (slow || status.run?.slow) ? <p className="ob-note">{t("ob.slow")}</p> : null}
           {status.run?.status === "failed" ? (
             <p className="ob-error" role="alert">
-              {status.run.error ?? "The draft could not be finished."} Nothing was lost, your files
-              are still here.
+              {t("ob.runFailed", {
+                error: status.run.error ? tr.msg(status.run.error) : t("ob.runFailedDefault"),
+              })}
             </p>
           ) : null}
           {!showForm && error ? (
@@ -344,7 +347,7 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
       {status && items.length > 0 && !showForm ? (
         <div className="ob-actions">
           <button type="button" className="btn btn-secondary" onClick={() => setShowForm(true)}>
-            Add more files
+            {t("ob.addMore")}
           </button>
           <div className="ob-actions-buttons">
             {!busy ? (
@@ -353,16 +356,16 @@ export function OnboardingFlow({ initial }: { initial: OnboardingStatus | null }
                 className={status.run?.status === "failed" ? "btn" : "btn btn-secondary"}
                 onClick={analyzeAgain}
               >
-                {status.run?.status === "failed" ? "Try again" : "Analyze again"}
+                {status.run?.status === "failed" ? t("common.tryAgain") : t("ob.analyzeAgain")}
               </button>
             ) : null}
             {status.draft ? (
               <Link href="/onboarding/review" className="btn">
-                Review proposed model
+                {t("ob.review")}
               </Link>
             ) : busy ? (
               <span className="btn" aria-disabled="true" style={{ opacity: 0.5 }}>
-                Analyzing…
+                {t("ob.analyzing")}
               </span>
             ) : null}
           </div>

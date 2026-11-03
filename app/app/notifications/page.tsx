@@ -3,12 +3,13 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { formatWhen, pageCountOf, parsePage } from "@/server/owner/inbox";
 import { notificationView } from "@/server/owner/notifications";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { Pager } from "../pager";
 import { markAllRead, openNotification } from "./actions";
 import "./notifications.css";
 
-export const metadata: Metadata = { title: "Notifications" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("nt.title");
 
 const PAGE_SIZE = 25;
 
@@ -19,7 +20,7 @@ export default async function NotificationsPage({
 }) {
   const params = await searchParams;
   const services = await getServices();
-  const owner = await currentOwner(services);
+  const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/notifications");
 
   const [total, unread] = await Promise.all([
@@ -38,27 +39,27 @@ export default async function NotificationsPage({
     <>
       <div className="ws-title nt-title">
         <div>
-          <h1>Notifications</h1>
-          <p className="ws-sub">{unread > 0 ? `${unread} unread` : "You're all caught up."}</p>
+          <h1>{t("nt.title")}</h1>
+          <p className="ws-sub">{unread > 0 ? t("nt.unread", { n: unread }) : t("nt.caughtUp")}</p>
         </div>
         {unread > 0 ? (
           <form action={markAllRead}>
             <button type="submit" className="btn btn-secondary btn-sm">
-              Mark all as read
+              {t("nt.markAll")}
             </button>
           </form>
         ) : null}
       </div>
       {items.length === 0 ? (
         <section className="nt-empty glass">
-          <h2>No notifications yet</h2>
-          <p>New orders and questions from customers show up here.</p>
+          <h2>{t("nt.emptyTitle")}</h2>
+          <p>{t("nt.emptyBody")}</p>
         </section>
       ) : (
-        <section className="nt-list glass" aria-label="Notifications">
+        <section className="nt-list glass" aria-label={t("nt.title")}>
           <ol>
             {items.map((item) => {
-              const view = notificationView(item);
+              const view = notificationView(item, lang);
               const isUnread = item.readAt === null;
               return (
                 <li key={item.id} className={isUnread ? "nt-unread" : undefined}>
@@ -69,12 +70,12 @@ export default async function NotificationsPage({
                       <span className="nt-text">
                         <b>
                           {view.title}
-                          {isUnread ? <span className="nt-sr"> (unread)</span> : null}
+                          {isUnread ? <span className="nt-sr">{t("nt.unreadSr")}</span> : null}
                         </b>
                         <span>{view.description}</span>
                       </span>
                       <time dateTime={item.createdAt.toISOString()} className="nt-when">
-                        {formatWhen(item.createdAt, now)}
+                        {formatWhen(item.createdAt, now, undefined, lang)}
                       </time>
                     </button>
                   </form>

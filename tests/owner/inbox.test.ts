@@ -209,8 +209,8 @@ describe("formatWhen", () => {
   it("shows time today, Yesterday, then a date", () => {
     expect(formatWhen(new Date("2026-11-02T14:09:00Z"), now, "UTC")).toBe("14:09");
     expect(formatWhen(new Date("2026-11-01T08:00:00Z"), now, "UTC")).toBe("Yesterday");
-    expect(formatWhen(new Date("2026-10-30T08:00:00Z"), now, "UTC")).toBe("30 Oct");
-    expect(formatWhen(new Date("2025-10-30T08:00:00Z"), now, "UTC")).toBe("30 Oct 2025");
+    expect(formatWhen(new Date("2026-10-30T08:00:00Z"), now, "UTC")).toBe("Oct 30");
+    expect(formatWhen(new Date("2025-10-30T08:00:00Z"), now, "UTC")).toBe("Oct 30, 2025");
   });
 });
 
