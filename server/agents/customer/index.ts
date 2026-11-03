@@ -1,5 +1,5 @@
 import type { Services } from "@/server/container";
-import type { LlmClient } from "@/server/llm";
+import { getTokenBudget, withFallback, type LlmClient, type TokenBudget } from "@/server/llm";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
 import type { TenantContext } from "@/server/services/context";
 import { submissionLimiter } from "@/server/http/rate-limit";
@@ -33,9 +33,12 @@ export interface CustomerAgent {
 export function createCustomerAgent(deps: {
   services: Services;
   llm: LlmClient | null;
+  /** Daily token budget per store; defaults to the process-wide one when a model is configured. */
+  budget?: TokenBudget;
 }): CustomerAgent {
   const { services } = deps;
-  const llm = deps.llm ?? createFallbackLlm();
+  const fallbackLlm = createFallbackLlm();
+  const budget = deps.budget ?? (deps.llm ? getTokenBudget() : null);
   return {
     async reply({ ctx, channel, sessionKey, message, apiKeyId, submissionKey, onEvent }) {
       const agentCtx: TenantContext = { tenantId: ctx.tenantId, actor: "customer_agent" };
@@ -44,6 +47,12 @@ export function createCustomerAgent(deps: {
         services.tenancy.getTenant(agentCtx),
         services.conversations.getOrCreate(agentCtx, { agent: "customer", channel, sessionKey }),
       ]);
+
+      const overBudget = deps.llm && budget ? await budget.exceeded(ctx.tenantId) : false;
+      const llm =
+        deps.llm && !overBudget
+          ? withFallback(deps.llm, fallbackLlm, { tenantId: ctx.tenantId, channel })
+          : fallbackLlm;
 
       const server = createCustomerMcpServer({
         ctx: agentCtx,

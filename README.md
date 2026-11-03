@@ -65,17 +65,20 @@ The LLM is any OpenAI-compatible API. The app uses three Meta models, one per ti
 
 Variables read by `server/llm` (see `.env.example`):
 
-| Variable                                                                     | Required | Notes                                                              |
-| ---------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------ |
-| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`                                   | yes      | main tier; base URL defaults to `https://api.meta.ai/v1`           |
-| `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`                                    | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1` |
-| `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`                                   | no       | heavy tier                                                         |
-| `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS`                           | no       | per tier, falls back to the main value                             |
-| `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`                                 | no       | `native` (default) or `json`                                       |
-| `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_*_TIMEOUT_MS`, `LLM_*_MAX_RETRIES` | no       | request timeout (25000 ms; heavy tier 90000) and retries (1)       |
-| `LLM_JSON_RESPONSE_FORMAT`                                                   | no       | `true` (default) or `false`                                        |
+| Variable                                                                     | Required | Notes                                                                                       |
+| ---------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`                                   | yes      | main tier; base URL defaults to `https://api.meta.ai/v1`                                    |
+| `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`                                    | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1`                          |
+| `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`                                   | no       | heavy tier                                                                                  |
+| `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS`                           | no       | per tier, falls back to the main value                                                      |
+| `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`                                 | no       | `native` (default) or `json`                                                                |
+| `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_*_TIMEOUT_MS`, `LLM_*_MAX_RETRIES` | no       | request timeout (25000 ms; heavy tier 90000) and retries (1)                                |
+| `LLM_DAILY_TOKEN_BUDGET`                                                     | no       | tokens per store and UTC day for shopper chat and `talk_to_store` (300000; `0` = unlimited) |
+| `LLM_JSON_RESPONSE_FORMAT`                                                   | no       | `true` (default) or `false`                                                                 |
 
 A tier without settings of its own uses the main one. The main API key is sent only to the main base URL, never to the host of another tier. Token usage of every call is stored in `llm_usage` with the tier.
+
+When a model call fails (timeout, API error, empty reply) before any tool ran, or a store has used its daily token budget, the same message is answered by the rule-based assistant instead. The owner agent and onboarding are not limited by the budget.
 
 Without a key and model the app still runs. The store assistant (storefront chat and `talk_to_store`) falls back to a rule-based assistant (`server/storefront/fallback-assistant.ts`) that searches the catalog, answers price, availability and store info questions, drafts an order and asks for confirmation, and passes other questions to the owner. It understands English and Russian. Onboarding drafts come from the rule-based importer. The customer and business MCP tools, the inbox and the audit log do not call the LLM, so the seeded demo stores work fully without a key.
 

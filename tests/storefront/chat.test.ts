@@ -249,12 +249,11 @@ describe("handleChatMessage", () => {
 
   it("ends the stream cleanly when the model fails", async () => {
     const { slug } = await newStore();
-    const llm = new ScriptedLlm([{ fail: "api_error" }]);
+    const llm = new ScriptedLlm([{ call: [{ name: "get_business_info" }] }, { fail: "api_error" }]);
     const res = await handleChatMessage(post({ message: "hi" }), slug, services, llm);
     const stream = await events(res);
-    expect(stream.map((e) => e.type)).toEqual(["message", "done"]);
-    expect(stream[0]).toMatchObject({ content: LLM_ERROR_REPLY });
-    expect(stream[1]).toMatchObject({ stoppedBy: "llm_error" });
+    expect(stream.at(-2)).toMatchObject({ type: "message", content: LLM_ERROR_REPLY });
+    expect(stream.at(-1)).toMatchObject({ stoppedBy: "llm_error" });
   });
 
   it("emits an error event on an unexpected exception and still closes the stream", async () => {
