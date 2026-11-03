@@ -32,6 +32,7 @@
     "exceljs": "^4.4.0",
     "mammoth": "^1.13.0",
     "next": "^16.4.3",
+    "nodemailer": "^10.3.1",
     "openai": "^7.47.0",
     "pg": "^8.23.1",
     "pg-boss": "^12.38.0",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "@types/nodemailer": "^8.0.2",
     "@types/pg": "^8.23.1",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",

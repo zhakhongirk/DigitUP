@@ -45,6 +45,10 @@ const ACTION_LABELS: Record<string, string> = {
   "tenant.provisioned": "Launched the store",
   "tenant.status_changed": "Changed the store status",
   "user.created": "Created the owner account",
+  "user.password_reset_requested": "Requested a password reset",
+  "user.password_reset": "Reset the password",
+  "staff.invited": "Invited a staff member",
+  "staff.removed": "Removed a staff member",
 };
 
 export function actionLabel(action: string, lang: Lang = "en"): string {

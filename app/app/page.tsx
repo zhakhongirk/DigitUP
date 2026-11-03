@@ -7,6 +7,7 @@ import { appBaseUrl } from "@/server/owner/base-url";
 import { actorLabel } from "@/server/owner/audit";
 import { formatWhen } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import {
   changeHref,
@@ -23,6 +24,7 @@ export default async function WorkspacePage() {
   const services = await getServices();
   const [{ lang, t, tn }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app");
+  ownerOnly(owner);
 
   const [view, base, unread] = await Promise.all([
     loadWorkspace(services, owner, lang),

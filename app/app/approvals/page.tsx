@@ -5,6 +5,7 @@ import { getServices } from "@/server/container";
 import { changeStatusLabel, loadChanges, type ChangeSetView } from "@/server/owner/changes";
 import { formatWhen } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import type { Translator } from "@/shared/owner-copy";
 import { ChangeRows } from "./change-rows";
@@ -86,6 +87,7 @@ export default async function ChangesPage({
   const services = await getServices();
   const [tr, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/approvals");
+  ownerOnly(owner);
   const { t, lang } = tr;
 
   const selectedId = typeof params.id === "string" ? params.id : undefined;

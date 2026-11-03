@@ -4,6 +4,7 @@ import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { formatWhen } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { CopyButton } from "@/app/onboarding/done/copy-button";
 import { KeyCreate } from "./key-create";
@@ -57,6 +58,7 @@ export default async function AgentsPage() {
   const services = await getServices();
   const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/agents");
+  ownerOnly(owner);
 
   const [tenant, keys, base] = await Promise.all([
     services.tenancy.getTenant(owner),

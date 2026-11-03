@@ -33,7 +33,7 @@ const updatedAt = () =>
     .$onUpdate(() => new Date());
 
 export const tenantStatus = pgEnum("tenant_status", ["draft", "live"]);
-export const userRole = pgEnum("user_role", ["owner"]);
+export const userRole = pgEnum("user_role", ["owner", "staff"]);
 export const apiKeyKind = pgEnum("api_key_kind", ["owner", "customer_agent"]);
 export const draftStatus = pgEnum("draft_status", ["draft", "confirmed", "rejected"]);
 export const offerKind = pgEnum("offer_kind", ["product", "service", "other"]);
@@ -106,6 +106,21 @@ export const users = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("users_tenant_idx").on(t.tenantId)],
+);
+
+export const passwordResetTokens = pgTable(
+  "password_reset_tokens",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").notNull().unique(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    usedAt: timestamp("used_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index("password_reset_tokens_user_idx").on(t.userId)],
 );
 
 export const apiKeys = pgTable(

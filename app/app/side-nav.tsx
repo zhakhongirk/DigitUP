@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useT } from "@/app/i18n-provider";
 import type { TextKey } from "@/shared/owner-copy";
+import { canAccessPath, type UserRole } from "@/shared/staff-access";
 
 const SECTIONS = [
   {
@@ -38,8 +39,10 @@ const SECTIONS = [
 export function SideNav({
   slug,
   counts,
+  role,
 }: {
   slug: string;
+  role: UserRole;
   counts: { inbox: number; changes: number };
 }) {
   const { t } = useT();
@@ -53,33 +56,43 @@ export function SideNav({
   }, [path]);
   return (
     <div className="ws-links" ref={root}>
-      {SECTIONS.map((section) => (
-        <div key={section.label} className="ws-section" role="group" aria-label={t(section.label)}>
-          {section.links.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              aria-current={
-                ("exact" in link ? path === link.href : path.startsWith(link.href))
-                  ? "page"
-                  : undefined
-              }
-            >
-              {t(link.label)}
-              {link.badge && counts[link.badge] > 0 ? (
-                <span
-                  className={link.badge === "changes" ? "ws-badge ws-badge-warn" : "ws-badge"}
-                  aria-label={t(link.badge === "changes" ? "nav.badgePending" : "nav.badgeNew", {
-                    n: counts[link.badge],
-                  })}
-                >
-                  {counts[link.badge]}
-                </span>
-              ) : null}
-            </Link>
-          ))}
-        </div>
-      ))}
+      {SECTIONS.map((section) => ({
+        section,
+        links: section.links.filter((link) => canAccessPath(role, link.href)),
+      }))
+        .filter(({ links }) => links.length > 0)
+        .map(({ section, links }) => (
+          <div
+            key={section.label}
+            className="ws-section"
+            role="group"
+            aria-label={t(section.label)}
+          >
+            {links.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                aria-current={
+                  ("exact" in link ? path === link.href : path.startsWith(link.href))
+                    ? "page"
+                    : undefined
+                }
+              >
+                {t(link.label)}
+                {link.badge && counts[link.badge] > 0 ? (
+                  <span
+                    className={link.badge === "changes" ? "ws-badge ws-badge-warn" : "ws-badge"}
+                    aria-label={t(link.badge === "changes" ? "nav.badgePending" : "nav.badgeNew", {
+                      n: counts[link.badge],
+                    })}
+                  >
+                    {counts[link.badge]}
+                  </span>
+                ) : null}
+              </Link>
+            ))}
+          </div>
+        ))}
       <a href={`/s/${slug}`} target="_blank" rel="noreferrer" className="ws-external">
         {t("nav.storefront")}
       </a>

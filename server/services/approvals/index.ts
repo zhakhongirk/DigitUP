@@ -17,7 +17,7 @@ import {
   updatePricesTx,
   upsertOffersTx,
 } from "../catalog/ops";
-import { assertOwner, ServiceError, type TenantContext } from "../context";
+import { assertNotStaff, assertOwner, ServiceError, type TenantContext } from "../context";
 
 export const changeSetOpSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("update_prices"), items: z.array(priceUpdateSchema).min(1).max(500) }),
@@ -163,6 +163,7 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
 
     async approveChangeSet(ctx, id, rowIds) {
       assertOwner(ctx);
+      assertNotStaff(ctx);
       return db.transaction(async (tx) => {
         const changeSet = await lockPending(tx, ctx, id);
         const ops = parseOrThrow(z.array(changeSetOpSchema), changeSet.ops, "stored change set");
@@ -200,6 +201,7 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
 
     async rejectChangeSet(ctx, id) {
       assertOwner(ctx);
+      assertNotStaff(ctx);
       return db.transaction(async (tx) => {
         await lockPending(tx, ctx, id);
         const [rejected] = await tx

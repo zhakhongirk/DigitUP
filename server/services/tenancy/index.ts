@@ -4,7 +4,14 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { apiKeys, businessProfiles, tenants, users } from "@/db/schema";
 import { recordAudit } from "../audit";
-import { assertOwner, ServiceError, type Actor, type TenantContext } from "../context";
+import { createAccessService, type AccessService } from "./access";
+import {
+  assertNotStaff,
+  assertOwner,
+  ServiceError,
+  type Actor,
+  type TenantContext,
+} from "../context";
 import {
   generateApiKey,
   hashApiKey,
@@ -33,7 +40,7 @@ export interface ApiKeySummary {
   revokedAt: Date | null;
 }
 
-export interface TenancyService {
+export interface TenancyService extends AccessService {
   createTenant(input: { name: string; slug?: string }): Promise<Tenant>;
   getTenant(ctx: TenantContext): Promise<Tenant>;
   setStatus(ctx: TenantContext, status: TenantStatus): Promise<Tenant>;
@@ -102,6 +109,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
   }
 
   const service: TenancyService = {
+    ...createAccessService(db, { bcryptRounds: rounds }),
     async createTenant(input) {
       const name = input.name.trim();
       if (name === "") throw new ServiceError("invalid", "Business name is required");
@@ -221,6 +229,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
     },
 
     async createApiKey(ctx, kind) {
+      assertNotStaff(ctx);
       if (kind === "owner") assertOwner(ctx);
       const generated = generateApiKey(kind);
       return db.transaction(async (tx) => {
@@ -245,6 +254,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
 
     async revokeApiKey(ctx, apiKeyId) {
       assertOwner(ctx);
+      assertNotStaff(ctx);
       await db.transaction(async (tx) => {
         const [row] = await tx
           .update(apiKeys)
@@ -269,6 +279,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
 
     async listApiKeys(ctx) {
       assertOwner(ctx);
+      assertNotStaff(ctx);
       return db
         .select({
           id: apiKeys.id,
@@ -354,11 +365,16 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
       const claims = verifySession(token, options.authSecret);
       if (!claims) return null;
       const [user] = await db
-        .select({ id: users.id, tenantId: users.tenantId, sessionVersion: users.sessionVersion })
+        .select({
+          id: users.id,
+          tenantId: users.tenantId,
+          sessionVersion: users.sessionVersion,
+          role: users.role,
+        })
         .from(users)
         .where(and(eq(users.id, claims.userId), eq(users.tenantId, claims.tenantId)));
       if (!user || user.sessionVersion !== claims.version) return null;
-      return { tenantId: user.tenantId, actor: "owner", userId: user.id };
+      return { tenantId: user.tenantId, actor: "owner", userId: user.id, role: user.role };
     },
 
     async contextFromApiKey(key, kind, actor) {
@@ -399,3 +415,5 @@ function validateCredentials(email: string, password: string) {
 
 export { slugify, verifySession, signSession, hashApiKey } from "./tokens";
 export type { ApiKeyKind, SessionClaims } from "./tokens";
+
+export type { IssuedToken, StaffMember } from "./access";

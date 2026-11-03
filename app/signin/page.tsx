@@ -1,14 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { SignInForm } from "./signin-form";
 import "../onboarding/onboarding.css";
 
-export const metadata: Metadata = { title: "Sign in" };
+export const generateMetadata = (): Promise<Metadata> => ownerMeta("auth.pageTitle");
 
 type Props = { searchParams: Promise<Record<string, string | string[] | undefined>> };
 
 export default async function SignInPage({ searchParams }: Props) {
-  const next = (await searchParams).next;
+  const params = await searchParams;
+  const next = params.next;
+  const { t } = await ownerT();
   return (
     <main className="ob-root ob-root-signin">
       <div className="ob-top">
@@ -16,16 +19,22 @@ export default async function SignInPage({ searchParams }: Props) {
           <span className="ob-logo-mark" aria-hidden="true">
             AS
           </span>
-          Agentic Storefront
+          {t("auth.brand")}
         </Link>
       </div>
       <div className="ob-intro">
-        <h1>Welcome back.</h1>
-        <p>Sign in to manage your store.</p>
+        <h1>{t("auth.welcome")}</h1>
+        <p>{t("auth.welcomeSub")}</p>
       </div>
+      {params.reset === "1" ? (
+        <p className="ob-note" role="status">
+          {t("auth.resetDone")}
+        </p>
+      ) : null}
       <SignInForm next={typeof next === "string" ? next : "/app"} />
       <p className="ob-hint">
-        New here? <Link href="/onboarding">Set up a store</Link>
+        {t("auth.newHere")}
+        <Link href="/onboarding">{t("auth.setUp")}</Link>
       </p>
     </main>
   );

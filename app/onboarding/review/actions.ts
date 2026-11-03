@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { applyReviewEdits, launchMissingLabel } from "@/server/onboarding/review";
 import { ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 import { businessModelSchema, checkLaunchReadiness } from "@/shared/business-model";
@@ -17,6 +18,7 @@ export async function confirmModel(_prev: ReviewState, form: FormData): Promise<
   const { t, msg, lang } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/onboarding/review");
+  ownerOnly(owner);
 
   const draft = await services.catalog.getLatestDraft(owner);
   if (!draft || draft.id !== form.get("draftId")) {

@@ -18,6 +18,7 @@ export async function POST(request: Request): Promise<Response> {
   const { t, msg } = translator(langFromRequest(request));
   const owner = await currentOwner(services);
   if (!owner) return fail(t("err.signInAgain"), 401);
+  if (owner.role === "staff") return fail(msg("Only the business owner can do this"), 403);
 
   if (Number(request.headers.get("content-length") ?? 0) > MAX_REQUEST_BYTES) {
     return fail(t("ri.tooLarge"), 413);

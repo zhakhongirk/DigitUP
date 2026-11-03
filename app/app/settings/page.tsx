@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { LangSwitch } from "@/app/lang-switch";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import {
   PasswordForm,
@@ -11,6 +12,7 @@ import {
   SignOutEverywhereForm,
   TelegramPanel,
 } from "./settings-forms";
+import { StaffSection } from "./staff-section";
 import "./settings.css";
 
 export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.settings");
@@ -19,6 +21,7 @@ export default async function SettingsPage() {
   const services = await getServices();
   const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
 
   const [model, telegram] = await Promise.all([
     services.catalog.getBusinessModel(owner),
@@ -46,6 +49,7 @@ export default async function SettingsPage() {
             linkUrl: telegram.link?.url ?? null,
           }}
         />
+        <StaffSection owner={owner} />
         <PasswordForm />
         <SignOutEverywhereForm />
       </div>

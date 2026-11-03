@@ -4,6 +4,7 @@ import { getServices } from "@/server/container";
 import { formatWhen, pageCountOf, parsePage } from "@/server/owner/inbox";
 import { notificationView } from "@/server/owner/notifications";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { Pager } from "../pager";
 import { markAllRead, openNotification } from "./actions";
@@ -22,6 +23,7 @@ export default async function NotificationsPage({
   const services = await getServices();
   const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/notifications");
+  ownerOnly(owner);
 
   const [total, unread] = await Promise.all([
     services.notifications.count(owner),

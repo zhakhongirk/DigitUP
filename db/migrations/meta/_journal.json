@@ -64,6 +64,13 @@
       "when": 1793717201045,
       "tag": "0008_telegram_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793719839760,
+      "tag": "0009_staff_and_password_reset",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,18 @@ export function hashApiKey(raw: string): string {
   return createHash("sha256").update(raw).digest("hex");
 }
 
+export const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+export const INVITE_TOKEN_TTL_MS = 7 * 24 * 3600 * 1000;
+
+export function generateResetToken(): { raw: string; hash: string } {
+  const raw = randomBytes(32).toString("base64url");
+  return { raw, hash: hashResetToken(raw) };
+}
+
+export function hashResetToken(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
 export interface SessionClaims {
   userId: string;
   tenantId: string;

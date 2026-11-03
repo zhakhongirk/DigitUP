@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { ImportForm } from "./import-form";
 import "./import.css";
@@ -13,6 +14,7 @@ export default async function ImportPage() {
   const services = await getServices();
   const [{ t }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/catalog/import");
+  ownerOnly(owner);
 
   return (
     <>

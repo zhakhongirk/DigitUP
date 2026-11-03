@@ -1,3 +1,4 @@
+import { access } from "./access";
 import { activity } from "./activity";
 import { approvals } from "./approvals";
 import { catalog } from "./catalog";
@@ -21,6 +22,7 @@ const AREAS = [
   store,
   onboarding,
   messages,
+  access,
 ] as const;
 
 export const OWNER_COPY: Record<Lang, Record<string, Entry>> = {
@@ -36,7 +38,8 @@ type EnAll = typeof common.en &
   typeof catalog.en &
   typeof store.en &
   typeof onboarding.en &
-  typeof messages.en;
+  typeof messages.en &
+  typeof access.en;
 
 export type CopyKey = keyof EnAll;
 export type TextKey = { [K in keyof EnAll]: EnAll[K] extends string ? K : never }[keyof EnAll];

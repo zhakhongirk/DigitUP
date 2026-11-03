@@ -49,6 +49,9 @@ export async function resolveBusinessContext(
   const session = sessionCookie(request);
   if (session) {
     const ctx = await tenancy.contextFromSession(session);
+    if (ctx?.role === "staff") {
+      return { ok: false, response: jsonRpcError(403, "Only the business owner can do this") };
+    }
     if (ctx) return { ok: true, ctx };
   }
   const token = bearerToken(request);

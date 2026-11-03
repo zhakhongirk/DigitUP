@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { getServices } from "@/server/container";
 import { ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { clearSessionCookie, currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 import type { InquiryStatus, OrderStatus } from "@/server/services/orders";
@@ -88,6 +89,7 @@ export async function decideChangeSet(_prev: ActionState, form: FormData): Promi
   const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/approvals");
+  ownerOnly(owner);
 
   const id = form.get("id");
   const decision = form.get("decision");

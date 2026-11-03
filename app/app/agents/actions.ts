@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getServices } from "@/server/container";
 import { ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 
@@ -21,6 +22,7 @@ export async function createKey(_prev: CreateKeyState, form: FormData): Promise<
   const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) return { key: null, kind: null, error: t("err.sessionExpired") };
+  ownerOnly(owner);
 
   const kind = form.get("kind");
   if (kind !== "customer_agent" && kind !== "owner") {
@@ -41,6 +43,7 @@ export async function revokeKey(_prev: RevokeState, form: FormData): Promise<Rev
   const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) return { error: t("err.sessionExpired") };
+  ownerOnly(owner);
 
   const id = form.get("id");
   if (typeof id !== "string" || !id) return { error: t("err.nothingSelected") };

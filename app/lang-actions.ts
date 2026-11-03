@@ -17,6 +17,6 @@ export async function setLanguage(form: FormData): Promise<void> {
   });
   const services = await getServices();
   const owner = await currentOwner(services);
-  if (owner) await services.telegram.setLanguage(owner, lang);
+  if (owner && owner.role !== "staff") await services.telegram.setLanguage(owner, lang);
   revalidatePath("/", "layout");
 }

@@ -9,6 +9,7 @@ import {
   type DayPoint,
 } from "@/server/owner/analytics";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { formatDay } from "@/server/time";
 import { LOCALES, type Lang, type Translator } from "@/shared/owner-copy";
@@ -109,6 +110,7 @@ export default async function AnalyticsPage({
   const services = await getServices();
   const [tr, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/analytics");
+  ownerOnly(owner);
   const { t, lang } = tr;
 
   const view = await loadAnalytics(services, owner, range, undefined, lang);

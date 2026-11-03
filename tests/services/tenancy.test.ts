@@ -67,7 +67,7 @@ describe("owners and sessions", () => {
     const token = await tenancy.signIn({ email: address, password: "correct-horse" });
     expect(token).toEqual(expect.any(String));
     const ctx = await tenancy.contextFromSession(token!);
-    expect(ctx).toEqual({ tenantId: tenant.id, actor: "owner", userId });
+    expect(ctx).toEqual({ tenantId: tenant.id, actor: "owner", userId, role: "owner" });
   });
 
   it("normalizes email case on sign-in", async () => {

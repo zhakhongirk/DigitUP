@@ -6,6 +6,7 @@ import { actionLabel, actorLabel, auditChange, resolveAuditTargets } from "@/ser
 import { formatWhen } from "@/server/owner/inbox";
 import { parsePage } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { Pager } from "../pager";
 
@@ -29,6 +30,7 @@ export default async function AuditPage({
   const services = await getServices();
   const [{ t, lang }, owner] = await Promise.all([ownerT(), currentOwner(services)]);
   if (!owner) redirect("/signin?next=/app/audit");
+  ownerOnly(owner);
 
   const all = params.all === "1";
   const excludeAction = all ? undefined : "conversation.created";

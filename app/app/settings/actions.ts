@@ -6,6 +6,7 @@ import { getServices } from "@/server/container";
 import { passwordChangeLimiter } from "@/server/http/rate-limit";
 import { ownerT } from "@/server/owner/lang";
 import { hasInvalidWhatsapp, parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
+import { ownerOnly } from "@/server/owner/access";
 import { clearSessionCookie, currentOwner, setSessionCookie } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 
@@ -20,6 +21,7 @@ export async function saveProfile(_prev: SettingsState, form: FormData): Promise
   const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
 
   const input = parseProfileForm(form);
   if (!input.name) return { error: t("st.errName"), saved: false };
@@ -39,6 +41,7 @@ export async function savePolicies(_prev: SettingsState, form: FormData): Promis
   const { msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
 
   try {
     await services.catalog.updatePolicies(owner, parsePoliciesForm(form));
@@ -60,6 +63,7 @@ async function telegramAction(
   const { msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
   try {
     await run(owner, services);
   } catch (error) {
@@ -93,6 +97,7 @@ export async function changePassword(_prev: SettingsState, form: FormData): Prom
   const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
 
   const current = form.get("current");
   const next = form.get("next");
@@ -118,6 +123,7 @@ export async function signOutEverywhere(): Promise<void> {
   const services = await getServices();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
   await services.tenancy.revokeSessions(owner);
   await clearSessionCookie();
   redirect("/signin");

@@ -26,9 +26,10 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
 
   const tenant = await services.tenancy.getTenant(owner);
   if (tenant.status !== "live") redirect("/onboarding");
+  const staff = owner.role === "staff";
   const [inbox, changes] = await Promise.all([
     newInboxCount(services, owner),
-    pendingChangeCount(services, owner),
+    staff ? 0 : pendingChangeCount(services, owner),
   ]);
 
   return (
@@ -44,7 +45,7 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
             </span>
             <div>
               <b>{tenant.name}</b>
-              <span>{t("nav.owner")}</span>
+              <span>{t(staff ? "nav.staff" : "nav.owner")}</span>
             </div>
             <form action={signOut} className="ws-signout">
               <button type="submit" aria-label={t("nav.signOut")} title={t("nav.signOut")}>
@@ -65,7 +66,7 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
               </button>
             </form>
           </div>
-          <SideNav slug={tenant.slug} counts={{ inbox, changes }} />
+          <SideNav slug={tenant.slug} counts={{ inbox, changes }} role={owner.role ?? "owner"} />
           <LangSwitch lang={lang} className="ws-lang" />
         </nav>
         <main id="main" tabIndex={-1} className="ws-main">
