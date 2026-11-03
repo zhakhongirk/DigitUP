@@ -55,19 +55,45 @@ High-risk catalog changes made through the business endpoint (price updates, del
 
 ## LLM configuration
 
-The LLM is an OpenAI-compatible API (Fireworks AI by default). Variables read by `server/llm`:
+The LLM is any OpenAI-compatible API. The app uses three Meta models, one per tier (`server/llm/router.ts` maps each call site to a tier):
 
-| Variable                   | Required | Notes                                               |
-| -------------------------- | -------- | --------------------------------------------------- |
-| `FIREWORKS_API_KEY`        | yes      |                                                     |
-| `FIREWORKS_MODEL`          | yes      |                                                     |
-| `FIREWORKS_BASE_URL`       | no       | defaults to `https://api.fireworks.ai/inference/v1` |
-| `LLM_TOOL_CALL_MODE`       | no       | `native` (default) or `json`                        |
-| `LLM_JSON_RESPONSE_FORMAT` | no       | `true` (default) or `false`                         |
+| Tier  | Model                   | Provider              | Used for                                                                                      |
+| ----- | ----------------------- | --------------------- | --------------------------------------------------------------------------------------------- |
+| main  | `muse-spark-1.3`        | Meta Model API        | storefront chat, `talk_to_store` on the public MCP endpoint, the owner agent                  |
+| fast  | `meta/muse-glimmer-30b` | NVIDIA (open weights) | rewriting shopper phrases the deterministic search in `server/services/intent` could not read |
+| heavy | `muse-wonder-1.0`       | Meta Model API        | onboarding: reading files and proposing the catalog                                           |
+
+Variables read by `server/llm` (see `.env.example`):
+
+| Variable                                           | Required | Notes                                                              |
+| -------------------------------------------------- | -------- | ------------------------------------------------------------------ |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`         | yes      | main tier; `FIREWORKS_*` are accepted as legacy aliases            |
+| `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`          | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1` |
+| `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`         | no       | heavy tier                                                         |
+| `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS` | no       | per tier, falls back to the main value                             |
+| `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`       | no       | `native` (default) or `json`                                       |
+| `LLM_JSON_RESPONSE_FORMAT`                         | no       | `true` (default) or `false`                                        |
+
+A tier without settings of its own uses the main one. The main API key is sent only to the main base URL, never to the host of another tier. Token usage of every call is stored in `llm_usage` with the tier.
 
 Without a key and model the app still runs. The store assistant (storefront chat and `talk_to_store`) falls back to a rule-based assistant (`server/storefront/fallback-assistant.ts`) that searches the catalog, answers price, availability and store info questions, drafts an order and asks for confirmation, and passes other questions to the owner. It understands English and Russian. Onboarding drafts come from the rule-based importer. The customer and business MCP tools, the inbox and the audit log do not call the LLM, so the seeded demo stores work fully without a key.
 
 Run `pnpm llm:probe` to test your provider and see which tool call mode it recommends.
+
+### Evaluation
+
+`scripts/eval` measures how well a shopper agent does on the seeded stores in three setups: A uses only the raw customer tools, B uses `find_offers` and `get_business_info`, C uses `find_offers`, the raw tools and `report_answer`. The shopper model is the main tier at temperature 0. The run reads the stores through the keyed customer MCP endpoint and writes only analytics rows (intent events, search misses, LLM usage); no orders or inquiries are created.
+
+```bash
+pnpm db:seed                      # once; prints a customer-agent key per store
+pnpm eval:gold                    # resolves queries.jsonl to offer ids and copies prices and availability from the database
+export EVAL_CUSTOMER_KEY=...      # or EVAL_CUSTOMER_KEY_STRIDE_SHOES / EVAL_CUSTOMER_KEY_FADE_FACTORY
+pnpm dev                          # in another terminal
+pnpm eval -- --config B --runs 1 --limit 3     # quick check
+pnpm eval                         # all configs, 3 runs per query
+```
+
+Flags: `--config A,B,C`, `--runs N`, `--limit N`, `--lang ru|kk|en`, `--query <id>`, `--base-url`, `--out <dir>`. Results go to `scripts/eval/out/<date>/` (`runs.jsonl`, `report.md`, `report.html`, `scores.json`); `pnpm eval:report [dir]` rebuilds the report from a finished run. Set `EVAL_PRICE_INPUT` and `EVAL_PRICE_OUTPUT` (USD per million tokens) to fill the cost column. `gold.jsonl` and `catalog.json` are generated, so run `pnpm eval:gold` again after `pnpm db:reset`. Expected offers are written by title in `queries.jsonl`.
 
 ## Architecture
 
@@ -136,6 +162,9 @@ The worker image runs a bundled `dist/worker.js` with plain node (built in the D
 | `pnpm db:migrate`   | Apply migrations                          |
 | `pnpm db:seed`      | Create the demo stores and demo activity  |
 | `pnpm demo:data`    | Generate sample files in `demo-data/`     |
+| `pnpm eval`         | Run the shopper-agent evaluation          |
+| `pnpm eval:gold`    | Build the gold set from the seeded stores |
+| `pnpm eval:report`  | Rebuild the report of a finished run      |
 
 ## Testing
 

@@ -20,6 +20,11 @@ coverage/
 .env.*
 !.env.example
 
+# Eval output and the gold snapshot generated from the seeded database
+scripts/eval/out/
+scripts/eval/gold.jsonl
+scripts/eval/catalog.json
+
 # Uploaded files (local FileStorage)
 /storage/
 

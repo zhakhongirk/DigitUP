@@ -26,7 +26,10 @@
     "db:reset": "tsx scripts/db-reset.ts",
     "db:vocabulary": "tsx scripts/backfill-vocabulary.ts",
     "demo:data": "tsx scripts/demo-data.ts",
-    "smoke": "tsx scripts/smoke.ts"
+    "smoke": "tsx scripts/smoke.ts",
+    "eval": "tsx scripts/eval/run.ts",
+    "eval:gold": "tsx scripts/eval/build-gold.ts",
+    "eval:report": "tsx scripts/eval/report.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
