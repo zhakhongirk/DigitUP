@@ -23,7 +23,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed.ts",
-    "demo:data": "tsx scripts/demo-data.ts"
+    "demo:data": "tsx scripts/demo-data.ts",
+    "smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -53,6 +54,7 @@
     "eslint-config-next": "^16.4.3",
     "eslint-config-prettier": "^10.1.8",
     "jszip": "^3.10.2",
+    "playwright-core": "^1.64.1",
     "prettier": "^3.9.10",
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
