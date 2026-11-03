@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 
 type Props = { main: ReactNode; chat: ReactNode };
 
@@ -15,6 +16,16 @@ export function StoreShell({ main, chat }: Props) {
       if (!link) return;
       e.preventDefault();
       setTab("chat");
+      const send = link.getAttribute("data-chat-send");
+      const draft = link.getAttribute("data-chat-draft");
+      const text = send ?? draft;
+      if (text) {
+        window.dispatchEvent(
+          new CustomEvent<ChatPrefill>(CHAT_PREFILL_EVENT, {
+            detail: { text, send: send !== null },
+          }),
+        );
+      }
       requestAnimationFrame(() => document.getElementById("chat-input")?.focus());
     };
     document.addEventListener("click", onClick);

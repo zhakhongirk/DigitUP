@@ -92,9 +92,39 @@ export type OrderCard = {
   error: string | null;
 };
 
+export type OfferChip = {
+  id: string;
+  title: string;
+  priceLabel: string;
+  availability: string;
+  availabilityLabel: string;
+};
+
+export const MAX_OFFER_CARDS = 3;
+
+export function toOfferChips(data: unknown): OfferChip[] {
+  const r = asRecord(data);
+  if (!r) return [];
+  const list = Array.isArray(r.offers) ? r.offers : [r];
+  const chips: OfferChip[] = [];
+  for (const entry of list) {
+    const o = asRecord(entry);
+    if (!o || typeof o.offer_id !== "string" || typeof o.title !== "string") continue;
+    chips.push({
+      id: o.offer_id,
+      title: o.title,
+      priceLabel: typeof o.price_label === "string" ? o.price_label : "Price on request",
+      availability: typeof o.availability === "string" ? o.availability : "unknown",
+      availabilityLabel: typeof o.availability_label === "string" ? o.availability_label : "",
+    });
+  }
+  return chips;
+}
+
 export type ChatItem =
   | { kind: "message"; id: number; role: "user" | "assistant"; content: string }
   | { kind: "order"; id: number; order: OrderCard }
+  | { kind: "offers"; id: number; offers: OfferChip[] }
   | { kind: "note"; id: number; text: string };
 
 export type ChatError = { message: string; retryable: boolean };
@@ -106,6 +136,7 @@ export type ChatState = {
   activity: string | null;
   sending: boolean;
   error: ChatError | null;
+  pendingOffers: OfferChip[];
   nextId: number;
 };
 
@@ -116,6 +147,7 @@ export const initialChatState: ChatState = {
   activity: null,
   sending: false,
   error: null,
+  pendingOffers: [],
   nextId: 1,
 };
 
@@ -202,6 +234,12 @@ function appendItem(state: ChatState, build: (id: number) => ChatItem): ChatStat
   return { ...state, items: [...state.items, build(state.nextId)], nextId: state.nextId + 1 };
 }
 
+function flushOffers(state: ChatState): ChatState {
+  if (state.pendingOffers.length === 0) return state;
+  const offers = state.pendingOffers.slice(0, MAX_OFFER_CARDS);
+  return appendItem({ ...state, pendingOffers: [] }, (id) => ({ kind: "offers", id, offers }));
+}
+
 function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
   switch (event.type) {
     case "tool_call":
@@ -220,22 +258,30 @@ function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
           text: "Inquiry sent to the store",
         }));
       }
+      if (event.name === "search_offers" || event.name === "get_offer_details") {
+        const seen = new Set(cleared.pendingOffers.map((o) => o.id));
+        const fresh = toOfferChips(event.data).filter((o) => !seen.has(o.id));
+        return { ...cleared, pendingOffers: [...cleared.pendingOffers, ...fresh] };
+      }
       return cleared;
     }
     case "message":
-      return appendItem({ ...state, activity: null }, (id) => ({
-        kind: "message",
-        id,
-        role: "assistant",
-        content: event.content,
-      }));
+      return flushOffers(
+        appendItem({ ...state, activity: null }, (id) => ({
+          kind: "message",
+          id,
+          role: "assistant",
+          content: event.content,
+        })),
+      );
     case "done":
-      return { ...state, sending: false, activity: null };
+      return flushOffers({ ...state, sending: false, activity: null });
     case "error":
       return {
         ...state,
         sending: false,
         activity: null,
+        pendingOffers: [],
         error: { message: event.message, retryable: true },
       };
   }

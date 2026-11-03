@@ -1,4 +1,5 @@
 import { getServices } from "@/server/container";
+import { chatLimiter, clientIp, limitRequest } from "@/server/http/rate-limit";
 import { getOptionalLlmClient } from "@/server/llm";
 import { handleChatHistory, handleChatMessage } from "@/server/storefront/chat";
 
@@ -14,5 +15,7 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { slug } = await params;
+  const limited = limitRequest(chatLimiter, `${clientIp(request)}:${slug}`);
+  if (limited) return limited;
   return handleChatMessage(request, slug, await getServices(), getOptionalLlmClient());
 }

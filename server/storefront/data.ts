@@ -50,6 +50,8 @@ export interface OfferCardData {
   /** Compact attribute values for card and row meta lines, most telling first. */
   summary: string[];
   priceLabel: string;
+  price: number | null;
+  currency: string | null;
   hasPrice: boolean;
   availability: "in_stock" | "out_of_stock" | "unknown";
   availabilityLabel: string;
@@ -177,6 +179,8 @@ function toCard(offer: OfferView, defs: TypeDefs, limit?: number): OfferCardData
     kind: type?.kind ?? "product",
     tileLabel: tileAttr ? String(attrs[tileAttr.key]) : offer.title,
     summary: summarize(attrs, typeAttrs, tileAttr?.key),
+    price: hasPrice ? Number(pub.price) : null,
+    currency: hasPrice ? pub.currency : null,
     priceLabel: hasPrice ? formatPrice(Number(pub.price), pub.currency) : "Price on request",
     hasPrice,
     availability: pub.availability,

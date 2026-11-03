@@ -93,11 +93,18 @@ describe("handleChatMessage", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 503 when no model is configured", async () => {
+  it("answers from the catalog when no model is configured", async () => {
     const { slug } = await newStore();
-    const res = await handleChatMessage(post({ message: "hi" }), slug, services, null);
-    expect(res.status).toBe(503);
-    expect(await res.json()).toMatchObject({ error: "assistant_unavailable" });
+    const res = await handleChatMessage(
+      post({ message: "how much is the runner?" }),
+      slug,
+      services,
+      null,
+    );
+    expect(res.status).toBe(200);
+    const stream = await events(res);
+    expect(stream.at(-1)?.type).toBe("done");
+    expect(stream.find((e) => e.type === "message")?.content).toContain("Runner: 100 KZT");
   });
 
   it.each([
@@ -207,14 +214,14 @@ describe("handleChatMessage", () => {
   it("returns an empty history without a cookie or for an unknown session", async () => {
     const { slug } = await newStore();
     const none = await handleChatHistory(get(), slug, services, null);
-    expect(await none.json()).toEqual({ available: false, messages: [] });
+    expect(await none.json()).toEqual({ available: true, fallback: true, messages: [] });
     const unknown = await handleChatHistory(
       get(`sf_session=${newChatSession()}`),
       slug,
       services,
       new ScriptedLlm([]),
     );
-    expect(await unknown.json()).toEqual({ available: true, messages: [] });
+    expect(await unknown.json()).toEqual({ available: true, fallback: false, messages: [] });
   });
 
   it("does not share history between stores or sessions", async () => {

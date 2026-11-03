@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import {
@@ -10,10 +11,12 @@ import {
   initialChatState,
   parseNdjsonChunk,
   toOrderView,
+  type OfferChip,
   type OrderCard,
   type StreamEvent,
 } from "./chat-state";
 import { formatPrice } from "@/shared/format";
+import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 import "./chat.css";
 
 type Props = { slug: string; storeName: string };
@@ -50,9 +53,11 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 function OrderSummary({
+  slug,
   order,
   onConfirm,
 }: {
+  slug: string;
   order: OrderCard;
   onConfirm: (orderId: string) => void;
 }) {
@@ -81,7 +86,10 @@ function OrderSummary({
         </li>
       </ul>
       {sent ? (
-        <p className="chat-order-sent">Order sent to the store. The store will confirm it.</p>
+        <p className="chat-order-sent">
+          Order sent to the store. The store will confirm it.{" "}
+          <Link href={`/s/${encodeURIComponent(slug)}/orders/${order.orderId}`}>Track order</Link>
+        </p>
       ) : (
         <div className="chat-order-actions">
           {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
@@ -104,9 +112,28 @@ function OrderSummary({
   );
 }
 
+function OfferCards({ slug, offers }: { slug: string; offers: OfferChip[] }) {
+  return (
+    <ul className="chat-offers" aria-label="Offers from the store">
+      {offers.map((o) => (
+        <li key={o.id}>
+          <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer">
+            <b className="chat-offer-title">{o.title}</b>
+            <span className="chat-offer-price">{o.priceLabel}</span>
+            {o.availabilityLabel ? (
+              <span className={`status status-${o.availability}`}>{o.availabilityLabel}</span>
+            ) : null}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function ChatPanel({ slug, storeName }: Props) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [draft, setDraft] = useState("");
+  const [fallback, setFallback] = useState(false);
   const sendingRef = useRef(false);
   const lastMessageRef = useRef("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -120,8 +147,10 @@ export function ChatPanel({ slug, storeName }: Props) {
         if (!res.ok) throw new Error("history");
         const body = (await res.json()) as {
           available?: boolean;
+          fallback?: boolean;
           messages?: { role: "user" | "assistant"; content: string }[];
         };
+        setFallback(body.fallback === true);
         dispatch({
           type: "history_loaded",
           available: body.available !== false,
@@ -183,15 +212,35 @@ export function ChatPanel({ slug, storeName }: Props) {
     [base],
   );
 
+  const sendText = useCallback(
+    (raw: string) => {
+      const text = raw.trim();
+      if (!text || text.length > MAX_MESSAGE_CHARS || sendingRef.current || !state.available) {
+        return false;
+      }
+      sendingRef.current = true;
+      lastMessageRef.current = text;
+      setDraft("");
+      dispatch({ type: "user_sent", text });
+      void stream(text);
+      return true;
+    },
+    [state.available, stream],
+  );
+
   const send = useCallback(() => {
-    const text = draft.trim();
-    if (!text || text.length > MAX_MESSAGE_CHARS || sendingRef.current || !state.available) return;
-    sendingRef.current = true;
-    lastMessageRef.current = text;
-    setDraft("");
-    dispatch({ type: "user_sent", text });
-    void stream(text);
-  }, [draft, state.available, stream]);
+    sendText(draft);
+  }, [draft, sendText]);
+
+  useEffect(() => {
+    const onPrefill = (e: Event) => {
+      const { text, send: autoSend } = (e as CustomEvent<ChatPrefill>).detail;
+      if (autoSend && state.loaded && sendText(text)) return;
+      setDraft(text);
+    };
+    window.addEventListener(CHAT_PREFILL_EVENT, onPrefill);
+    return () => window.removeEventListener(CHAT_PREFILL_EVENT, onPrefill);
+  }, [sendText, state.loaded]);
 
   const retry = useCallback(() => {
     if (sendingRef.current || !lastMessageRef.current) return;
@@ -245,7 +294,9 @@ export function ChatPanel({ slug, storeName }: Props) {
         </div>
         <div className="chat-head-text">
           <h2 className="chat-title">{storeName} Assistant</h2>
-          <span className="chat-sub">Answers only from the store&apos;s catalog</span>
+          <span className="chat-sub">
+            {fallback ? "Quick answers from the catalog" : "Answers only from the store's catalog"}
+          </span>
         </div>
       </div>
 
@@ -278,8 +329,13 @@ export function ChatPanel({ slug, storeName }: Props) {
               </div>
             );
           }
+          if (item.kind === "offers") {
+            return <OfferCards key={item.id} slug={slug} offers={item.offers} />;
+          }
           if (item.kind === "order") {
-            return <OrderSummary key={item.id} order={item.order} onConfirm={confirm} />;
+            return (
+              <OrderSummary key={item.id} slug={slug} order={item.order} onConfirm={confirm} />
+            );
           }
           return (
             <p key={item.id} className="chat-note">

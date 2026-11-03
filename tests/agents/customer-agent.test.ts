@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { shoeStoreModel } from "@/db/seed-data/shoe-store";
-import { AgentUnavailableError, createCustomerAgent } from "@/server/agents/customer";
+import { createCustomerAgent } from "@/server/agents/customer";
 import type { LlmChatRequest, LlmChatResult } from "@/server/llm";
 import type { BusinessModelInput } from "@/shared/business-model";
 import { createTestTenant } from "../helpers/db";
@@ -30,12 +30,17 @@ function lastToolJson(request: LlmChatRequest, name: string) {
 }
 
 describe("customer agent", () => {
-  it("throws AgentUnavailableError without a model", async () => {
+  it("replies from the catalog without a model", async () => {
     const ctx = await shoeStore();
     const agent = createCustomerAgent({ services, llm: null });
-    await expect(
-      agent.reply({ ctx, channel: "storefront", sessionKey: "session-none-1", message: "hi" }),
-    ).rejects.toBeInstanceOf(AgentUnavailableError);
+    const result = await agent.reply({
+      ctx,
+      channel: "storefront",
+      sessionKey: "session-none-1",
+      message: "hi",
+    });
+    expect(result.stoppedBy).toBe("answer");
+    expect(result.reply).not.toBe("");
   });
 
   it("reuses one conversation per tenant, channel and session key", async () => {

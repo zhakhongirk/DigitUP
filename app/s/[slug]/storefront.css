@@ -583,3 +583,49 @@
     font-weight: 600;
   }
 }
+
+.sf-skel {
+  border-radius: 12px;
+  background: rgba(120, 120, 128, 0.16);
+  animation: sf-skel-pulse 1.4s ease-in-out infinite;
+}
+
+.sf-skel-title {
+  width: min(320px, 70%);
+  height: 44px;
+}
+
+.sf-skel-line {
+  height: 14px;
+  margin: 0 6px;
+}
+
+.sf-skel-short {
+  width: 40%;
+}
+
+.sf-skel-search {
+  height: 48px;
+  border-radius: 999px;
+}
+
+.sf-skel-grid {
+  margin-top: 16px;
+}
+
+@keyframes sf-skel-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-skel {
+    animation: none;
+  }
+}
+
+.sf-card-order {
+  margin: 4px 6px 6px;
+  justify-content: center;
+}

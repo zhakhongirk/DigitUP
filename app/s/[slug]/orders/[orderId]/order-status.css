@@ -1,0 +1,149 @@
+.os {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.os-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px 22px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.os-panel h2 {
+  font-size: 20px;
+}
+
+.os-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.os-title {
+  font-size: 28px;
+  letter-spacing: 0.02em;
+}
+
+.os-meta {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.os-note {
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.os-steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 8px 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.os-step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+
+.os-step::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  background: var(--hairline-soft);
+}
+
+.os-step:first-child::before {
+  display: none;
+}
+
+.os-step-done::before,
+.os-step-current::before {
+  background: var(--ok-text);
+}
+
+.os-dot {
+  position: relative;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--hairline-soft);
+  border-radius: 50%;
+  background: #fff;
+}
+
+.os-step-done .os-dot {
+  border-color: var(--ok-text);
+  background: var(--ok-text);
+}
+
+.os-step-current .os-dot {
+  border-color: var(--ok-text);
+  box-shadow: 0 0 0 4px rgba(52, 199, 89, 0.2);
+}
+
+.os-step-done,
+.os-step-current {
+  color: var(--text-2);
+  font-weight: 600;
+}
+
+.os-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  font-size: 14.5px;
+  list-style: none;
+}
+
+.os-lines li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.os-qty {
+  color: var(--text-3);
+}
+
+.os-total {
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 17px;
+}
+
+@media (max-width: 480px) {
+  .os-panel {
+    padding: 16px;
+  }
+
+  .os-title {
+    font-size: 24px;
+  }
+
+  .os-step {
+    font-size: 12px;
+  }
+}
+
+.os-lines li > span:last-child,
+.os-lines li > b:last-child {
+  flex-shrink: 0;
+  white-space: nowrap;
+}

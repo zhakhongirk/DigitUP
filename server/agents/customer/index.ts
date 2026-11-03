@@ -2,17 +2,11 @@ import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
 import type { TenantContext } from "@/server/services/context";
+import { createFallbackLlm } from "@/server/storefront/fallback-assistant";
 import { runAgent, type AgentEvent, type RunAgentResult } from "../runtime";
 import { customerAgentPrompt } from "./prompt";
 
 export type CustomerChannel = "storefront" | "external_agent";
-
-export class AgentUnavailableError extends Error {
-  constructor() {
-    super("The store assistant is not configured");
-    this.name = "AgentUnavailableError";
-  }
-}
 
 export interface CustomerAgentInput {
   ctx: TenantContext;
@@ -35,10 +29,10 @@ export function createCustomerAgent(deps: {
   services: Services;
   llm: LlmClient | null;
 }): CustomerAgent {
-  const { services, llm } = deps;
+  const { services } = deps;
+  const llm = deps.llm ?? createFallbackLlm();
   return {
     async reply({ ctx, channel, sessionKey, message, onEvent }) {
-      if (!llm) throw new AgentUnavailableError();
       const agentCtx: TenantContext = { tenantId: ctx.tenantId, actor: "customer_agent" };
 
       const [tenant, conversation] = await Promise.all([

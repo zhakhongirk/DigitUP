@@ -2,8 +2,11 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { getServices } from "@/server/container";
+import { appBaseUrl } from "@/server/owner/base-url";
 import { loadStore } from "@/server/storefront/data";
+import { buildPageMeta, storePath } from "@/server/storefront/seo";
 import { ChatPanel } from "./chat-panel";
+import { stripPolicyLabel } from "./policy";
 import { StoreShell } from "./store-shell";
 import "./storefront.css";
 
@@ -15,10 +18,14 @@ export async function generateMetadata({ params }: Pick<Props, "params">): Promi
   const { slug } = await params;
   const store = await loadStore(await getServices(), slug);
   if (!store) return { title: "Store not found" };
-  return {
-    title: { default: store.name, template: `%s | ${store.name}` },
-    description: store.description || undefined,
-  };
+  const meta = buildPageMeta({
+    title: store.name,
+    description: store.description,
+    path: storePath(slug),
+    baseUrl: await appBaseUrl(),
+    siteName: store.name,
+  });
+  return { ...meta, title: { default: store.name, template: `%s | ${store.name}` } };
 }
 
 const CONTACT_LABELS: [string, string][] = [
@@ -67,7 +74,7 @@ export default async function StoreLayout({ children, params }: Props) {
             <div key={p.key} className="sf-policy">
               <dt>{p.label}</dt>
               <dd className={p.text === "To be confirmed" ? "sf-policy-tbc" : undefined}>
-                {p.text}
+                {stripPolicyLabel(p.key, p.label, p.text)}
               </dd>
             </div>
           ))}

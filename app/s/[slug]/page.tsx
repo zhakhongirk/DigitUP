@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServices } from "@/server/container";
+import { appBaseUrl } from "@/server/owner/base-url";
 import {
   listStoreCategories,
   loadStore,
@@ -10,6 +11,9 @@ import {
   searchCatalog,
   type OfferCardData,
 } from "@/server/storefront/data";
+import { buildPageMeta, jsonLdString, storeJsonLd, storePath } from "@/server/storefront/seo";
+import { orderMessage, questionDraft } from "./chat-bridge";
+import { OfferImage } from "./offer-image";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +27,15 @@ function first(value: string | string[] | undefined): string | undefined {
 export async function generateMetadata({ params }: Pick<Props, "params">): Promise<Metadata> {
   const { slug } = await params;
   const store = await loadStore(await getServices(), slug);
-  return { title: store ? `${store.name} catalog` : "Store not found" };
+  if (!store) return { title: "Store not found" };
+  const meta = buildPageMeta({
+    title: store.name,
+    description: store.description,
+    path: storePath(slug),
+    baseUrl: await appBaseUrl(),
+    siteName: store.name,
+  });
+  return { ...meta, title: { absolute: store.name } };
 }
 
 function href(slug: string, query: string, category: string | null, page?: number): string {
@@ -35,10 +47,26 @@ function href(slug: string, query: string, category: string | null, page?: numbe
   return text ? `/s/${slug}?${text}` : `/s/${slug}`;
 }
 
-function Media({ offer, className }: { offer: OfferCardData; className: string }) {
+function Media({
+  offer,
+  className,
+  priority,
+}: {
+  offer: OfferCardData;
+  className: string;
+  priority?: boolean;
+}) {
   if (offer.imageUrl) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={offer.imageUrl} alt={offer.title} className={className} loading="lazy" />;
+    return (
+      <OfferImage
+        src={offer.imageUrl}
+        alt={offer.title}
+        className={className}
+        size={400}
+        sizes="(max-width: 640px) 50vw, 240px"
+        priority={priority}
+      />
+    );
   }
   return (
     <div className={`${className} sf-tile`}>
@@ -59,11 +87,19 @@ function PriceAndStatus({ offer }: { offer: OfferCardData }) {
   );
 }
 
-function OfferCard({ slug, offer }: { slug: string; offer: OfferCardData }) {
+function OfferCard({
+  slug,
+  offer,
+  priority,
+}: {
+  slug: string;
+  offer: OfferCardData;
+  priority?: boolean;
+}) {
   const meta = [offer.category, offer.summary[0] ?? null].filter(Boolean).join(" · ");
   return (
     <li className="sf-card">
-      <Media offer={offer} className="sf-card-media" />
+      <Media offer={offer} className="sf-card-media" priority={priority} />
       <div className="sf-card-text">
         <h3 className="sf-card-title">
           <Link href={`/s/${slug}/offers/${offer.id}`} className="sf-card-link">
@@ -75,6 +111,15 @@ function OfferCard({ slug, offer }: { slug: string; offer: OfferCardData }) {
       <div className="sf-card-foot">
         <PriceAndStatus offer={offer} />
       </div>
+      {offer.canOrder ? (
+        <a
+          href="#store-chat"
+          className="btn btn-sm sf-card-order"
+          data-chat-send={orderMessage(offer.title, "order")}
+        >
+          Order
+        </a>
+      ) : null}
     </li>
   );
 }
@@ -94,11 +139,19 @@ function ServiceRow({ slug, offer }: { slug: string; offer: OfferCardData }) {
         {offer.priceLabel}
       </span>
       {offer.hasPrice ? (
-        <a href="#store-chat" className="btn btn-sm">
+        <a
+          href="#store-chat"
+          className="btn btn-sm"
+          data-chat-send={orderMessage(offer.title, "book")}
+        >
           Book
         </a>
       ) : (
-        <a href="#store-chat" className="btn btn-sm btn-secondary">
+        <a
+          href="#store-chat"
+          className="btn btn-sm btn-secondary"
+          data-chat-draft={questionDraft(offer.title)}
+        >
           Ask the shop
         </a>
       )}
@@ -136,10 +189,19 @@ export default async function CatalogPage({ params, searchParams }: Props) {
     }),
   ]);
   const { query, category, page, pageCount } = result;
+  const jsonLd = jsonLdString(
+    storeJsonLd({
+      name: store.name,
+      description: store.description,
+      url: `${await appBaseUrl()}${storePath(slug)}`,
+      contacts: store.contacts,
+    }),
+  );
   const isServices = result.items.some((o) => o.kind === "service");
 
   return (
     <>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: jsonLd }} />
       <section className="sf-hero">
         <h1>{store.name}</h1>
         {store.description ? <p>{store.description}</p> : null}
@@ -211,8 +273,8 @@ export default async function CatalogPage({ params, searchParams }: Props) {
         </ul>
       ) : (
         <ul className="sf-grid">
-          {result.items.map((offer) => (
-            <OfferCard key={offer.id} slug={slug} offer={offer} />
+          {result.items.map((offer, i) => (
+            <OfferCard key={offer.id} slug={slug} offer={offer} priority={i < 4} />
           ))}
         </ul>
       )}

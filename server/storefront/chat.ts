@@ -3,7 +3,7 @@
  * an http-only cookie; it maps to one conversation per store.
  */
 import { randomBytes } from "node:crypto";
-import { AgentUnavailableError, createCustomerAgent } from "@/server/agents/customer";
+import { createCustomerAgent } from "@/server/agents/customer";
 import type { AgentEvent } from "@/server/agents/runtime";
 import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
@@ -38,7 +38,7 @@ export type ChatStreamEvent =
   | { type: "error"; message: string };
 
 /**
- * Runs the Customer Agent for one shopper message and streams events as
+ * Runs the Customer Agent (or the rule-based fallback when no model is configured) for one shopper message and streams events as
  * newline-delimited JSON.
  */
 export async function handleChatMessage(
@@ -49,12 +49,6 @@ export async function handleChatMessage(
 ): Promise<Response> {
   const ctx = await services.tenancy.contextFromSlug(slug, "customer_agent");
   if (!ctx) return Response.json({ error: "store_not_found" }, { status: 404 });
-  if (!llm) {
-    return Response.json(
-      { error: "assistant_unavailable", message: "The store assistant is not available yet." },
-      { status: 503 },
-    );
-  }
 
   let body: unknown;
   try {
@@ -86,7 +80,7 @@ export async function handleChatMessage(
         });
         send({ type: "done", conversationId: result.conversationId, stoppedBy: result.stoppedBy });
       } catch (error) {
-        if (!(error instanceof AgentUnavailableError)) console.error("[chat] failed", error);
+        console.error("[chat] failed", error);
         send({ type: "error", message: "Something went wrong. Please try again." });
       } finally {
         controller.close();
@@ -113,9 +107,10 @@ export async function handleChatHistory(
   const ctx = await services.tenancy.contextFromSlug(slug, "customer_agent");
   if (!ctx) return Response.json({ error: "store_not_found" }, { status: 404 });
 
-  const available = llm !== null;
+  const available = true;
+  const fallback = llm === null;
   const session = readChatSession(request);
-  if (!session) return Response.json({ available, messages: [] });
+  if (!session) return Response.json({ available, fallback, messages: [] });
 
   const [conversation] = await services.conversations.list(ctx, {
     agent: "customer",
@@ -123,11 +118,12 @@ export async function handleChatHistory(
     limit: 1,
     sessionKey: session,
   });
-  if (!conversation) return Response.json({ available, messages: [] });
+  if (!conversation) return Response.json({ available, fallback, messages: [] });
 
   const rows = await services.conversations.listMessages(ctx, conversation.id, { limit: 100 });
   return Response.json({
     available,
+    fallback,
     messages: rows
       .filter((row) => (row.role === "user" || row.role === "assistant") && row.content)
       .map((row) => ({ role: row.role, content: row.content, createdAt: row.createdAt })),

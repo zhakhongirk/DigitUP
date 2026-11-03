@@ -149,3 +149,23 @@ describe("chatReducer", () => {
     });
   });
 });
+
+describe("offer cards", () => {
+  it("shows search results after the assistant message", () => {
+    const s = run([
+      { type: "user_sent", text: "shoes" },
+      {
+        type: "stream_event",
+        event: {
+          type: "tool_result",
+          name: "search_offers",
+          data: { offers: [{ offer_id: "a", title: "Runner", price_label: "10 KZT" }] },
+        },
+      },
+      { type: "stream_event", event: { type: "message", content: "Found one" } },
+      { type: "stream_event", event: { type: "done" } },
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual(["message", "message", "offers"]);
+    expect(s.pendingOffers).toEqual([]);
+  });
+});
