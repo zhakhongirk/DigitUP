@@ -14,7 +14,9 @@ import {
 import { t, type Lang } from "@/server/storefront/i18n";
 import { buildPageMeta, jsonLdString, storeJsonLd, storePath } from "@/server/storefront/seo";
 import { orderMessage, questionDraft } from "./chat-bridge";
+import { availabilityText, policyLabel } from "./labels";
 import { storefrontLang } from "./lang";
+import { stripPolicyLabel } from "./policy";
 import { OfferImage } from "./offer-image";
 
 export const dynamic = "force-dynamic";
@@ -86,7 +88,9 @@ function PriceAndStatus({ offer, lang }: { offer: OfferCardData; lang: Lang }) {
       <span className={offer.hasPrice ? "sf-price" : "sf-price sf-price-missing"}>
         {offer.hasPrice ? offer.priceLabel : t(lang, "priceOnRequest")}
       </span>
-      <span className={`status status-${offer.availability}`}>{offer.availabilityLabel}</span>
+      <span className={`status status-${offer.availability}`}>
+        {availabilityText(lang, offer.availability)}
+      </span>
     </>
   );
 }
@@ -221,35 +225,6 @@ export default async function CatalogPage({ params, searchParams }: Props) {
         {store.description ? <p>{store.description}</p> : null}
       </section>
 
-      <form method="get" action={`/s/${slug}`} role="search" className="sf-search">
-        <label htmlFor="sf-q" className="field">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="M20 20l-4-4" />
-          </svg>
-          <span className="sr-only">{t(lang, "searchCatalog")}</span>
-          <input
-            id="sf-q"
-            name="q"
-            type="search"
-            defaultValue={query}
-            placeholder={t(lang, "searchCatalog")}
-          />
-        </label>
-        {category ? <input type="hidden" name="category" value={category} /> : null}
-        <button type="submit" className="btn btn-sm">
-          {t(lang, "search")}
-        </button>
-      </form>
-
       <div className="sf-toolbar">
         {categories.length > 0 ? (
           <nav aria-label={t(lang, "categories")} className="segmented">
@@ -271,6 +246,29 @@ export default async function CatalogPage({ params, searchParams }: Props) {
           {countText(lang, result.total, page, result.items.length, category, query)}
         </p>
       </div>
+
+      {store.policies.length > 0 ? (
+        <ul className="sf-chips" aria-label={t(lang, "storePolicies")}>
+          {store.policies.map((p) => {
+            const tbc = p.text === "To be confirmed";
+            const label = policyLabel(lang, p.key, p.label);
+            const text = tbc
+              ? t(lang, "policyTbc", { label })
+              : `${label}: ${stripPolicyLabel(p.key, p.label, p.text)}`;
+            return (
+              <li key={p.key}>
+                <a
+                  href="#sf-policies"
+                  className={tbc ? "sf-chip sf-chip-tbc" : "sf-chip"}
+                  title={text}
+                >
+                  {text}
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
 
       {result.items.length === 0 ? (
         <div className="sf-empty glass">

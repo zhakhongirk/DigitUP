@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { loadStore } from "@/server/storefront/data";
 import { t } from "@/server/storefront/i18n";
 import { buildPageMeta, storePath } from "@/server/storefront/seo";
 import { ChatPanel } from "./chat-panel";
+import { HeaderSearch } from "./header-search";
+import { policyLabel } from "./labels";
 import { storefrontLang } from "./lang";
 import { stripPolicyLabel } from "./policy";
 import { StoreShell } from "./store-shell";
@@ -74,16 +76,28 @@ export default async function StoreLayout({ children, params }: Props) {
   });
   const address = store.contacts.address;
 
-  const policies =
-    store.policies.length > 0 ? (
-      <section className="sf-policies glass" aria-labelledby="sf-policies-title">
-        <h2 id="sf-policies-title">{t(lang, "storePolicies")}</h2>
+  const tbc = (text: string) => text === "To be confirmed";
+  const hours = store.policies.find((p) => p.key === "working_hours");
+  const hoursText =
+    hours && !tbc(hours.text) ? stripPolicyLabel(hours.key, hours.label, hours.text) : null;
+  const sub = [address, hoursText].filter(Boolean).join(" · ");
+
+  const info =
+    store.policies.length > 0 || contacts.length > 0 ? (
+      <section id="sf-policies" className="sf-policies glass" aria-labelledby="sf-policies-title">
+        <h2 id="sf-policies-title">{t(lang, "storeInfo")}</h2>
         <dl>
+          {contacts.map((c) => (
+            <div key={c.key} className="sf-policy">
+              <dt>{c.label}</dt>
+              <dd>{contactValue(c.key, c.value)}</dd>
+            </div>
+          ))}
           {store.policies.map((p) => (
             <div key={p.key} className="sf-policy">
-              <dt>{p.label}</dt>
-              <dd className={p.text === "To be confirmed" ? "sf-policy-tbc" : undefined}>
-                {stripPolicyLabel(p.key, p.label, p.text)}
+              <dt>{policyLabel(lang, p.key, p.label)}</dt>
+              <dd className={tbc(p.text) ? "sf-policy-tbc" : undefined}>
+                {tbc(p.text) ? t(lang, "toBeConfirmed") : stripPolicyLabel(p.key, p.label, p.text)}
               </dd>
             </div>
           ))}
@@ -105,18 +119,15 @@ export default async function StoreLayout({ children, params }: Props) {
           <Link href={`/s/${slug}`} className="sf-brand-name">
             {store.name}
           </Link>
-          {address ? <span className="sf-brand-sub">{address}</span> : null}
+          {sub ? <span className="sf-brand-sub">{sub}</span> : null}
         </div>
-        {contacts.length > 0 ? (
-          <ul className="sf-contacts" aria-label={t(lang, "contacts")}>
-            {contacts.map((c) => (
-              <li key={c.key}>
-                <span className="sr-only">{c.label}: </span>
-                {contactValue(c.key, c.value)}
-              </li>
-            ))}
-          </ul>
-        ) : null}
+        <Suspense fallback={null}>
+          <HeaderSearch
+            action={`/s/${slug}`}
+            label={t(lang, "searchCatalog")}
+            placeholder={t(lang, "searchPlaceholder")}
+          />
+        </Suspense>
       </header>
 
       <StoreShell
@@ -124,7 +135,7 @@ export default async function StoreLayout({ children, params }: Props) {
         main={
           <>
             {children}
-            {policies}
+            {info}
           </>
         }
         chat={<ChatPanel slug={slug} storeName={store.name} lang={lang} />}

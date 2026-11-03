@@ -20,6 +20,7 @@ import {
 } from "./chat-state";
 import { t, type Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
+import { availabilityText } from "./labels";
 import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 import "./chat.css";
 
@@ -142,11 +143,22 @@ function OfferCards({ slug, offers, lang }: { slug: string; offers: OfferChip[];
       {offers.map((o) => (
         <li key={o.id}>
           <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer">
-            <b className="chat-offer-title">{o.title}</b>
-            <span className="chat-offer-price">{o.priceLabel}</span>
-            {o.availabilityLabel ? (
-              <span className={`status status-${o.availability}`}>{o.availabilityLabel}</span>
-            ) : null}
+            <span className="chat-offer-thumb" aria-hidden="true">
+              {initials(o.title)}
+            </span>
+            <span className="chat-offer-text">
+              <b className="chat-offer-title">{o.title}</b>
+              <span className="chat-offer-meta">
+                <span className="chat-offer-price">
+                  {o.priceLabel === "Price on request" ? t(lang, "priceOnRequest") : o.priceLabel}
+                </span>
+                {o.availabilityLabel ? (
+                  <span className={`status status-${o.availability}`}>
+                    {availabilityText(lang, o.availability)}
+                  </span>
+                ) : null}
+              </span>
+            </span>
           </Link>
         </li>
       ))}
@@ -383,22 +395,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
           </div>
         ) : null}
         {state.loaded && state.items.length === 0 && !disabled ? (
-          <div className="chat-empty">
-            <p className="chat-note">{t(uiLang, "askInHint")}</p>
-            <div className="chat-chips">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s.en}
-                  type="button"
-                  className="chat-chip"
-                  disabled={state.sending}
-                  onClick={() => sendText(s[uiLang])}
-                >
-                  {s[uiLang]}
-                </button>
-              ))}
-            </div>
-          </div>
+          <p className="chat-note">{t(uiLang, "askInHint")}</p>
         ) : null}
         {state.items.map((item) => {
           if (item.kind === "message") {
@@ -454,6 +451,22 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
         ) : null}
         <div ref={endRef} />
       </div>
+
+      {state.loaded && state.items.length === 0 && !disabled ? (
+        <div className="chat-chips">
+          {SUGGESTIONS.map((s) => (
+            <button
+              key={s.en}
+              type="button"
+              className="chat-chip"
+              disabled={state.sending}
+              onClick={() => sendText(s[uiLang])}
+            >
+              {s[uiLang]}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <form className="chat-form" onSubmit={onSubmit}>
         <label htmlFor="chat-input" className="sr-only">

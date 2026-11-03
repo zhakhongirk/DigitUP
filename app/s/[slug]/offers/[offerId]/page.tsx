@@ -14,6 +14,7 @@ import {
 } from "@/server/storefront/seo";
 import { orderMessage, questionDraft } from "../../chat-bridge";
 import { storefrontLang } from "../../lang";
+import { availabilityText } from "../../labels";
 import { OfferImage } from "../../offer-image";
 
 export const dynamic = "force-dynamic";
@@ -115,7 +116,9 @@ export default async function OfferPage({ params }: Props) {
             >
               {offer.hasPrice ? offer.priceLabel : t(lang, "priceOnRequest")}
             </span>
-            <span className={`status status-${offer.availability}`}>{offer.availabilityLabel}</span>
+            <span className={`status status-${offer.availability}`}>
+              {availabilityText(lang, offer.availability)}
+            </span>
           </div>
 
           {offer.description ? <p className="sf-description">{offer.description}</p> : null}

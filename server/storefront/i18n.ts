@@ -100,6 +100,13 @@ const en = {
   noteCompleted: "Your order is complete.",
   noteCancelled: "This order was cancelled. Contact the store if you have questions.",
   orderStatusTitle: "Order status",
+  availInStock: "In stock",
+  availOutOfStock: "Out of stock",
+  availUnknown: "Availability to be confirmed",
+  storeInfo: "Store info",
+  searchPlaceholder: "Search brand, model, material",
+  policyTbc: "{label}: to be confirmed",
+  toBeConfirmed: "To be confirmed",
 } as const;
 
 export type StringKey = keyof typeof en;
@@ -180,6 +187,13 @@ const ru: Record<StringKey, string> = {
   noteCompleted: "Ваш заказ выполнен.",
   noteCancelled: "Заказ отменён. Если есть вопросы, свяжитесь с магазином.",
   orderStatusTitle: "Статус заказа",
+  availInStock: "В наличии",
+  availOutOfStock: "Нет в наличии",
+  availUnknown: "Наличие уточняется",
+  storeInfo: "О магазине",
+  searchPlaceholder: "Бренд, модель, материал",
+  policyTbc: "{label}: уточняется",
+  toBeConfirmed: "Уточняется",
 };
 
 export const DICTIONARIES: Record<Lang, Record<StringKey, string>> = { en, ru };
