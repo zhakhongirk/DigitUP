@@ -8,6 +8,7 @@ export const EVENTS = {
   tenantLive: "tenant.live",
   orderSubmitted: "order.submitted",
   inquirySubmitted: "inquiry.submitted",
+  changeSetCreated: "change_set.created",
   conversationMessage: "conversation.message",
 } as const;
 
@@ -22,6 +23,7 @@ export interface EventPayloads {
   "tenant.live": { tenantId: string };
   "order.submitted": { tenantId: string; orderId: string };
   "inquiry.submitted": { tenantId: string; inquiryId: string };
+  "change_set.created": { tenantId: string; changeSetId: string };
   "conversation.message": { tenantId: string; conversationId: string; messageId: string };
 }
 

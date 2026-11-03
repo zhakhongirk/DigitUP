@@ -36,6 +36,7 @@ import {
   archiveOffersTx,
   parseOrThrow,
   updatePoliciesTx,
+  updateProfileTx,
   updatePricesTx,
   upsertOffersTx,
   upsertOfferTypesTx,
@@ -67,6 +68,14 @@ export interface OfferSearch {
   offset?: number;
 }
 
+export interface CatalogStats {
+  byStatus: Record<OfferStatus, number>;
+  /** Active offers with no price or a price on request. */
+  priceOnRequest: number;
+  /** Active offers whose availability is unknown. */
+  availabilityUnknown: number;
+}
+
 export type BusinessModelDraft = typeof businessModelDrafts.$inferSelect;
 
 export interface CatalogService {
@@ -82,6 +91,7 @@ export interface CatalogService {
     ctx: TenantContext,
     search?: OfferSearch,
   ): Promise<{ items: OfferView[]; total: number }>;
+  catalogStats(ctx: TenantContext): Promise<CatalogStats>;
   getOffer(ctx: TenantContext, offerId: string): Promise<OfferView | null>;
   getOffers(ctx: TenantContext, offerIds: string[]): Promise<OfferView[]>;
 
@@ -90,6 +100,7 @@ export interface CatalogService {
   archiveOffers(ctx: TenantContext, offerIds: unknown[]): Promise<string[]>;
   upsertOfferTypes(ctx: TenantContext, input: unknown[]): Promise<OfferTypeRecord[]>;
   updatePolicies(ctx: TenantContext, input: unknown): Promise<Policies>;
+  updateProfile(ctx: TenantContext, input: unknown): Promise<BusinessModel["profile"]>;
 
   saveDraft(ctx: TenantContext, model: unknown): Promise<BusinessModelDraft>;
   getLatestDraft(ctx: TenantContext): Promise<BusinessModelDraft | null>;
@@ -249,6 +260,29 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
       return { items: rows.map(toView), total: total?.value ?? 0 };
     },
 
+    async catalogStats(ctx) {
+      const active = eq(offers.status, "active");
+      const [row] = await db
+        .select({
+          active: sql<number>`count(*) filter (where ${active})::int`,
+          draft: sql<number>`count(*) filter (where ${offers.status} = 'draft')::int`,
+          archived: sql<number>`count(*) filter (where ${offers.status} = 'archived')::int`,
+          priceOnRequest: sql<number>`count(*) filter (where ${active} and (${offers.price} is null or ${offers.priceStatus} = 'on_request'))::int`,
+          availabilityUnknown: sql<number>`count(*) filter (where ${active} and ${offers.availability} = 'unknown')::int`,
+        })
+        .from(offers)
+        .where(eq(offers.tenantId, ctx.tenantId));
+      return {
+        byStatus: {
+          active: row?.active ?? 0,
+          draft: row?.draft ?? 0,
+          archived: row?.archived ?? 0,
+        },
+        priceOnRequest: row?.priceOnRequest ?? 0,
+        availabilityUnknown: row?.availabilityUnknown ?? 0,
+      };
+    },
+
     async getOffer(ctx, offerId) {
       const [row] = await db
         .select(offerColumns)
@@ -273,6 +307,7 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
     archiveOffers: (ctx, ids) => inTransaction((tx) => archiveOffersTx(tx, ctx, ids)),
     upsertOfferTypes: (ctx, input) => inTransaction((tx) => upsertOfferTypesTx(tx, ctx, input)),
     updatePolicies: (ctx, input) => inTransaction((tx) => updatePoliciesTx(tx, ctx, input)),
+    updateProfile: (ctx, input) => inTransaction((tx) => updateProfileTx(tx, ctx, input)),
 
     async saveDraft(ctx, model) {
       const payload = parseOrThrow(businessModelSchema, model, "business model");

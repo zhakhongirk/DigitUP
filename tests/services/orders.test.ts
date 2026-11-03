@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { inquiries, orders } from "@/db/schema";
 import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError } from "@/server/services/context";
@@ -314,6 +316,77 @@ describe("createOrder rejections", () => {
   });
 });
 
+describe("createOrder contact merge", () => {
+  async function draft() {
+    const s = await setup();
+    const input = {
+      idempotencyKey: key(),
+      source: "storefront" as const,
+      items: [{ offerId: s.ids.Alpha!, quantity: 2 }],
+    };
+    const { order } = await s.orders.createOrder(s.ctx, input);
+    return { ...s, order, input };
+  }
+
+  it("merges contact fields into a draft with the same items and audits it", async () => {
+    const { orders, ctx, order, input, audit } = await draft();
+    const first = await orders.createOrder(ctx, { ...input, contact: { name: "Ann" } });
+    expect(first.created).toBe(false);
+    const again = await orders.createOrder(ctx, {
+      ...input,
+      contact: { phone: "+7 701 000 11 22" },
+    });
+    expect(again.order.id).toBe(order.id);
+    expect(again.order.contact).toEqual({ name: "Ann", phone: "+7 701 000 11 22" });
+    expect((await orders.getOrder(ctx, order.id))?.contact).toEqual(again.order.contact);
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.map((e) => e.action)).toContain("order.contact_updated");
+  });
+
+  it("keeps existing contact fields and skips the audit when nothing is empty", async () => {
+    const { orders, ctx, order, input, audit } = await draft();
+    await orders.createOrder(ctx, { ...input, contact: { phone: "+7 701 000 11 22" } });
+    const again = await orders.createOrder(ctx, {
+      ...input,
+      contact: { phone: "+7 702 999 99 99", name: "Ann" },
+    });
+    expect(again.order.contact).toEqual({ phone: "+7 701 000 11 22", name: "Ann" });
+    await orders.createOrder(ctx, { ...input, contact: { phone: "+7 703 111 11 11" } });
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.filter((e) => e.action === "order.contact_updated")).toHaveLength(2);
+    expect((await orders.getOrder(ctx, order.id))?.contact).toEqual(again.order.contact);
+  });
+
+  it("leaves a submitted order untouched", async () => {
+    const { orders, ctx, order, input } = await draft();
+    await orders.submitOrder(ctx, order.id);
+    const again = await orders.createOrder(ctx, {
+      ...input,
+      contact: { phone: "+7 701 000 11 22" },
+    });
+    expect(again.order.status).toBe("submitted");
+    expect(again.order.contact).toEqual({});
+  });
+
+  it("ignores the contact when the items differ", async () => {
+    const { orders, ctx, order, input, ids } = await draft();
+    const other = await orders.createOrder(ctx, {
+      ...input,
+      items: [{ offerId: ids.Alpha!, quantity: 3 }],
+      contact: { phone: "+7 701 000 11 22" },
+    });
+    expect(other.order.id).toBe(order.id);
+    expect(other.order.contact).toEqual({});
+  });
+
+  it("does not touch the order when no contact is given", async () => {
+    const { orders, ctx, order, input, audit } = await draft();
+    await orders.createOrder(ctx, input);
+    const logged = await audit.list(ctx, { entity: "order", entityId: order.id });
+    expect(logged.map((e) => e.action)).not.toContain("order.contact_updated");
+  });
+});
+
 describe("submitOrder", () => {
   async function draft() {
     const s = await setup();
@@ -474,6 +547,47 @@ describe("inquiries", () => {
     const { orders, ctx } = await setup();
     await expectCode(orders.createInquiry(ctx, { subject: "  " }), "invalid");
   });
+
+  it("lets the owner answer, completes the inquiry and audits it", async () => {
+    const { orders, ctx, audit } = await setup();
+    const inquiry = await orders.createInquiry(ctx, { subject: "Hello" });
+    const updated = await orders.answerInquiry(ctx, inquiry.id, "  Yes, in stock.  ");
+    expect(updated).toMatchObject({ answer: "Yes, in stock.", status: "completed" });
+    expect(updated.answeredAt).toBeInstanceOf(Date);
+    expect((await orders.getInquiry(ctx, inquiry.id))?.answer).toBe("Yes, in stock.");
+    expect((await orders.listInquiries(ctx))[0]?.answer).toBe("Yes, in stock.");
+    const entry = (await audit.list(ctx, { entity: "inquiry", entityId: inquiry.id })).find(
+      (e) => e.action === "inquiry.answered",
+    );
+    expect(entry?.before).toEqual({ status: "new", answer: null });
+    expect(entry?.after).toEqual({ status: "completed", answer: "Yes, in stock." });
+  });
+
+  it("rejects empty or oversized answers, non-owners and other tenants", async () => {
+    const a = await setup();
+    const b = await setup();
+    const inquiry = await a.orders.createInquiry(a.ctx, { subject: "Hello" });
+    await expectCode(a.orders.answerInquiry(a.ctx, inquiry.id, "   "), "invalid");
+    await expectCode(a.orders.answerInquiry(a.ctx, inquiry.id, "x".repeat(5001)), "invalid");
+    await expectCode(
+      a.orders.answerInquiry({ ...a.ctx, actor: "customer_agent" }, inquiry.id, "Hi"),
+      "forbidden",
+    );
+    await expectCode(b.orders.answerInquiry(b.ctx, inquiry.id, "Hi"), "not_found");
+    expect((await a.orders.getInquiry(a.ctx, inquiry.id))?.answer).toBeNull();
+  });
+});
+
+describe("malformed ids", () => {
+  it("reports not_found instead of a database error", async () => {
+    const { orders, ctx } = await setup();
+    await expectCode(orders.answerInquiry(ctx, "nope", "Hi"), "not_found");
+    await expectCode(orders.updateInquiryStatus(ctx, "nope", "in_progress"), "not_found");
+    await expectCode(orders.updateOrderStatus(ctx, "nope", "cancelled"), "not_found");
+    await expectCode(orders.submitOrder(ctx, "nope"), "not_found");
+    expect(await orders.getOrder(ctx, "nope")).toBeNull();
+    expect(await orders.getInquiry(ctx, "nope")).toBeNull();
+  });
 });
 
 describe("tenant isolation", () => {
@@ -534,5 +648,157 @@ describe("tenant isolation", () => {
     expect(rb.created).toBe(true);
     expect(rb.order.id).not.toBe(ra.order.id);
     expect(rb.order.tenantId).toBe(b.ctx.tenantId);
+  });
+});
+
+describe("stats", () => {
+  async function place(
+    s: Awaited<ReturnType<typeof setup>>,
+    lines: { offerId: string; quantity: number }[],
+    status: "draft" | "submitted" | "cancelled" = "submitted",
+  ) {
+    const { order } = await s.orders.createOrder(s.ctx, {
+      idempotencyKey: key(),
+      source: "storefront",
+      items: lines,
+    });
+    if (status !== "draft") await s.orders.submitOrder(s.ctx, order.id);
+    if (status === "cancelled") await s.orders.updateOrderStatus(s.ctx, order.id, "cancelled");
+    return order;
+  }
+
+  const since = () => new Date(Date.now() - 24 * 3600 * 1000);
+
+  it("aggregates statuses, value per currency and top offers", async () => {
+    const s = await setup();
+    await place(s, [{ offerId: s.ids.Alpha!, quantity: 2 }]);
+    await place(s, [
+      { offerId: s.ids.Beta!, quantity: 5 },
+      { offerId: s.ids.Alpha!, quantity: 1 },
+    ]);
+    await place(s, [{ offerId: s.ids.Dollar!, quantity: 1 }]);
+    await place(s, [{ offerId: s.ids.Beta!, quantity: 9 }], "cancelled");
+    await place(s, [{ offerId: s.ids.Beta!, quantity: 9 }], "draft");
+    await s.orders.createInquiry(s.ctx, { subject: "Q1" });
+    const answered = await s.orders.createInquiry(s.ctx, { subject: "Q2" });
+    await s.orders.updateInquiryStatus(s.ctx, answered.id, "completed");
+
+    const stats = await s.orders.stats(s.ctx, { since: since() });
+    expect(stats.byStatus).toMatchObject({ submitted: 3, cancelled: 1, draft: 1, completed: 0 });
+    expect(stats.value).toEqual([
+      { currency: "KZT", total: 201 + 1000 + 100.5 },
+      { currency: "USD", total: 5 },
+    ]);
+    expect(stats.topOffers).toEqual([
+      { offerId: s.ids.Beta, title: "Beta", quantity: 5, orders: 1 },
+      { offerId: s.ids.Alpha, title: "Alpha", quantity: 3, orders: 2 },
+      { offerId: s.ids.Dollar, title: "Dollar", quantity: 1, orders: 1 },
+    ]);
+    expect(stats.inquiries).toEqual({ total: 2, new: 1 });
+    const limited = await s.orders.stats(s.ctx, { since: since(), offersLimit: 1 });
+    expect(limited.topOffers).toHaveLength(1);
+  });
+
+  it("respects the since filter", async () => {
+    const s = await setup();
+    const old = await place(s, [{ offerId: s.ids.Alpha!, quantity: 1 }]);
+    const oldInquiry = await s.orders.createInquiry(s.ctx, { subject: "Old" });
+    const past = new Date(Date.now() - 10 * 24 * 3600 * 1000);
+    await s.db
+      .update(orders)
+      .set({ submittedAt: past, createdAt: past })
+      .where(eq(orders.id, old.id));
+    await s.db.update(inquiries).set({ createdAt: past }).where(eq(inquiries.id, oldInquiry.id));
+    await place(s, [{ offerId: s.ids.Beta!, quantity: 1 }]);
+
+    const stats = await s.orders.stats(s.ctx, { since: since() });
+    expect(stats.byStatus.submitted).toBe(1);
+    expect(stats.topOffers.map((o) => o.title)).toEqual(["Beta"]);
+    expect(stats.inquiries.total).toBe(0);
+    const all = await s.orders.stats(s.ctx, { since: new Date(past.getTime() - 1000) });
+    expect(all.byStatus.submitted).toBe(2);
+  });
+
+  it("is isolated per tenant and owner only", async () => {
+    const a = await setup();
+    const b = await setup();
+    await place(a, [{ offerId: a.ids.Alpha!, quantity: 1 }]);
+    await a.orders.createInquiry(a.ctx, { subject: "Q" });
+
+    const stats = await b.orders.stats(b.ctx, { since: since() });
+    expect(stats.byStatus.submitted).toBe(0);
+    expect(stats.value).toEqual([]);
+    expect(stats.topOffers).toEqual([]);
+    expect(stats.inquiries.total).toBe(0);
+    await expectCode(
+      a.orders.stats({ ...a.ctx, actor: "customer_agent" }, { since: since() }),
+      "forbidden",
+    );
+  });
+});
+
+describe("paging and counts", () => {
+  it("pages orders and inquiries without overlap and scopes by tenant", async () => {
+    const s = await setup();
+    const other = await setup();
+    for (let i = 0; i < 5; i++) {
+      const { order } = await s.orders.createOrder(s.ctx, {
+        idempotencyKey: key(),
+        source: "storefront",
+        items: [{ offerId: s.ids.Alpha!, quantity: 1 }],
+      });
+      if (i < 3) await s.orders.submitOrder(s.ctx, order.id);
+      await s.orders.createInquiry(s.ctx, { subject: `Question ${i}` });
+    }
+    await other.orders.createInquiry(other.ctx, { subject: "Other" });
+
+    const all = (await s.orders.listOrders(s.ctx)).map((o) => o.id);
+    const paged = [
+      ...(await s.orders.listOrders(s.ctx, { limit: 2, offset: 0 })),
+      ...(await s.orders.listOrders(s.ctx, { limit: 2, offset: 2 })),
+      ...(await s.orders.listOrders(s.ctx, { limit: 2, offset: 4 })),
+    ].map((o) => o.id);
+    expect(paged).toEqual(all);
+    expect(await s.orders.listOrders(s.ctx, { limit: 2, offset: 5 })).toHaveLength(0);
+
+    const inquiryIds = (await s.orders.listInquiries(s.ctx)).map((i) => i.id);
+    const inquiryPaged = [
+      ...(await s.orders.listInquiries(s.ctx, { limit: 3 })),
+      ...(await s.orders.listInquiries(s.ctx, { limit: 3, offset: 3 })),
+    ].map((i) => i.id);
+    expect(inquiryPaged).toEqual(inquiryIds);
+
+    const shown = await s.orders.listOrders(s.ctx, { order: "shown" });
+    const shownKey = (o: (typeof shown)[number]) => (o.submittedAt ?? o.createdAt).getTime();
+    for (let i = 1; i < shown.length; i++) {
+      expect(shownKey(shown[i - 1]!)).toBeGreaterThanOrEqual(shownKey(shown[i]!));
+    }
+    const keyset: string[] = [];
+    let cursor: { at: number; id: string } | undefined;
+    for (;;) {
+      const rows = await s.orders.listOrders(s.ctx, { order: "shown", limit: 2, before: cursor });
+      keyset.push(...rows.map((o) => o.id));
+      const last = rows[rows.length - 1];
+      if (rows.length < 2 || !last) break;
+      cursor = { at: shownKey(last), id: last.id };
+    }
+    expect(keyset).toEqual(shown.map((o) => o.id));
+    const qAll = await s.orders.listInquiries(s.ctx, { order: "shown" });
+    const q0 = qAll[0]!;
+    const qRest = await s.orders.listInquiries(s.ctx, {
+      order: "shown",
+      before: { at: q0.createdAt.getTime(), id: q0.id },
+    });
+    expect(qRest.map((i) => i.id)).toEqual(qAll.slice(1).map((i) => i.id));
+
+    expect(await s.orders.listOrders(s.ctx, { status: ["submitted", "draft"] })).toHaveLength(5);
+    expect(await s.orders.listOrders(s.ctx, { status: ["submitted"] })).toHaveLength(3);
+
+    const orderCounts = await s.orders.countOrdersByStatus(s.ctx);
+    expect(orderCounts.draft).toBe(2);
+    expect(orderCounts.submitted).toBe(3);
+    expect(orderCounts.completed).toBe(0);
+    expect((await s.orders.countInquiriesByStatus(s.ctx)).new).toBe(5);
+    expect((await other.orders.countInquiriesByStatus(other.ctx)).new).toBe(1);
   });
 });

@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { conversations } from "@/db/schema";
 import { EVENTS } from "@/server/events/types";
 import { createAuditService } from "@/server/services/audit";
+import { createCatalogService } from "@/server/services/catalog";
 import { createConversationsService } from "@/server/services/conversations";
+import { createOrdersService } from "@/server/services/orders";
 import { createTestTenant, recordingEvents, testDb } from "../helpers/db";
 
 function setup() {
@@ -158,5 +162,133 @@ describe("conversations service", () => {
       sessionKey: "k",
     });
     expect(s1.id).not.toBe(s2.id);
+  });
+});
+
+describe("conversation stats", () => {
+  const since = () => new Date(Date.now() - 24 * 3600 * 1000);
+
+  it("counts channels and links to orders and inquiries", async () => {
+    const { db, events, service } = setup();
+    const ctx = await createTestTenant();
+    const orders = createOrdersService({ db, events });
+    const open = (channel: "storefront" | "external_agent") =>
+      service.getOrCreate(ctx, { agent: "customer", channel });
+    const ordered = await open("storefront");
+    const drafted = await open("storefront");
+    const asked = await open("external_agent");
+    const both = await open("storefront");
+    await open("storefront");
+    await service.getOrCreate(ctx, { agent: "business", channel: "workspace" });
+
+    const catalog = createCatalogService({ db, events });
+    await catalog.applyBusinessModel(ctx, {
+      profile: { name: "Shop" },
+      offer_types: [{ key: "item", name: "Item", kind: "product", attributes: [] }],
+      offers: [
+        {
+          title: "Alpha",
+          offer_type: "item",
+          price: 10,
+          currency: "KZT",
+          price_status: "confirmed",
+          availability: "in_stock",
+        },
+      ],
+    });
+    const { items } = await catalog.searchOffers(ctx, { statuses: ["active"], limit: 10 });
+    const offerId = items[0]!.id;
+    let n = 0;
+    const order = async (conversationId: string, submit: boolean) => {
+      const { order: created } = await orders.createOrder(ctx, {
+        idempotencyKey: `stats-key-${n++}-${conversationId}`,
+        source: "storefront",
+        items: [{ offerId, quantity: 1 }],
+        conversationId,
+      });
+      if (submit) await orders.submitOrder(ctx, created.id);
+    };
+    await order(ordered.id, true);
+    await order(drafted.id, false);
+    await order(both.id, true);
+    await orders.createInquiry(ctx, { subject: "Q", conversationId: asked.id });
+    await orders.createInquiry(ctx, { subject: "Q", conversationId: both.id });
+
+    expect(await service.stats(ctx, { since: since() })).toEqual({
+      total: 5,
+      byChannel: { storefront: 4, external_agent: 1, workspace: 0 },
+      withOrder: 2,
+      withInquiry: 2,
+      withOutcome: 3,
+    });
+  });
+
+  it("respects since, tenant and owner-only access", async () => {
+    const { db, service } = setup();
+    const ctx = await createTestTenant();
+    const other = await createTestTenant();
+    const old = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    await service.getOrCreate(other, { agent: "customer", channel: "storefront" });
+    await db
+      .update(conversations)
+      .set({ createdAt: new Date(Date.now() - 10 * 24 * 3600 * 1000) })
+      .where(eq(conversations.id, old.id));
+
+    expect((await service.stats(ctx, { since: since() })).total).toBe(1);
+    expect((await service.stats(other, { since: since() })).total).toBe(1);
+    await expect(
+      service.stats({ ...ctx, actor: "customer_agent" }, { since: since() }),
+    ).rejects.toMatchObject({ code: "forbidden" });
+  });
+});
+
+describe("firstUserMessages", () => {
+  const since = () => new Date(Date.now() - 24 * 3600 * 1000);
+
+  it("returns the earliest non-empty user message per conversation", async () => {
+    const { service } = setup();
+    const ctx = await createTestTenant();
+    const a = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const b = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const workspace = await service.getOrCreate(ctx, { agent: "business", channel: "workspace" });
+    await service.appendMessages(ctx, a.id, [
+      { role: "system", content: "rules" },
+      { role: "user", content: "  " },
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "answer" },
+      { role: "user", content: "second question" },
+    ]);
+    await service.appendMessages(ctx, b.id, [{ role: "user", content: "other chat" }]);
+    await service.appendMessages(ctx, workspace.id, [{ role: "user", content: "owner note" }]);
+
+    const rows = await service.firstUserMessages(ctx, { since: since() });
+    expect(rows.map((r) => [r.conversationId, r.content])).toEqual([
+      [b.id, "other chat"],
+      [a.id, "first question"],
+    ]);
+    expect(await service.firstUserMessages(ctx, { since: since(), limit: 1 })).toHaveLength(1);
+  });
+
+  it("respects since, tenant and owner-only access", async () => {
+    const { db, service } = setup();
+    const ctx = await createTestTenant();
+    const other = await createTestTenant();
+    const old = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const fresh = await service.getOrCreate(ctx, { agent: "customer", channel: "storefront" });
+    const foreign = await service.getOrCreate(other, { agent: "customer", channel: "storefront" });
+    await service.appendMessages(ctx, old.id, [{ role: "user", content: "old" }]);
+    await service.appendMessages(ctx, fresh.id, [{ role: "user", content: "fresh" }]);
+    await service.appendMessages(other, foreign.id, [{ role: "user", content: "foreign" }]);
+    await db
+      .update(conversations)
+      .set({ createdAt: new Date(Date.now() - 10 * 24 * 3600 * 1000) })
+      .where(eq(conversations.id, old.id));
+
+    const rows = await service.firstUserMessages(ctx, { since: since() });
+    expect(rows.map((r) => r.content)).toEqual(["fresh"]);
+    await expect(
+      service.firstUserMessages({ ...ctx, actor: "business_agent" }, { since: since() }),
+    ).rejects.toMatchObject({ code: "forbidden" });
   });
 });

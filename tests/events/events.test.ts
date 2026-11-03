@@ -26,6 +26,37 @@ describe("event handlers", () => {
     expect(rows[0]?.kind).toBe("order");
   });
 
+  it("creates one change_set notification per change set, even when the job repeats", async () => {
+    const db = testDb();
+    const ctx = await createTestTenant();
+    const changeSetId = randomUUID();
+    const payload = { tenantId: ctx.tenantId, changeSetId };
+
+    await handlers[EVENTS.changeSetCreated](payload, { db });
+    await handlers[EVENTS.changeSetCreated](payload, { db });
+
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.tenantId, ctx.tenantId), eq(notifications.refId, changeSetId)));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.kind).toBe("change_set");
+  });
+
+  it("creates one tenant.live notification per tenant", async () => {
+    const db = testDb();
+    const ctx = await createTestTenant();
+
+    await handlers[EVENTS.tenantLive]({ tenantId: ctx.tenantId }, { db });
+    await handlers[EVENTS.tenantLive]({ tenantId: ctx.tenantId }, { db });
+
+    const rows = await db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.tenantId, ctx.tenantId), eq(notifications.kind, "tenant.live")));
+    expect(rows).toHaveLength(1);
+  });
+
   it("acknowledges events that have no consumer yet", async () => {
     const log: string[] = [];
     await handlers[EVENTS.conversationMessage](

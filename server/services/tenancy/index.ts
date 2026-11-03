@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { apiKeys, businessProfiles, tenants, users } from "@/db/schema";
 import { recordAudit } from "../audit";
@@ -23,6 +23,14 @@ export interface CreatedApiKey {
   /** Shown once; only the hash is stored. */
   key: string;
   prefix: string;
+}
+
+export interface ApiKeySummary {
+  id: string;
+  kind: ApiKeyKind;
+  prefix: string;
+  createdAt: Date;
+  revokedAt: Date | null;
 }
 
 export interface TenancyService {
@@ -48,7 +56,16 @@ export interface TenancyService {
 
   createApiKey(ctx: TenantContext, kind: ApiKeyKind): Promise<CreatedApiKey>;
   revokeApiKey(ctx: TenantContext, apiKeyId: string): Promise<void>;
+  /** Newest first, revoked keys included. Never returns hashes. */
+  listApiKeys(ctx: TenantContext): Promise<ApiKeySummary[]>;
 
+  /**
+   * Verifies the current password, sets a new one and ends all other sessions.
+   * Returns a fresh session token for the signed-in user.
+   */
+  changePassword(ctx: TenantContext, input: { current: string; next: string }): Promise<string>;
+  /** Invalidates every session token issued to the signed-in user. */
+  revokeSessions(ctx: TenantContext): Promise<void>;
   /** Owner context from a session token. */
   contextFromSession(token: string): Promise<TenantContext | null>;
   /** Context from an API key of the expected kind; the actor is chosen by the caller. */
@@ -175,7 +192,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
           password: input.password,
         });
         const token = signSession(
-          { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) + ttl },
+          { userId, tenantId: tenant.id, version: 1, exp: Math.floor(Date.now() / 1000) + ttl },
           options.authSecret,
         );
         return { tenant, token };
@@ -193,7 +210,12 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
       const ok = await bcrypt.compare(input.password, user?.passwordHash ?? dummyHash);
       if (!user || !ok) return null;
       return signSession(
-        { userId: user.id, tenantId: user.tenantId, exp: Math.floor(Date.now() / 1000) + ttl },
+        {
+          userId: user.id,
+          tenantId: user.tenantId,
+          version: user.sessionVersion,
+          exp: Math.floor(Date.now() / 1000) + ttl,
+        },
         options.authSecret,
       );
     },
@@ -245,14 +267,97 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
       });
     },
 
+    async listApiKeys(ctx) {
+      assertOwner(ctx);
+      return db
+        .select({
+          id: apiKeys.id,
+          kind: apiKeys.kind,
+          prefix: apiKeys.prefix,
+          createdAt: apiKeys.createdAt,
+          revokedAt: apiKeys.revokedAt,
+        })
+        .from(apiKeys)
+        .where(eq(apiKeys.tenantId, ctx.tenantId))
+        .orderBy(desc(apiKeys.createdAt));
+    },
+
+    async revokeSessions(ctx) {
+      assertOwner(ctx);
+      if (!ctx.userId) throw new ServiceError("forbidden", "A signed-in user is required");
+      await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(users)
+          .set({ sessionVersion: sql`${users.sessionVersion} + 1` })
+          .where(and(eq(users.id, ctx.userId!), eq(users.tenantId, ctx.tenantId)))
+          .returning({ id: users.id });
+        if (!row) throw new ServiceError("not_found", "User not found");
+        await recordAudit(tx, ctx, {
+          action: "user.sessions_revoked",
+          entity: "user",
+          entityId: row.id,
+        });
+      });
+    },
+
+    async changePassword(ctx, input) {
+      assertOwner(ctx);
+      if (!ctx.userId) throw new ServiceError("forbidden", "A signed-in user is required");
+      const userId = ctx.userId;
+      const [user] = await db
+        .select({ passwordHash: users.passwordHash })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.tenantId, ctx.tenantId)));
+      if (!user) throw new ServiceError("not_found", "User not found");
+      if (!(await bcrypt.compare(input.current, user.passwordHash))) {
+        throw new ServiceError("invalid", "Current password is wrong");
+      }
+      if (input.next.length < 8) {
+        throw new ServiceError("invalid", "Password must be at least 8 characters");
+      }
+      if (input.next === input.current) {
+        throw new ServiceError("invalid", "New password must differ from the current one");
+      }
+      const passwordHash = await bcrypt.hash(input.next, rounds);
+      const version = await db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(users)
+          .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+          .where(
+            and(
+              eq(users.id, userId),
+              eq(users.tenantId, ctx.tenantId),
+              eq(users.passwordHash, user.passwordHash),
+            ),
+          )
+          .returning({ sessionVersion: users.sessionVersion });
+        if (!row) throw new ServiceError("conflict", "Password was changed elsewhere. Try again");
+        await recordAudit(tx, ctx, {
+          action: "user.password_changed",
+          entity: "user",
+          entityId: userId,
+        });
+        return row.sessionVersion;
+      });
+      return signSession(
+        {
+          userId,
+          tenantId: ctx.tenantId,
+          version,
+          exp: Math.floor(Date.now() / 1000) + ttl,
+        },
+        options.authSecret,
+      );
+    },
+
     async contextFromSession(token) {
       const claims = verifySession(token, options.authSecret);
       if (!claims) return null;
       const [user] = await db
-        .select({ id: users.id, tenantId: users.tenantId })
+        .select({ id: users.id, tenantId: users.tenantId, sessionVersion: users.sessionVersion })
         .from(users)
         .where(and(eq(users.id, claims.userId), eq(users.tenantId, claims.tenantId)));
-      if (!user) return null;
+      if (!user || user.sessionVersion !== claims.version) return null;
       return { tenantId: user.tenantId, actor: "owner", userId: user.id };
     },
 

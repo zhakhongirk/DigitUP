@@ -80,7 +80,7 @@ export const offerSchema = z
     image_url: z
       .string()
       .max(500)
-      .regex(/^(https:\/\/|\/)\S+$/, "must be an https URL or a path starting with /")
+      .regex(/^(https:\/\/|\/(?!\/))\S+$/, "must be an https URL or a path starting with /")
       .nullable()
       .default(null),
   })

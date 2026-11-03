@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { eq } from "drizzle-orm";
+import { businessProfiles } from "@/db/schema";
 import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
@@ -557,6 +559,52 @@ describe("write operations", () => {
     await expectCode(catalog.updatePolicies(ctx, { delivery: "" }), "invalid");
   });
 
+  it("updateProfile patches fields and audits before and after", async () => {
+    const ctx = await createTestTenant();
+    const { catalog, audit } = setup();
+    await seed(ctx);
+    const result = await catalog.updateProfile(ctx, {
+      name: "Shoe Studio",
+      category: null,
+      contacts: { email: "hi@example.com", address: "Main street 1" },
+    });
+    expect(result).toMatchObject({
+      name: "Shoe Studio",
+      description: "Footwear and repairs",
+      category: null,
+      contacts: { email: "hi@example.com", address: "Main street 1" },
+    });
+    const model = await catalog.getBusinessModel(ctx);
+    expect(model.profile).toEqual(result);
+    expect(model.profile.contacts.phone).toBeUndefined();
+
+    const [event] = await audit.list(ctx, { entity: "business_profile", limit: 1 });
+    expect(event?.action).toBe("profile.updated");
+    expect(event?.before).toMatchObject({ name: "Shoe Shop" });
+    expect(event?.after).toMatchObject({ name: "Shoe Studio" });
+  });
+
+  it("updateProfile tolerates legacy contacts data", async () => {
+    const ctx = await createTestTenant();
+    const { catalog } = setup();
+    await seed(ctx);
+    await testDb()
+      .update(businessProfiles)
+      .set({ contacts: { email: "not-an-email", legacy: 1 } })
+      .where(eq(businessProfiles.tenantId, ctx.tenantId));
+    const result = await catalog.updateProfile(ctx, { name: "Renamed" });
+    expect(result).toMatchObject({ name: "Renamed", contacts: {} });
+  });
+
+  it("updateProfile rejects bad input", async () => {
+    const ctx = await createTestTenant();
+    const { catalog } = setup();
+    await seed(ctx);
+    await expectCode(catalog.updateProfile(ctx, { name: " " }), "invalid");
+    await expectCode(catalog.updateProfile(ctx, { contacts: { email: "nope" } }), "invalid");
+    await expectCode(catalog.updateProfile(ctx, { unknown: 1 }), "invalid");
+  });
+
   it("upsertOfferTypes creates and updates types", async () => {
     const ctx = await createTestTenant();
     const { catalog, audit } = setup();
@@ -820,5 +868,43 @@ describe("tenant isolation", () => {
     await catalog.updatePolicies(b, { delivery: "B only" });
     expect((await catalog.getBusinessModel(a)).policies.delivery).toBe("Free over 100 USD");
     expect((await catalog.getBusinessModel(b)).policies.delivery).toBe("B only");
+  });
+});
+
+describe("catalogStats", () => {
+  it("counts statuses and active catalog gaps in one query", async () => {
+    const ctx = await createTestTenant({ actor: "owner" });
+    const { catalog } = setup();
+    await seed(ctx);
+    expect(await catalog.catalogStats(ctx)).toEqual({
+      byStatus: { active: 5, draft: 1, archived: 1 },
+      priceOnRequest: 1,
+      availabilityUnknown: 1,
+    });
+  });
+
+  it("excludes archived offers from the gap counts", async () => {
+    const ctx = await createTestTenant({ actor: "owner" });
+    const { catalog } = setup();
+    const offers = await seed(ctx);
+    const loafer = offers.get("Custom Loafer")!;
+    await catalog.archiveOffers(ctx, [loafer.id]);
+    expect(await catalog.catalogStats(ctx)).toEqual({
+      byStatus: { active: 4, draft: 1, archived: 2 },
+      priceOnRequest: 0,
+      availabilityUnknown: 0,
+    });
+  });
+
+  it("is zeros for a tenant without offers and ignores other tenants", async () => {
+    const a = await createTestTenant({ actor: "owner" });
+    const b = await createTestTenant({ actor: "owner" });
+    const { catalog } = setup();
+    await seed(a);
+    expect(await catalog.catalogStats(b)).toEqual({
+      byStatus: { active: 0, draft: 0, archived: 0 },
+      priceOnRequest: 0,
+      availabilityUnknown: 0,
+    });
   });
 });

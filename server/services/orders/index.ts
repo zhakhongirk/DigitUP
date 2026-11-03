@@ -1,11 +1,22 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  notInArray,
+  sql,
+  type AnyColumn,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod";
 import type { Db, DbTx } from "@/db/client";
 import { conversations, inquiries, offers, orders } from "@/db/schema";
 import { EVENTS, type EventPublisher } from "@/server/events/types";
 import { recordAudit } from "../audit";
 import { parseOrThrow } from "../catalog/ops";
-import { ServiceError, type TenantContext } from "../context";
+import { assertOwner, ServiceError, type TenantContext } from "../context";
 
 export type Order = typeof orders.$inferSelect;
 export type OrderStatus = Order["status"];
@@ -21,6 +32,14 @@ export interface OrderItem {
   unitPrice: number;
   currency: string;
   lineTotal: number;
+}
+
+export interface OrderStats {
+  byStatus: Record<OrderStatus, number>;
+  /** Sum of order totals per currency, excluding drafts and cancelled orders. */
+  value: { currency: string; total: number }[];
+  topOffers: { offerId: string; title: string; quantity: number; orders: number }[];
+  inquiries: { total: number; new: number };
 }
 
 export const orderContactSchema = z
@@ -53,6 +72,8 @@ export const createInquirySchema = z.object({
   /** Offers the question is about, kept in the details for the owner. */
   offerIds: z.array(z.uuid()).max(20).default([]),
 });
+export const answerInquirySchema = z.string().trim().min(1).max(5000);
+
 export type CreateInquiryInput = z.input<typeof createInquirySchema>;
 
 /** Allowed owner-driven transitions. Draft → Submitted only happens through `submitOrder`. */
@@ -64,6 +85,12 @@ const TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   completed: [],
   cancelled: [],
 };
+
+/** Position in a newest-first list: millisecond timestamp and row id. */
+export interface ListCursor {
+  at: number;
+  id: string;
+}
 
 export interface OrdersService {
   /**
@@ -79,21 +106,44 @@ export interface OrdersService {
   getOrder(ctx: TenantContext, orderId: string): Promise<Order | null>;
   listOrders(
     ctx: TenantContext,
-    filter?: { status?: OrderStatus; limit?: number },
+    filter?: {
+      status?: OrderStatus | OrderStatus[];
+      limit?: number;
+      offset?: number;
+      /** `shown` sorts by submission time (creation for drafts), newest first, ties by id. */
+      order?: "created" | "shown";
+      /** With `order: "shown"`, only rows strictly after this position. */
+      before?: ListCursor;
+    },
   ): Promise<Order[]>;
+  countOrdersByStatus(ctx: TenantContext): Promise<Record<OrderStatus, number>>;
   updateOrderStatus(ctx: TenantContext, orderId: string, status: OrderStatus): Promise<Order>;
+  /**
+   * Owner-only aggregates over orders (by submission time, or creation time
+   * for drafts) and inquiries created since the given moment.
+   */
+  stats(ctx: TenantContext, options: { since: Date; offersLimit?: number }): Promise<OrderStats>;
 
   createInquiry(ctx: TenantContext, input: CreateInquiryInput): Promise<Inquiry>;
   getInquiry(ctx: TenantContext, inquiryId: string): Promise<Inquiry | null>;
   listInquiries(
     ctx: TenantContext,
-    filter?: { status?: InquiryStatus; limit?: number },
+    filter?: {
+      status?: InquiryStatus | InquiryStatus[];
+      limit?: number;
+      offset?: number;
+      order?: "created" | "shown";
+      before?: ListCursor;
+    },
   ): Promise<Inquiry[]>;
+  countInquiriesByStatus(ctx: TenantContext): Promise<Record<InquiryStatus, number>>;
   updateInquiryStatus(
     ctx: TenantContext,
     inquiryId: string,
     status: InquiryStatus,
   ): Promise<Inquiry>;
+  /** Owner-only. Stores the reply and completes the inquiry. */
+  answerInquiry(ctx: TenantContext, inquiryId: string, answer: string): Promise<Inquiry>;
 }
 
 export interface OrdersDeps {
@@ -102,7 +152,16 @@ export interface OrdersDeps {
 }
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
-const clampLimit = (limit?: number) => Math.min(Math.max(limit ?? 50, 1), 200);
+const clampLimit = (limit?: number) => Math.min(Math.max(limit ?? 50, 1), 500);
+const truncMs = (expr: SQL | AnyColumn) => sql`date_trunc('milliseconds', ${expr})`;
+const afterCursor = (at: SQL, id: AnyColumn, cursor: ListCursor) =>
+  sql`(${at}, ${id}) < (${new Date(cursor.at).toISOString()}::timestamptz, ${cursor.id}::uuid)`;
+const clampOffset = (offset?: number) => Math.max(Math.trunc(offset ?? 0), 0);
+const asList = <T>(value: T | T[]): T[] => (Array.isArray(value) ? value : [value]);
+
+function assertUuid(id: string, message: string) {
+  if (!z.uuid().safeParse(id).success) throw new ServiceError("not_found", message);
+}
 
 async function assertConversation(tx: DbTx, ctx: TenantContext, conversationId?: string) {
   if (!conversationId) return;
@@ -178,6 +237,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
   }
 
   async function loadOrderForUpdate(tx: DbTx, ctx: TenantContext, orderId: string) {
+    assertUuid(orderId, "Order not found");
     const [order] = await tx
       .select()
       .from(orders)
@@ -187,12 +247,55 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     return order;
   }
 
+  /** Fills empty contact fields of a still-draft order from a repeated call with the same items. */
+  async function mergeDraftContact(
+    ctx: TenantContext,
+    existing: Order,
+    input: z.infer<typeof createOrderSchema>,
+  ): Promise<Order> {
+    const provided = Object.entries(input.contact).filter(([, value]) => value);
+    if (existing.status !== "draft" || provided.length === 0) return existing;
+    const wanted = new Map<string, number>();
+    for (const { offerId, quantity } of input.items) {
+      wanted.set(offerId, (wanted.get(offerId) ?? 0) + quantity);
+    }
+    const current = existing.items as OrderItem[];
+    if (
+      current.length !== wanted.size ||
+      current.some((item) => wanted.get(item.offerId) !== item.quantity)
+    ) {
+      return existing;
+    }
+
+    return db.transaction(async (tx) => {
+      const locked = await loadOrderForUpdate(tx, ctx, existing.id);
+      if (locked.status !== "draft") return locked;
+      const before = locked.contact as OrderContact;
+      const missing = provided.filter(([key]) => !(before as Record<string, unknown>)[key]);
+      if (missing.length === 0) return locked;
+      const contact = { ...before, ...Object.fromEntries(missing) };
+      const [updated] = await tx
+        .update(orders)
+        .set({ contact })
+        .where(eq(orders.id, locked.id))
+        .returning();
+      await recordAudit(tx, ctx, {
+        action: "order.contact_updated",
+        entity: "order",
+        entityId: locked.id,
+        before: { contact: before },
+        after: { contact },
+      });
+      return updated!;
+    });
+  }
+
   return {
     async createOrder(ctx, rawInput) {
       const input = parseOrThrow(createOrderSchema, rawInput, "order");
 
       const existing = await findByKey(ctx, input.idempotencyKey);
-      if (existing) return { order: existing, created: false };
+      if (existing) return { order: await mergeDraftContact(ctx, existing, input), created: false };
 
       const created = await db.transaction(async (tx) => {
         await assertConversation(tx, ctx, input.conversationId);
@@ -257,6 +360,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     },
 
     async getOrder(ctx, orderId) {
+      if (!z.uuid().safeParse(orderId).success) return null;
       const [order] = await db
         .select()
         .from(orders)
@@ -266,13 +370,37 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
     async listOrders(ctx, filter = {}) {
       const conditions = [eq(orders.tenantId, ctx.tenantId)];
-      if (filter.status) conditions.push(eq(orders.status, filter.status));
+      if (filter.status) conditions.push(inArray(orders.status, asList(filter.status)));
+      const shown = filter.order === "shown";
+      const at = truncMs(sql`coalesce(${orders.submittedAt}, ${orders.createdAt})`);
+      if (shown && filter.before) conditions.push(afterCursor(at, orders.id, filter.before));
       return db
         .select()
         .from(orders)
         .where(and(...conditions))
-        .orderBy(desc(orders.createdAt))
-        .limit(clampLimit(filter.limit));
+        .orderBy(
+          ...(shown ? [desc(at), desc(orders.id)] : [desc(orders.createdAt), desc(orders.id)]),
+        )
+        .limit(clampLimit(filter.limit))
+        .offset(clampOffset(filter.offset));
+    },
+
+    async countOrdersByStatus(ctx) {
+      const rows = await db
+        .select({ status: orders.status, total: count() })
+        .from(orders)
+        .where(eq(orders.tenantId, ctx.tenantId))
+        .groupBy(orders.status);
+      const result: Record<OrderStatus, number> = {
+        draft: 0,
+        submitted: 0,
+        received: 0,
+        processing: 0,
+        completed: 0,
+        cancelled: 0,
+      };
+      for (const row of rows) result[row.status] = row.total;
+      return result;
     },
 
     async updateOrderStatus(ctx, orderId, status) {
@@ -299,6 +427,69 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         });
         return updated!;
       });
+    },
+
+    async stats(ctx, { since, offersLimit }) {
+      assertOwner(ctx);
+      const placedAt = sql`coalesce(${orders.submittedAt}, ${orders.createdAt})`;
+      const inScope = and(eq(orders.tenantId, ctx.tenantId), sql`${placedAt} >= ${since}`);
+      const counted = notInArray(orders.status, ["draft", "cancelled"]);
+      const topLimit = Math.min(Math.max(offersLimit ?? 6, 1), 50);
+
+      const [statusRows, valueRows, offerRows, inquiryRows] = await Promise.all([
+        db
+          .select({ status: orders.status, n: count() })
+          .from(orders)
+          .where(inScope)
+          .groupBy(orders.status),
+        db
+          .select({
+            currency: orders.currency,
+            total: sql<number>`coalesce(sum(${orders.total}), 0)::float8`,
+          })
+          .from(orders)
+          .where(and(inScope, counted, sql`${orders.currency} is not null`))
+          .groupBy(orders.currency),
+        db.execute<{ offerId: string; title: string; quantity: number; orders: number }>(sql`
+          select
+            line->>'offerId' as "offerId",
+            max(line->>'title') as title,
+            sum((line->>'quantity')::int)::int as quantity,
+            count(distinct ${orders.id})::int as orders
+          from ${orders}
+          cross join lateral jsonb_array_elements(${orders.items}) as line
+          where ${and(inScope, counted)}
+          group by line->>'offerId'
+          order by quantity desc, title asc
+          limit ${topLimit}
+        `),
+        db
+          .select({
+            total: count(),
+            fresh: sql<number>`count(*) filter (where ${inquiries.status} = 'new')::int`,
+          })
+          .from(inquiries)
+          .where(and(eq(inquiries.tenantId, ctx.tenantId), gte(inquiries.createdAt, since))),
+      ]);
+
+      const byStatus: Record<OrderStatus, number> = {
+        draft: 0,
+        submitted: 0,
+        received: 0,
+        processing: 0,
+        completed: 0,
+        cancelled: 0,
+      };
+      for (const row of statusRows) byStatus[row.status] = row.n;
+      const inquiry = inquiryRows[0];
+      return {
+        byStatus,
+        value: valueRows
+          .filter((row): row is { currency: string; total: number } => row.currency !== null)
+          .sort((a, b) => b.total - a.total),
+        topOffers: offerRows.rows,
+        inquiries: { total: inquiry?.total ?? 0, new: inquiry?.fresh ?? 0 },
+      };
     },
 
     async createInquiry(ctx, rawInput) {
@@ -346,6 +537,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     },
 
     async getInquiry(ctx, inquiryId) {
+      if (!z.uuid().safeParse(inquiryId).success) return null;
       const [inquiry] = await db
         .select()
         .from(inquiries)
@@ -355,16 +547,36 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
     async listInquiries(ctx, filter = {}) {
       const conditions = [eq(inquiries.tenantId, ctx.tenantId)];
-      if (filter.status) conditions.push(eq(inquiries.status, filter.status));
+      if (filter.status) conditions.push(inArray(inquiries.status, asList(filter.status)));
+      const shown = filter.order === "shown";
+      const at = truncMs(inquiries.createdAt);
+      if (shown && filter.before) conditions.push(afterCursor(at, inquiries.id, filter.before));
       return db
         .select()
         .from(inquiries)
         .where(and(...conditions))
-        .orderBy(desc(inquiries.createdAt))
-        .limit(clampLimit(filter.limit));
+        .orderBy(
+          ...(shown
+            ? [desc(at), desc(inquiries.id)]
+            : [desc(inquiries.createdAt), desc(inquiries.id)]),
+        )
+        .limit(clampLimit(filter.limit))
+        .offset(clampOffset(filter.offset));
+    },
+
+    async countInquiriesByStatus(ctx) {
+      const rows = await db
+        .select({ status: inquiries.status, total: count() })
+        .from(inquiries)
+        .where(eq(inquiries.tenantId, ctx.tenantId))
+        .groupBy(inquiries.status);
+      const result: Record<InquiryStatus, number> = { new: 0, in_progress: 0, completed: 0 };
+      for (const row of rows) result[row.status] = row.total;
+      return result;
     },
 
     async updateInquiryStatus(ctx, inquiryId, status) {
+      assertUuid(inquiryId, "Inquiry not found");
       return db.transaction(async (tx) => {
         const [before] = await tx
           .select()
@@ -384,6 +596,33 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           entityId: inquiryId,
           before: { status: before.status },
           after: { status },
+        });
+        return updated!;
+      });
+    },
+
+    async answerInquiry(ctx, inquiryId, rawAnswer) {
+      assertOwner(ctx);
+      assertUuid(inquiryId, "Inquiry not found");
+      const answer = parseOrThrow(answerInquirySchema, rawAnswer, "answer");
+      return db.transaction(async (tx) => {
+        const [before] = await tx
+          .select()
+          .from(inquiries)
+          .where(and(eq(inquiries.id, inquiryId), eq(inquiries.tenantId, ctx.tenantId)))
+          .for("update");
+        if (!before) throw new ServiceError("not_found", "Inquiry not found");
+        const [updated] = await tx
+          .update(inquiries)
+          .set({ answer, answeredAt: new Date(), status: "completed" })
+          .where(eq(inquiries.id, inquiryId))
+          .returning();
+        await recordAudit(tx, ctx, {
+          action: "inquiry.answered",
+          entity: "inquiry",
+          entityId: inquiryId,
+          before: { status: before.status, answer: before.answer },
+          after: { status: updated!.status, answer },
         });
         return updated!;
       });

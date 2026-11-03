@@ -41,11 +41,18 @@ function acknowledgeOnly(name: EventName): EventHandler<EventName> {
   };
 }
 
+/** Notification kinds written by the handlers below; the owner view renders each of them. */
+export const NOTIFICATION_KINDS = ["order", "inquiry", "change_set", "tenant.live"] as const;
+
 export const handlers: EventHandlers = {
   [EVENTS.orderSubmitted]: async ({ tenantId, orderId }, { db }) =>
     notifyOwner(db, tenantId, "order", orderId),
   [EVENTS.inquirySubmitted]: async ({ tenantId, inquiryId }, { db }) =>
     notifyOwner(db, tenantId, "inquiry", inquiryId),
+  [EVENTS.changeSetCreated]: async ({ tenantId, changeSetId }, { db }) =>
+    notifyOwner(db, tenantId, "change_set", changeSetId),
+  [EVENTS.tenantLive]: async ({ tenantId }, { db }) =>
+    notifyOwner(db, tenantId, "tenant.live", tenantId),
   [EVENTS.fileUploaded]: async ({ tenantId, sourceAssetId }, { ingestion, log }) => {
     if (!ingestion) throw new Error("ingestion is not configured in this worker");
     const asset = await ingestion.extractAsset(tenantId, sourceAssetId);
@@ -62,6 +69,5 @@ export const handlers: EventHandlers = {
     const outcome = await provisioning.provision({ tenantId, draftId });
     log?.(`[worker] model.confirmed: ${outcome.status} /s/${outcome.slug}`);
   },
-  [EVENTS.tenantLive]: acknowledgeOnly(EVENTS.tenantLive),
   [EVENTS.conversationMessage]: acknowledgeOnly(EVENTS.conversationMessage),
 };

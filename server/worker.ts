@@ -8,6 +8,7 @@ import { handlers, type HandlerDeps } from "./events/handlers";
 import { ALL_EVENTS, type EventName, type EventPayloads } from "./events/types";
 import { runProposal } from "./agents/business/onboarding";
 import { createServices } from "./container";
+import { log } from "./log";
 import { getOptionalLlmClient } from "./llm";
 import { createProvisioningService } from "./services/provisioning";
 
@@ -23,10 +24,10 @@ async function main() {
   const events = new PgBossEventPublisher(boss);
   const services = createServices({ db: database.db, events, authSecret });
   const llm = getOptionalLlmClient();
-  const log = (message: string) => console.log(message);
+  const note = (message: string) => log.info("worker.message", { message });
   const deps: HandlerDeps = {
     db: database.db,
-    log,
+    log: note,
     provisioning: createProvisioningService({
       db: database.db,
       events,
@@ -34,8 +35,8 @@ async function main() {
     }),
     ingestion: services.ingestion,
     propose: async (input) => {
-      const outcome = await runProposal({ services, llm, log }, input);
-      log(`[worker] ingestion.completed: proposal ${outcome.status}`);
+      const outcome = await runProposal({ services, llm, log: note }, input);
+      note(`ingestion.completed: proposal ${outcome.status}`);
     },
   };
 
@@ -45,13 +46,33 @@ async function main() {
       deps: HandlerDeps,
     ) => Promise<void>;
     await boss.work<EventPayloads[EventName]>(name, async (jobs) => {
-      for (const job of jobs) await handler(job.data, deps);
+      for (const job of jobs) {
+        const started = Date.now();
+        try {
+          await handler(job.data, deps);
+          log.info("job.done", {
+            job: name,
+            jobId: job.id,
+            outcome: "ok",
+            durationMs: Date.now() - started,
+          });
+        } catch (error) {
+          log.error("job.failed", {
+            job: name,
+            jobId: job.id,
+            outcome: "error",
+            durationMs: Date.now() - started,
+            error,
+          });
+          throw error;
+        }
+      }
     });
   }
-  console.log(`[worker] started; handling ${ALL_EVENTS.join(", ")}`);
+  log.info("worker.started", { events: ALL_EVENTS });
 
   const shutdown = async (signal: string) => {
-    console.log(`[worker] ${signal} received, shutting down`);
+    log.info("worker.shutdown", { signal });
     await boss.stop({ graceful: true });
     await database.close();
     process.exit(0);
@@ -61,6 +82,6 @@ async function main() {
 }
 
 main().catch((error: unknown) => {
-  console.error("[worker] failed to start:", error);
+  log.error("worker.start_failed", { error });
   process.exit(1);
 });

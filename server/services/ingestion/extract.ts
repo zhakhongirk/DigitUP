@@ -1,12 +1,19 @@
 import ExcelJS from "exceljs";
 import mammoth from "mammoth";
 import { extractText as extractPdfText, getDocumentProxy } from "unpdf";
+import { inspectZip } from "./zip-guard";
 
 export type SourceKind = "xlsx" | "csv" | "pdf" | "docx" | "txt";
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 const MAX_TEXT_CHARS = 200_000;
+
+function assertSafeZip(bytes: Uint8Array, tooLarge: string, unreadable: string): void {
+  const verdict = inspectZip(bytes);
+  if (verdict === "too-large") throw new ExtractionError(tooLarge);
+  if (verdict === "unreadable") throw new ExtractionError(unreadable);
+}
 
 export interface ExtractedTable {
   name: string;
@@ -100,6 +107,7 @@ function cellToString(value: ExcelJS.CellValue): string {
 }
 
 async function readWorkbook(bytes: Uint8Array): Promise<ExtractedTable[]> {
+  assertSafeZip(bytes, "The spreadsheet is too large to read.", "Could not read the spreadsheet.");
   try {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(Buffer.from(bytes) as unknown as ExcelJS.Buffer);
@@ -188,6 +196,11 @@ async function readPdf(bytes: Uint8Array): Promise<string> {
 }
 
 async function readDocx(bytes: Uint8Array): Promise<string> {
+  assertSafeZip(
+    bytes,
+    "The Word document is too large to read.",
+    "Could not read the Word document.",
+  );
   try {
     const result = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
     return normalise(result.value);

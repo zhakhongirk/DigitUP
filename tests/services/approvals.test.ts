@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { EVENTS } from "@/server/events/types";
 import { createApprovalsService } from "@/server/services/approvals";
 import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
@@ -60,7 +61,8 @@ async function setup() {
     agent,
     catalog,
     ids,
-    approvals: createApprovalsService(db),
+    events,
+    approvals: createApprovalsService(db, events),
     audit: createAuditService(db),
   };
 }
@@ -75,6 +77,17 @@ async function expectCode(promise: Promise<unknown>, code: string) {
 }
 
 describe("createChangeSet", () => {
+  it("publishes an event for agent change sets and not for owner ones", async () => {
+    const { owner, agent, approvals, events, ids } = await setup();
+    const ops = [{ op: "update_prices" as const, items: [{ offerId: ids["Alpha"]!, price: 100 }] }];
+    const byAgent = await approvals.createChangeSet(agent, { ops });
+    expect(events.ofType(EVENTS.changeSetCreated)).toEqual([
+      { tenantId: owner.tenantId, changeSetId: byAgent.id },
+    ]);
+    await approvals.createChangeSet(owner, { ops });
+    expect(events.ofType(EVENTS.changeSetCreated)).toHaveLength(1);
+  });
+
   it("stores ops as pending with requestedBy = actor and audits it", async () => {
     const { approvals, agent, ids, audit } = await setup();
     const ops = [{ op: "update_prices" as const, items: [{ offerId: ids.Alpha!, price: 150 }] }];

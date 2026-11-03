@@ -17,6 +17,8 @@ export function hashApiKey(raw: string): string {
 export interface SessionClaims {
   userId: string;
   tenantId: string;
+  /** Matches users.session_version; bumping it revokes older tokens. */
+  version: number;
   /** Expiry, seconds since epoch. */
   exp: number;
 }
@@ -53,6 +55,7 @@ export function verifySession(
     claims === null ||
     typeof (claims as SessionClaims).userId !== "string" ||
     typeof (claims as SessionClaims).tenantId !== "string" ||
+    typeof (claims as SessionClaims).version !== "number" ||
     typeof (claims as SessionClaims).exp !== "number"
   ) {
     return null;

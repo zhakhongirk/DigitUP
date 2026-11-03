@@ -9,6 +9,7 @@ import type { DbTx } from "@/db/client";
 import { businessProfiles, offers, offerTypes, tenants } from "@/db/schema";
 import {
   businessModelSchema,
+  contactsSchema,
   offerAttributeIssues,
   offerSchema,
   offerTypeSchema,
@@ -56,6 +57,17 @@ export const policiesPatchSchema = z
   })
   .strict();
 export type PoliciesPatch = z.input<typeof policiesPatchSchema>;
+
+/** Partial profile update; `contacts`, when present, replaces the whole contacts object. */
+export const profilePatchSchema = z
+  .object({
+    name: z.string().trim().min(1).max(200).optional(),
+    description: z.string().max(5000).optional(),
+    category: z.string().trim().min(1).nullable().optional(),
+    contacts: contactsSchema.strict().optional(),
+  })
+  .strict();
+export type ProfilePatch = z.input<typeof profilePatchSchema>;
 
 function invalid(error: z.ZodError, what: string): ServiceError {
   const details = error.issues
@@ -377,6 +389,53 @@ export async function updatePoliciesTx(
     .where(eq(businessProfiles.tenantId, ctx.tenantId));
   await recordAudit(tx, ctx, {
     action: "policies.updated",
+    entity: "business_profile",
+    entityId: ctx.tenantId,
+    before,
+    after,
+  });
+  return after;
+}
+
+export async function updateProfileTx(
+  tx: DbTx,
+  ctx: TenantContext,
+  input: unknown,
+): Promise<Pick<BusinessModel["profile"], "name" | "description" | "category" | "contacts">> {
+  const patch = parseOrThrow(profilePatchSchema, input, "profile");
+  const [row] = await tx
+    .select({ name: tenants.name, profile: businessProfiles })
+    .from(tenants)
+    .innerJoin(businessProfiles, eq(businessProfiles.tenantId, tenants.id))
+    .where(eq(tenants.id, ctx.tenantId))
+    .for("update", { of: businessProfiles });
+  if (!row) throw new ServiceError("not_found", "Business profile not found");
+
+  const before = {
+    name: row.name,
+    description: row.profile.description,
+    category: row.profile.category,
+    contacts: contactsSchema.safeParse(row.profile.contacts).data ?? {},
+  };
+  const after = {
+    name: patch.name ?? before.name,
+    description: patch.description ?? before.description,
+    category: patch.category === undefined ? before.category : patch.category,
+    contacts: patch.contacts ?? before.contacts,
+  };
+  if (after.name !== before.name) {
+    await tx.update(tenants).set({ name: after.name }).where(eq(tenants.id, ctx.tenantId));
+  }
+  await tx
+    .update(businessProfiles)
+    .set({
+      description: after.description,
+      category: after.category,
+      contacts: after.contacts,
+    })
+    .where(eq(businessProfiles.tenantId, ctx.tenantId));
+  await recordAudit(tx, ctx, {
+    action: "profile.updated",
     entity: "business_profile",
     entityId: ctx.tenantId,
     before,

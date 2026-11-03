@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { deflateRawSync } from "node:zlib";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import { describe, expect, it } from "vitest";
@@ -124,6 +126,60 @@ describe("extractText", () => {
     const { text } = await extractText("docx", await buildDocx());
     expect(text).toContain("Opening hours");
     expect(text).toContain("Monday to Friday");
+  });
+
+  it("reads the demo spreadsheet", async () => {
+    const bytes = new Uint8Array(readFileSync("demo-data/shoe-catalog.xlsx"));
+    const { tables } = await extractText("xlsx", bytes);
+    expect(tables.length).toBeGreaterThan(0);
+  });
+
+  it("rejects archives whose real inflated size exceeds the cap despite a small declared size", async () => {
+    const zip = new JSZip();
+    zip.file("xl/big.xml", "a");
+    const bytes = new Uint8Array(await zip.generateAsync({ type: "uint8array" }));
+    const payload = deflateRawSync(Buffer.alloc(150 * 1024 * 1024));
+    const view = new DataView(bytes.buffer);
+    let eocd = bytes.length - 22;
+    while (view.getUint32(eocd, true) !== 0x06054b50) eocd--;
+    const dir = view.getUint32(eocd + 16, true);
+    const local = view.getUint32(dir + 42, true);
+    const nameLength = view.getUint16(local + 26, true);
+    const head = bytes.subarray(0, local + 30 + nameLength);
+    const tail = bytes.subarray(dir);
+    const crafted = new Uint8Array(head.length + payload.length + tail.length);
+    crafted.set(head, 0);
+    crafted.set(payload, head.length);
+    crafted.set(tail, head.length + payload.length);
+    const cv = new DataView(crafted.buffer);
+    const newDir = head.length + payload.length;
+    const newEocd = newDir + (eocd - dir);
+    cv.setUint16(local + 28, 0, true);
+    cv.setUint16(dir - dir + newDir + 10, 8, true);
+    cv.setUint32(newDir + 20, payload.length, true);
+    cv.setUint32(newDir + 24, 10, true);
+    cv.setUint32(newEocd + 16, newDir, true);
+    await expect(extractText("xlsx", crafted)).rejects.toThrow("too large");
+    await expect(extractText("docx", crafted)).rejects.toThrow("too large");
+  });
+
+  it("rejects archives with an unreadable directory", async () => {
+    const zip = new JSZip();
+    zip.file("a.txt", "hello");
+    const bytes = new Uint8Array(await zip.generateAsync({ type: "uint8array" }));
+    const view = new DataView(bytes.buffer);
+    let eocd = bytes.length - 22;
+    while (view.getUint32(eocd, true) !== 0x06054b50) eocd--;
+    view.setUint32(view.getUint32(eocd + 16, true), 0, true);
+    await expect(extractText("docx", bytes)).rejects.toThrow("Could not read the Word document.");
+    await expect(extractText("xlsx", bytes)).rejects.toThrow("Could not read the spreadsheet.");
+  });
+
+  it("rejects archives with too many entries", async () => {
+    const zip = new JSZip();
+    for (let i = 0; i < 2001; i++) zip.file(`f${i}.txt`, "x");
+    const bytes = new Uint8Array(await zip.generateAsync({ type: "uint8array" }));
+    await expect(extractText("docx", bytes)).rejects.toThrow("too large");
   });
 
   it("reads a pdf file", async () => {

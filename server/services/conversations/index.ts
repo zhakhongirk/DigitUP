@@ -1,10 +1,10 @@
-import { and, desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, sql, type SQL } from "drizzle-orm";
 import type { Db } from "@/db/client";
-import { conversations, messages } from "@/db/schema";
+import { conversations, inquiries, messages, orders } from "@/db/schema";
 import type { EventPublisher } from "@/server/events/types";
 import { EVENTS } from "@/server/events/types";
 import { recordAudit } from "../audit";
-import { ServiceError, type TenantContext } from "../context";
+import { assertOwner, ServiceError, type TenantContext } from "../context";
 
 export type Conversation = typeof conversations.$inferSelect;
 export type Message = typeof messages.$inferSelect;
@@ -17,6 +17,21 @@ export interface NewMessage {
   content: string | null;
   /** Stored in messages.tool_calls (jsonb), null when absent. */
   toolCalls?: unknown;
+}
+
+export interface ConversationStats {
+  total: number;
+  byChannel: Record<ConversationChannel, number>;
+  /** Conversations that produced at least one non-draft order. */
+  withOrder: number;
+  withInquiry: number;
+  /** Conversations that produced an order, an inquiry, or both. */
+  withOutcome: number;
+}
+
+export interface FirstUserMessage {
+  conversationId: string;
+  content: string;
 }
 
 export interface ConversationsService {
@@ -55,6 +70,16 @@ export interface ConversationsService {
     conversationId: string,
     status: ConversationStatus,
   ): Promise<Conversation>;
+  /** Owner-only aggregates over customer conversations created since the given moment. */
+  stats(ctx: TenantContext, options: { since: Date }): Promise<ConversationStats>;
+  /**
+   * Owner-only. The earliest non-empty user message of each customer
+   * conversation created since the given moment, newest conversations first.
+   */
+  firstUserMessages(
+    ctx: TenantContext,
+    options: { since: Date; limit?: number },
+  ): Promise<FirstUserMessage[]>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -226,6 +251,78 @@ export function createConversationsService(deps: {
         .orderBy(desc(messages.createdAt))
         .limit(limit);
       return rows.reverse();
+    },
+
+    async stats(ctx, { since }) {
+      assertOwner(ctx);
+      const hasOrder = sql`exists (
+        select 1 from ${orders}
+        where ${orders.conversationId} = ${conversations.id}
+          and ${orders.tenantId} = ${ctx.tenantId}
+          and ${orders.status} <> 'draft'
+      )`;
+      const hasInquiry = sql`exists (
+        select 1 from ${inquiries}
+        where ${inquiries.conversationId} = ${conversations.id}
+          and ${inquiries.tenantId} = ${ctx.tenantId}
+      )`;
+      const rows = await db
+        .select({
+          channel: conversations.channel,
+          total: count(),
+          withOrder: sql<number>`count(*) filter (where ${hasOrder})::int`,
+          withInquiry: sql<number>`count(*) filter (where ${hasInquiry})::int`,
+          withOutcome: sql<number>`count(*) filter (where ${hasOrder} or ${hasInquiry})::int`,
+        })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.tenantId, ctx.tenantId),
+            eq(conversations.agent, "customer"),
+            gte(conversations.createdAt, since),
+          ),
+        )
+        .groupBy(conversations.channel);
+
+      const stats: ConversationStats = {
+        total: 0,
+        byChannel: { storefront: 0, external_agent: 0, workspace: 0 },
+        withOrder: 0,
+        withInquiry: 0,
+        withOutcome: 0,
+      };
+      for (const row of rows) {
+        stats.total += row.total;
+        stats.byChannel[row.channel] = row.total;
+        stats.withOrder += row.withOrder;
+        stats.withInquiry += row.withInquiry;
+        stats.withOutcome += row.withOutcome;
+      }
+      return stats;
+    },
+
+    async firstUserMessages(ctx, { since, limit }) {
+      assertOwner(ctx);
+      const max = clampLimit(limit);
+      const result = await db.execute<{ conversationId: string; content: string }>(sql`
+        select "conversationId", content from (
+          select distinct on (${messages.conversationId})
+            ${messages.conversationId} as "conversationId",
+            ${messages.content} as content,
+            ${conversations.createdAt} as "startedAt"
+          from ${messages}
+          inner join ${conversations} on ${conversations.id} = ${messages.conversationId}
+          where ${conversations.tenantId} = ${ctx.tenantId}
+            and ${conversations.agent} = 'customer'
+            and ${conversations.createdAt} >= ${since}
+            and ${messages.role} = 'user'
+            and btrim(coalesce(${messages.content}, '')) <> ''
+          order by ${messages.conversationId}, ${messages.createdAt} asc, ${messages.id} asc
+        ) firsts
+        order by "startedAt" desc, "conversationId"
+        limit ${max}
+      `);
+      return result.rows;
     },
 
     async setStatus(ctx, conversationId, status) {

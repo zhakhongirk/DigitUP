@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, count, desc, eq } from "drizzle-orm";
 import type { Db, DbExecutor } from "@/db/client";
 import { auditEvents } from "@/db/schema";
 import type { TenantContext } from "../context";
@@ -36,8 +36,9 @@ export async function recordAudit(
 export interface AuditService {
   list(
     ctx: TenantContext,
-    options?: { entity?: string; entityId?: string; limit?: number },
+    options?: { entity?: string; entityId?: string; limit?: number; offset?: number },
   ): Promise<AuditEvent[]>;
+  count(ctx: TenantContext): Promise<number>;
 }
 
 export function createAuditService(db: Db): AuditService {
@@ -50,8 +51,17 @@ export function createAuditService(db: Db): AuditService {
         .select()
         .from(auditEvents)
         .where(and(...conditions))
-        .orderBy(desc(auditEvents.createdAt))
-        .limit(Math.min(options.limit ?? 100, 500));
+        .orderBy(desc(auditEvents.createdAt), desc(auditEvents.id))
+        .limit(Math.min(options.limit ?? 100, 500))
+        .offset(Math.max(Math.trunc(options.offset ?? 0), 0));
+    },
+
+    async count(ctx) {
+      const [row] = await db
+        .select({ total: count() })
+        .from(auditEvents)
+        .where(eq(auditEvents.tenantId, ctx.tenantId));
+      return row?.total ?? 0;
     },
   };
 }

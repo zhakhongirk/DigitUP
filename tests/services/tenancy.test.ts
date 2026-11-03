@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { describe, expect, it } from "vitest";
-import { tenants } from "@/db/schema";
+import { auditEvents, tenants } from "@/db/schema";
 import { ServiceError } from "@/server/services/context";
 import { signSession } from "@/server/services/tenancy";
 import { createTestTenant, TEST_AUTH_SECRET, testDb, testTenancy, uniqueSlug } from "../helpers/db";
@@ -128,7 +128,7 @@ describe("owners and sessions", () => {
   it("rejects a token signed with a different secret", async () => {
     const { tenancy, tenant, userId } = await ownerFixture();
     const forged = signSession(
-      { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) + 3600 },
+      { userId, tenantId: tenant.id, version: 1, exp: Math.floor(Date.now() / 1000) + 3600 },
       "another-secret-of-sufficient-length",
     );
     expect(await tenancy.contextFromSession(forged)).toBeNull();
@@ -137,22 +137,155 @@ describe("owners and sessions", () => {
   it("rejects an expired token", async () => {
     const { tenancy, tenant, userId } = await ownerFixture();
     const expired = signSession(
-      { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) - 10 },
+      { userId, tenantId: tenant.id, version: 1, exp: Math.floor(Date.now() / 1000) - 10 },
       TEST_AUTH_SECRET,
     );
     expect(await tenancy.contextFromSession(expired)).toBeNull();
     const valid = signSession(
-      { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) + 600 },
+      { userId, tenantId: tenant.id, version: 1, exp: Math.floor(Date.now() / 1000) + 600 },
       TEST_AUTH_SECRET,
     );
     expect(await tenancy.contextFromSession(valid)).not.toBeNull();
+  });
+
+  it("rejects a signed token without a version claim", async () => {
+    const { tenancy, tenant, userId } = await ownerFixture();
+    const legacy = signSession(
+      { userId, tenantId: tenant.id, exp: Math.floor(Date.now() / 1000) + 3600 } as never,
+      TEST_AUTH_SECRET,
+    );
+    expect(await tenancy.contextFromSession(legacy)).toBeNull();
+  });
+
+  it("revokes existing tokens of the user only", async () => {
+    const { tenancy, address, userId } = await ownerFixture();
+    const other = await ownerFixture();
+    const token = (await tenancy.signIn({ email: address, password: "correct-horse" }))!;
+    const otherToken = (await other.tenancy.signIn({
+      email: other.address,
+      password: "correct-horse",
+    }))!;
+    const ctx = (await tenancy.contextFromSession(token))!;
+    expect(ctx.userId).toBe(userId);
+
+    await tenancy.revokeSessions(ctx);
+
+    expect(await tenancy.contextFromSession(token)).toBeNull();
+    expect(await other.tenancy.contextFromSession(otherToken)).not.toBeNull();
+    const fresh = (await tenancy.signIn({ email: address, password: "correct-horse" }))!;
+    expect(await tenancy.contextFromSession(fresh)).not.toBeNull();
+  });
+
+  describe("changePassword", () => {
+    async function signedIn() {
+      const f = await ownerFixture();
+      const token = (await f.tenancy.signIn({ email: f.address, password: "correct-horse" }))!;
+      const ctx = (await f.tenancy.contextFromSession(token))!;
+      return { ...f, token, ctx };
+    }
+
+    it("rejects a wrong current password", async () => {
+      const { tenancy, ctx, address } = await signedIn();
+      await expectCode(
+        tenancy.changePassword(ctx, { current: "nope-nope", next: "brand-new-pass" }),
+        "invalid",
+      );
+      expect(await tenancy.signIn({ email: address, password: "correct-horse" })).not.toBeNull();
+    });
+
+    it("rejects a short or unchanged password", async () => {
+      const { tenancy, ctx } = await signedIn();
+      await expectCode(
+        tenancy.changePassword(ctx, { current: "correct-horse", next: "short" }),
+        "invalid",
+      );
+      await expectCode(
+        tenancy.changePassword(ctx, { current: "correct-horse", next: "correct-horse" }),
+        "invalid",
+      );
+    });
+
+    it("requires an owner with a user", async () => {
+      const { tenancy, tenant } = await ownerFixture();
+      const input = { current: "correct-horse", next: "brand-new-pass" };
+      await expectCode(
+        tenancy.changePassword({ tenantId: tenant.id, actor: "owner" }, input),
+        "forbidden",
+      );
+      await expectCode(
+        tenancy.changePassword({ tenantId: tenant.id, actor: "business_agent" }, input),
+        "forbidden",
+      );
+    });
+
+    it("changes the password, revokes old tokens and returns a working token", async () => {
+      const { tenancy, ctx, token, address } = await signedIn();
+      const other = await ownerFixture();
+      const otherToken = (await other.tenancy.signIn({
+        email: other.address,
+        password: "correct-horse",
+      }))!;
+
+      const fresh = await tenancy.changePassword(ctx, {
+        current: "correct-horse",
+        next: "brand-new-pass",
+      });
+
+      expect(await tenancy.contextFromSession(token)).toBeNull();
+      expect(await tenancy.contextFromSession(fresh)).toMatchObject({ userId: ctx.userId });
+      expect(await tenancy.signIn({ email: address, password: "correct-horse" })).toBeNull();
+      expect(await tenancy.signIn({ email: address, password: "brand-new-pass" })).not.toBeNull();
+      expect(await other.tenancy.contextFromSession(otherToken)).not.toBeNull();
+      expect(
+        await other.tenancy.signIn({ email: other.address, password: "correct-horse" }),
+      ).not.toBeNull();
+    });
+
+    it("audits the change without secrets", async () => {
+      const { tenancy, ctx } = await signedIn();
+      await tenancy.changePassword(ctx, { current: "correct-horse", next: "brand-new-pass" });
+      const rows = await testDb()
+        .select()
+        .from(auditEvents)
+        .where(
+          and(
+            eq(auditEvents.tenantId, ctx.tenantId),
+            eq(auditEvents.action, "user.password_changed"),
+          ),
+        );
+      expect(rows).toHaveLength(1);
+      expect(JSON.stringify(rows[0])).not.toMatch(/brand-new-pass|correct-horse|\$2/);
+    });
+  });
+
+  it("does not revoke sessions across tenants", async () => {
+    const a = await ownerFixture();
+    const b = await ownerFixture();
+    const ctx = { tenantId: b.tenant.id, actor: "owner" as const, userId: a.userId };
+    await expectCode(a.tenancy.revokeSessions(ctx), "not_found");
+    const token = (await a.tenancy.signIn({ email: a.address, password: "correct-horse" }))!;
+    expect(await a.tenancy.contextFromSession(token)).not.toBeNull();
+  });
+
+  it("only lets an owner with a user revoke sessions", async () => {
+    const { tenancy, tenant } = await ownerFixture();
+    await expectCode(tenancy.revokeSessions({ tenantId: tenant.id, actor: "owner" }), "forbidden");
+    await expectCode(
+      tenancy.revokeSessions({ tenantId: tenant.id, actor: "business_agent" }),
+      "forbidden",
+    );
   });
 
   it("rejects a validly signed token that points a user at another tenant", async () => {
     const a = await ownerFixture();
     const b = await ownerFixture();
     const forged = signSession(
-      { userId: a.userId, tenantId: b.tenant.id, exp: Math.floor(Date.now() / 1000) + 3600 },
+      {
+        userId: a.userId,
+        tenantId: b.tenant.id,
+        version: 1,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      },
       TEST_AUTH_SECRET,
     );
     expect(await a.tenancy.contextFromSession(forged)).toBeNull();
@@ -229,6 +362,37 @@ describe("API keys", () => {
     const created = await tenancy.createApiKey(owner, "owner");
     await tenancy.revokeApiKey(owner, created.id);
     await expectCode(tenancy.revokeApiKey(owner, created.id), "not_found");
+  });
+
+  it("lists keys newest first without secrets and marks revoked ones", async () => {
+    const owner = await createTestTenant({ actor: "owner" });
+    const tenancy = testTenancy();
+    const first = await tenancy.createApiKey(owner, "owner");
+    const second = await tenancy.createApiKey(owner, "customer_agent");
+    await tenancy.revokeApiKey(owner, first.id);
+    const list = await tenancy.listApiKeys(owner);
+    expect(list.map((k) => k.id)).toEqual([second.id, first.id]);
+    expect(list[0]).toMatchObject({
+      kind: "customer_agent",
+      prefix: second.prefix,
+      revokedAt: null,
+    });
+    expect(list[1]?.revokedAt).toBeInstanceOf(Date);
+    expect(JSON.stringify(list)).not.toContain(second.key);
+    expect(Object.keys(list[0]!)).not.toContain("keyHash");
+  });
+
+  it("lists only the tenant's own keys", async () => {
+    const a = await createTestTenant({ actor: "owner" });
+    const b = await createTestTenant({ actor: "owner" });
+    const tenancy = testTenancy();
+    await tenancy.createApiKey(a, "owner");
+    expect(await tenancy.listApiKeys(b)).toEqual([]);
+  });
+
+  it("forbids listing from a non-owner context", async () => {
+    const agent = await createTestTenant({ actor: "business_agent" });
+    await expectCode(testTenancy().listApiKeys(agent), "forbidden");
   });
 });
 

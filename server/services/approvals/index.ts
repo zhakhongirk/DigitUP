@@ -7,6 +7,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { Db, DbTx } from "@/db/client";
 import { changeSets } from "@/db/schema";
+import { EVENTS, type EventPublisher } from "@/server/events/types";
 import { recordAudit } from "../audit";
 import {
   archiveOffersTx,
@@ -61,7 +62,7 @@ async function applyOp(tx: DbTx, ctx: TenantContext, op: ChangeSetOp): Promise<v
   }
 }
 
-export function createApprovalsService(db: Db): ApprovalsService {
+export function createApprovalsService(db: Db, events?: EventPublisher): ApprovalsService {
   async function lockPending(tx: DbTx, ctx: TenantContext, id: string): Promise<ChangeSet> {
     const [changeSet] = await tx
       .select()
@@ -94,6 +95,14 @@ export function createApprovalsService(db: Db): ApprovalsService {
           entityId: changeSet!.id,
           after: { ops: input.ops.map((op) => op.op), reason: input.reason },
         });
+        if (ctx.actor !== "owner") {
+          await events?.publish(
+            tx,
+            EVENTS.changeSetCreated,
+            { tenantId: ctx.tenantId, changeSetId: changeSet!.id },
+            { singletonKey: changeSet!.id },
+          );
+        }
         return changeSet!;
       });
     },

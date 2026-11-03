@@ -7,6 +7,7 @@ import { createAuditService, type AuditService } from "./services/audit";
 import { createCatalogService, type CatalogService } from "./services/catalog";
 import { createConversationsService, type ConversationsService } from "./services/conversations";
 import { createIngestionService, type IngestionService } from "./services/ingestion";
+import { createNotificationsService, type NotificationsService } from "./services/notifications";
 import { createOrdersService, type OrdersService } from "./services/orders";
 import { createTenancyService, type TenancyService } from "./services/tenancy";
 import { createFileStorage, type FileStorage } from "./storage";
@@ -19,6 +20,7 @@ export interface Services {
   approvals: ApprovalsService;
   audit: AuditService;
   ingestion: IngestionService;
+  notifications: NotificationsService;
 }
 
 export interface ServiceDeps {
@@ -34,9 +36,10 @@ export function createServices({ db, events, authSecret, storage }: ServiceDeps)
     catalog: createCatalogService({ db, events }),
     orders: createOrdersService({ db, events }),
     conversations: createConversationsService({ db, events }),
-    approvals: createApprovalsService(db),
+    approvals: createApprovalsService(db, events),
     audit: createAuditService(db),
     ingestion: createIngestionService({ db, events, storage: storage ?? createFileStorage() }),
+    notifications: createNotificationsService(db),
   };
 }
 

@@ -1,3 +1,4 @@
+import { log } from "@/server/log";
 import { createHash } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { fromDrizzle, PgBoss } from "pg-boss";
@@ -21,7 +22,7 @@ export interface BossOptions {
 
 export async function startBoss({ connectionString, supervise }: BossOptions): Promise<PgBoss> {
   const boss = new PgBoss({ connectionString, supervise, schedule: supervise, max: 5 });
-  boss.on("error", (error) => console.error("[pg-boss]", error));
+  boss.on("error", (error) => log.error("pgboss.error", { error }));
   await boss.start();
   for (const name of ALL_EVENTS) {
     await boss.createQueue(name, { retryLimit: 3, retryDelay: 5, retryBackoff: true });

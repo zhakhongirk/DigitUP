@@ -361,3 +361,10 @@ describe("offer image_url", () => {
     }
   });
 });
+
+describe("offer image_url protocol-relative paths", () => {
+  it("rejects //host paths that browsers resolve as external URLs", () => {
+    const base = { title: "Boot", offer_type: "shoes", price_status: "on_request" as const };
+    expect(offerSchema.safeParse({ ...base, image_url: "//evil.com/x.png" }).success).toBe(false);
+  });
+});
