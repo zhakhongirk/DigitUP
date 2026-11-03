@@ -1,0 +1,1 @@
+ALTER TABLE "llm_usage" ADD COLUMN "tier" text DEFAULT 'main' NOT NULL;

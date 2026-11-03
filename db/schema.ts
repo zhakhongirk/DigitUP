@@ -422,6 +422,7 @@ export const llmUsage = pgTable(
     apiKeyId: uuid("api_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
     surface: text("surface").notNull(),
     model: text("model").notNull(),
+    tier: text("tier").notNull().default("main"),
     inputTokens: integer("input_tokens").notNull(),
     outputTokens: integer("output_tokens").notNull(),
     cachedTokens: integer("cached_tokens"),

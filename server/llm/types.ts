@@ -30,15 +30,21 @@ export interface LlmTool {
   parameters: Record<string, unknown>;
 }
 
+export type LlmTier = "main" | "fast" | "heavy";
+
+export type LlmSurface =
+  "storefront_chat" | "public_mcp" | "owner_agent" | "intent_rewrite" | "onboarding";
+
 /** Who a model call is made for; used to attribute token usage. */
 export interface LlmUsageSource {
   tenantId: string;
   apiKeyId?: string | null;
-  surface: "storefront_chat" | "public_mcp" | "onboarding";
+  surface: LlmSurface;
 }
 
 export interface LlmUsageRecord extends LlmUsageSource {
   model: string;
+  tier?: LlmTier;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number | null;

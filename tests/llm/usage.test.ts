@@ -74,6 +74,25 @@ describe("usage reported by the client", () => {
     ]);
   });
 
+  it("tags records with the tier of the client", async () => {
+    const records: LlmUsageRecord[] = [];
+    const api: ChatCompletionsApi = {
+      create: async () => completion({ prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+    };
+    const llm = createLlmClient({
+      model: "m",
+      tier: "heavy",
+      mode: "native",
+      completions: api,
+      recordUsage: (record) => void records.push(record),
+    });
+    await llm.chat({
+      messages: [{ role: "user", content: "hi" }],
+      usageSource: { tenantId: "t1", surface: "onboarding" },
+    });
+    expect(records[0]?.tier).toBe("heavy");
+  });
+
   it("leaves cached tokens null when the provider does not report them", async () => {
     const records: LlmUsageRecord[] = [];
     const llm = client(
@@ -141,6 +160,25 @@ describe("llm_usage table", () => {
       apiKeyId: null,
     });
     expect(rows[0]!.createdAt).toBeInstanceOf(Date);
+  });
+
+  it("stores the tier and defaults it to main", async () => {
+    const ctx = await createTestTenant();
+    const record = createUsageRecorder(() => testDb());
+    const base = {
+      tenantId: ctx.tenantId,
+      model: "m",
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: null,
+    };
+    await record({ ...base, surface: "intent_rewrite", tier: "fast" });
+    await record({ ...base, surface: "storefront_chat" });
+    const rows = await testDb().select().from(llmUsage).where(eq(llmUsage.tenantId, ctx.tenantId));
+    expect(rows.map((r) => [r.surface, r.tier]).sort()).toEqual([
+      ["intent_rewrite", "fast"],
+      ["storefront_chat", "main"],
+    ]);
   });
 
   it("stores the API key a call was made with", async () => {

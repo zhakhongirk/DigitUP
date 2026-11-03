@@ -2,7 +2,7 @@
  * Probes the configured model for the capabilities the agents rely on
  * and writes a report to docs/llm-probe.md.
  *
- *   pnpm llm:probe
+ *   pnpm llm:probe [-- --tier fast|main|heavy]
  *
  * Requires LLM_API_KEY and LLM_MODEL (or the legacy FIREWORKS_* names), read from .env.
  * LLM_REASONING_EFFORT and LLM_REASONING_TOKENS apply to every probe call.
@@ -13,13 +13,13 @@ import { dirname, resolve } from "node:path";
 import { deflateSync } from "node:zlib";
 import OpenAI from "openai";
 import { createLlmClient, type ChatCompletionsApi } from "@/server/llm/client";
-import { readLlmConfig } from "@/server/llm/config";
+import { LLM_TIERS, readTierConfig } from "@/server/llm/config";
+import type { LlmTier } from "@/server/llm/types";
 import type { LlmClient, LlmTool } from "@/server/llm/types";
 
 const RUNS = 3;
 let reasoningTokens = 0;
 let completionTokens = 0;
-const REPORT_PATH = resolve("docs/llm-probe.md");
 
 interface CheckResult {
   name: string;
@@ -103,8 +103,20 @@ function redSquarePng(): string {
   return `data:image/png;base64,${png.toString("base64")}`;
 }
 
+function readTier(): LlmTier {
+  const index = process.argv.indexOf("--tier");
+  const value = index >= 0 ? process.argv[index + 1] : "main";
+  if (!LLM_TIERS.includes(value as LlmTier)) {
+    throw new Error(`--tier must be one of ${LLM_TIERS.join(", ")}`);
+  }
+  return value as LlmTier;
+}
+
 async function main() {
-  const config = readLlmConfig();
+  const tier = readTier();
+  const config = readTierConfig(tier);
+  if (!config) throw new Error(`No usable settings for the ${tier} tier`);
+  const REPORT_PATH = resolve(tier === "main" ? "docs/llm-probe.md" : `docs/llm-probe-${tier}.md`);
   const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseURL });
   const completions: ChatCompletionsApi = {
     async create(params) {
@@ -130,7 +142,7 @@ async function main() {
   const native = build("native");
   const jsonTools = (jsonResponseFormat: boolean): LlmClient => build("json", jsonResponseFormat);
 
-  console.log(`Probing ${config.model} at ${config.baseURL} (reasoning_effort=${config.reasoningEffort ?? "default"}, headroom=${config.reasoningTokens})
+  console.log(`Probing ${tier} tier: ${config.model} at ${config.baseURL} (reasoning_effort=${config.reasoningEffort ?? "default"}, headroom=${config.reasoningTokens})
 `);
 
   const plain = await runCheck("Plain chat", 1, async () => {
@@ -254,6 +266,7 @@ async function main() {
     "# LLM probe",
     "",
     `- Date: ${new Date().toISOString()}`,
+    `- Tier: ${tier}`,
     `- Model: \`${config.model}\``,
     `- Endpoint: ${config.baseURL}`,
     `- Reasoning effort: ${config.reasoningEffort ?? "default"}, token headroom: ${config.reasoningTokens}`,

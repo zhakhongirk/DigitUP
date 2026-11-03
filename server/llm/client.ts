@@ -18,6 +18,7 @@ import {
   type LlmMessage,
   type LlmTool,
   type LlmToolCall,
+  type LlmTier,
   type LlmUsageRecord,
   type ToolCallMode,
 } from "./types";
@@ -29,6 +30,7 @@ export interface ChatCompletionsApi {
 
 export interface LlmClientOptions {
   model: string;
+  tier?: LlmTier;
   mode: ToolCallMode;
   /** Use `response_format: json_object` in JSON tool mode (disable if the model rejects it). */
   jsonResponseFormat?: boolean;
@@ -149,6 +151,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
         await options.recordUsage({
           ...request.usageSource,
           model,
+          ...(options.tier ? { tier: options.tier } : {}),
           inputTokens: usage.promptTokens,
           outputTokens: usage.completionTokens,
           cachedTokens: usage.cachedTokens ?? null,
@@ -231,6 +234,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
 }
 
 export interface FireworksClientOptions {
+  tier?: LlmTier;
   apiKey: string;
   model: string;
   mode: ToolCallMode;
@@ -245,6 +249,7 @@ export function createFireworksClient(options: FireworksClientOptions): LlmClien
   const openai = new OpenAI({ apiKey: options.apiKey, baseURL: options.baseURL });
   return createLlmClient({
     model: options.model,
+    tier: options.tier,
     mode: options.mode,
     jsonResponseFormat: options.jsonResponseFormat,
     reasoningEffort: options.reasoningEffort,

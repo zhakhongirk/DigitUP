@@ -11,6 +11,7 @@ export function createUsageRecorder(db: () => Db) {
         apiKeyId: record.apiKeyId ?? null,
         surface: record.surface,
         model: record.model,
+        tier: record.tier ?? "main",
         inputTokens: record.inputTokens,
         outputTokens: record.outputTokens,
         cachedTokens: record.cachedTokens,

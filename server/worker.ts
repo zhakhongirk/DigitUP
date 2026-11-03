@@ -24,7 +24,7 @@ async function main() {
   const boss = await startBoss({ connectionString: url, supervise: true });
   const events = new PgBossEventPublisher(boss);
   const services = createServices({ db: database.db, events, authSecret });
-  const llm = getOptionalLlmClient();
+  const llm = getOptionalLlmClient("heavy");
   const note = (message: string) => log.info("worker.message", { message });
   const deps: HandlerDeps = {
     db: database.db,

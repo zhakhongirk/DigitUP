@@ -1,26 +1,39 @@
 import { getDb } from "@/db/client";
-import { createFireworksClient } from "./client";
-import { isLlmConfigured, readLlmConfig } from "./config";
-import type { LlmClient } from "./types";
+import { readLlmConfig } from "./config";
+import { createLlmRouter, type LlmRouter } from "./router";
+import type { LlmClient, LlmTier } from "./types";
 import { createUsageRecorder } from "./usage";
 
 export * from "./types";
 export { createLlmClient, createFireworksClient } from "./client";
-export { isLlmConfigured, readLlmConfig, readLlmModel, type LlmConfig } from "./config";
+export {
+  isLlmConfigured,
+  readLlmConfig,
+  readLlmModel,
+  readTierConfig,
+  type LlmConfig,
+} from "./config";
+export { createLlmRouter, tierForSurface, SURFACE_TIER, type LlmRouter } from "./router";
 
-let shared: LlmClient | undefined;
+let router: LlmRouter | undefined;
 
-/** Process-wide LLM client configured from the environment. */
-export function getLlmClient(): LlmClient {
-  shared ??= createFireworksClient({
-    ...readLlmConfig(),
-    recordUsage: createUsageRecorder(getDb),
-  });
-  return shared;
+/** Process-wide router configured from the environment. */
+export function getLlmRouter(): LlmRouter {
+  router ??= createLlmRouter({ recordUsage: createUsageRecorder(getDb) });
+  return router;
+}
+
+/** Process-wide LLM client of a tier, configured from the environment. */
+export function getLlmClient(tier: LlmTier = "main"): LlmClient {
+  const client = getOptionalLlmClient(tier);
+  if (!client) {
+    readLlmConfig();
+    throw new Error("No LLM is configured");
+  }
+  return client;
 }
 
 /** Like getLlmClient, but returns null when no model is configured. */
-export function getOptionalLlmClient(): LlmClient | null {
-  if (!isLlmConfigured()) return null;
-  return getLlmClient();
+export function getOptionalLlmClient(tier: LlmTier = "main"): LlmClient | null {
+  return getLlmRouter().forTier(tier);
 }

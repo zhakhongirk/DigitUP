@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { LlmTier } from "./types";
 
 export const FIREWORKS_BASE_URL = "https://api.fireworks.ai/inference/v1";
 
@@ -68,5 +69,52 @@ export function readLlmConfig(env: Env = process.env): LlmConfig {
     jsonResponseFormat: value.LLM_JSON_RESPONSE_FORMAT,
     ...(value.LLM_REASONING_EFFORT ? { reasoningEffort: value.LLM_REASONING_EFFORT } : {}),
     reasoningTokens: value.LLM_REASONING_TOKENS,
+  };
+}
+
+export const LLM_TIERS = ["main", "fast", "heavy"] as const satisfies readonly LlmTier[];
+
+/**
+ * Settings of one tier. "fast" and "heavy" read LLM_FAST_* / LLM_HEAVY_* and fall back to the
+ * main settings value by value. The main API key is reused only when the tier sets no base URL,
+ * so a key is never sent to a host it was not issued for. Returns null when the result is unusable.
+ */
+export function readTierConfig(tier: LlmTier, env: Env = process.env): LlmConfig | null {
+  const main = isLlmConfigured(env) ? readLlmConfig(env) : null;
+  if (tier === "main") return main;
+  const prefix = `LLM_${tier.toUpperCase()}_`;
+  const own = (name: string) => env[`${prefix}${name}`] || undefined;
+
+  const baseURL = own("BASE_URL") ?? main?.baseURL;
+  const apiKey = own("API_KEY") ?? (own("BASE_URL") ? undefined : main?.apiKey);
+  const model = own("MODEL") ?? main?.model;
+  if (!baseURL || !apiKey || !model) return null;
+
+  const parsed = z
+    .object({
+      baseURL: z.url(),
+      mode: z.enum(["native", "json"]).optional(),
+      effort: z.enum(REASONING_EFFORTS).optional(),
+      tokens: z.coerce.number().int().min(0).optional(),
+    })
+    .safeParse({
+      baseURL,
+      mode: own("TOOL_CALL_MODE"),
+      effort: own("REASONING_EFFORT"),
+      tokens: own("REASONING_TOKENS"),
+    });
+  if (!parsed.success) {
+    const problems = parsed.error.issues.map((issue) => issue.message).join("; ");
+    throw new Error(`Invalid ${tier} LLM configuration: ${problems}`);
+  }
+  const reasoningEffort = parsed.data.effort ?? main?.reasoningEffort;
+  return {
+    apiKey,
+    model,
+    baseURL: parsed.data.baseURL,
+    mode: parsed.data.mode ?? main?.mode ?? "native",
+    jsonResponseFormat: main?.jsonResponseFormat ?? true,
+    ...(reasoningEffort ? { reasoningEffort } : {}),
+    reasoningTokens: parsed.data.tokens ?? main?.reasoningTokens ?? 0,
   };
 }
