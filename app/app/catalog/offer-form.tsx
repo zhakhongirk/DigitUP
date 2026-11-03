@@ -56,6 +56,23 @@ export function OfferForm({
             ))}
           </datalist>
         </label>
+        <label className="ct-label ct-wide">
+          {t("ct.fImage")}
+          <input
+            name="imageUrl"
+            type="text"
+            inputMode="url"
+            defaultValue={values.imageUrl}
+            maxLength={500}
+            placeholder="https://"
+          />
+        </label>
+        {values.sizesKind ? (
+          <label className="ct-label ct-wide">
+            {t("ct.fSizes")}
+            <input name="sizes" defaultValue={values.sizes} placeholder={t("ct.sizesHint")} />
+          </label>
+        ) : null}
         <label className="ct-label">
           {t("ct.fPrice")}
           <input

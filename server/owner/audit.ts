@@ -13,6 +13,26 @@ export const ACTOR_LABELS: Record<AuditEvent["actor"], string> = {
   system: "System",
 };
 
+export const AUDIT_ACTORS = ["owner", "business_agent", "customer_agent", "system"] as const;
+
+export function parseAuditActor(value: string | string[] | undefined): AuditEvent["actor"] | null {
+  const raw = Array.isArray(value) ? value[0] : value;
+  return AUDIT_ACTORS.find((actor) => actor === raw) ?? null;
+}
+
+export function auditHref(options: {
+  all?: boolean;
+  actor?: AuditEvent["actor"] | null;
+  page?: number;
+}): string {
+  const query = new URLSearchParams();
+  if (options.all) query.set("all", "1");
+  if (options.actor) query.set("actor", options.actor);
+  if (options.page && options.page > 1) query.set("page", String(options.page));
+  const text = query.toString();
+  return text ? `/app/audit?${text}` : "/app/audit";
+}
+
 const ACTION_LABELS: Record<string, string> = {
   "api_key.created": "Created an API key",
   "api_key.revoked": "Revoked an API key",

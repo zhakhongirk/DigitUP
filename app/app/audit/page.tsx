@@ -2,7 +2,15 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { actionLabel, actorLabel, auditChange, resolveAuditTargets } from "@/server/owner/audit";
+import {
+  AUDIT_ACTORS,
+  actionLabel,
+  actorLabel,
+  auditChange,
+  auditHref,
+  parseAuditActor,
+  resolveAuditTargets,
+} from "@/server/owner/audit";
 import { formatWhen } from "@/server/owner/inbox";
 import { parsePage } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
@@ -34,11 +42,13 @@ export default async function AuditPage({
 
   const all = params.all === "1";
   const excludeAction = all ? undefined : "conversation.created";
-  const total = await services.audit.count(owner, { excludeAction });
+  const actor = parseAuditActor(params.actor) ?? undefined;
+  const total = await services.audit.count(owner, { excludeAction, actor });
   const pageCount = Math.max(Math.ceil(total / PAGE_SIZE), 1);
   const page = Math.min(parsePage(params.page), pageCount);
   const events = await services.audit.list(owner, {
     excludeAction,
+    actor,
     limit: PAGE_SIZE,
     offset: (page - 1) * PAGE_SIZE,
   });
@@ -53,14 +63,28 @@ export default async function AuditPage({
           <p className="ws-sub">{t("au.sub")}</p>
         </div>
         <nav className="segmented segmented-sm" aria-label={t("au.filterLabel")}>
-          <Link href="/app/audit" aria-current={all ? undefined : "page"}>
+          <Link href={auditHref({ actor })} aria-current={all ? undefined : "page"}>
             {t("au.changes")}
           </Link>
-          <Link href="/app/audit?all=1" aria-current={all ? "page" : undefined}>
+          <Link href={auditHref({ all: true, actor })} aria-current={all ? "page" : undefined}>
             {t("au.all")}
           </Link>
         </nav>
       </div>
+      <nav className="segmented segmented-sm au-actors" aria-label={t("au.actorFilter")}>
+        <Link href={auditHref({ all })} aria-current={actor ? undefined : "page"}>
+          {t("au.anyActor")}
+        </Link>
+        {AUDIT_ACTORS.map((value) => (
+          <Link
+            key={value}
+            href={auditHref({ all, actor: value })}
+            aria-current={actor === value ? "page" : undefined}
+          >
+            {actorLabel(value, lang)}
+          </Link>
+        ))}
+      </nav>
       <section className="au-list glass" aria-label={t("au.listLabel")}>
         {events.length === 0 ? (
           <p className="au-empty">{t("au.empty")}</p>
@@ -97,17 +121,7 @@ export default async function AuditPage({
           </ol>
         )}
       </section>
-      <Pager
-        page={page}
-        pageCount={pageCount}
-        href={(n) => {
-          const query = new URLSearchParams();
-          if (all) query.set("all", "1");
-          if (n > 1) query.set("page", String(n));
-          const qs = query.toString();
-          return qs ? `/app/audit?${qs}` : "/app/audit";
-        }}
-      />
+      <Pager page={page} pageCount={pageCount} href={(n) => auditHref({ all, actor, page: n })} />
     </>
   );
 }

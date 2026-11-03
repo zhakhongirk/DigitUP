@@ -9,6 +9,7 @@ import {
   catalogHref,
   commonOfferType,
   newOfferInput,
+  sizeKinds,
   statusesFor,
 } from "@/server/owner/catalog";
 import { ownerT } from "@/server/owner/lang";
@@ -44,7 +45,13 @@ export async function saveOffer(
   try {
     const current = await services.catalog.getOffer(owner, id);
     if (!current) return { error: t("ct.errGone"), saved: false };
-    const result = buildOfferInput(current, form, lang);
+    const types = await services.catalog.listOfferTypes(owner);
+    const result = buildOfferInput(
+      current,
+      form,
+      lang,
+      sizeKinds(types).get(current.offerTypeKey) ?? null,
+    );
     if ("error" in result) return { error: result.error, saved: false };
     await services.catalog.upsertOffers(owner, [result.input]);
   } catch (error) {

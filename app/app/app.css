@@ -821,6 +821,25 @@
   gap: 8px;
 }
 
+.cs-confirm {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-confirm-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--danger-text);
+}
+
+.au-actors {
+  align-self: flex-start;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
 .cs-history {
   display: flex;
   flex: 1 1 260px;

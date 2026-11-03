@@ -11,6 +11,7 @@ import {
   availabilityLabel,
   catalogHref,
   matchesFilters,
+  sizeKinds,
   pageCount,
   parseCatalogParams,
   statusFilterLabel,
@@ -34,11 +35,12 @@ async function searchFiltered(
   owner: Owner,
   base: { query?: string; category?: string; statuses: ReturnType<typeof statusesFor> },
   params: CatalogParams,
+  sizeTypeKeys: ReadonlySet<string>,
 ) {
   const matches: OfferView[] = [];
   for (let offset = 0; offset < 5000; offset += 100) {
     const batch = await services.catalog.searchOffers(owner, { ...base, limit: 100, offset });
-    matches.push(...batch.items.filter((offer) => matchesFilters(offer, params)));
+    matches.push(...batch.items.filter((offer) => matchesFilters(offer, params, sizeTypeKeys)));
     if (batch.items.length < 100) break;
   }
   const start = (params.page - 1) * PAGE_SIZE;
@@ -60,11 +62,13 @@ export default async function CatalogPage({
     category: params.category || undefined,
     statuses: statusesFor(params.status),
   };
-  const needsInfoFilter = Boolean(params.availability || params.priceOnRequest);
+  const needsInfoFilter = Boolean(params.availability || params.priceOnRequest || params.missing);
+  const types = await services.catalog.listOfferTypes(owner);
+  const kinds = sizeKinds(types);
 
   const [result, categories, selected, everything] = await Promise.all([
     needsInfoFilter
-      ? searchFiltered(services, owner, base, params)
+      ? searchFiltered(services, owner, base, params, new Set(kinds.keys()))
       : services.catalog.searchOffers(owner, {
           ...base,
           limit: PAGE_SIZE,
@@ -80,6 +84,38 @@ export default async function CatalogPage({
   const filtered = Boolean(
     params.q || params.category || params.status !== "active" || needsInfoFilter,
   );
+  const needsChips = [
+    {
+      key: "price",
+      label: t("ct.missingPrice"),
+      active: params.priceOnRequest,
+      toggle: { priceOnRequest: !params.priceOnRequest },
+    },
+    {
+      key: "photo",
+      label: t("ct.missingPhoto"),
+      active: params.missing === "photo",
+      toggle: { missing: params.missing === "photo" ? ("" as const) : ("photo" as const) },
+    },
+    {
+      key: "availability",
+      label: t("ct.missingAvailability"),
+      active: params.availability === "unknown",
+      toggle: {
+        availability: params.availability === "unknown" ? ("" as const) : ("unknown" as const),
+      },
+    },
+    ...(kinds.size > 0
+      ? [
+          {
+            key: "sizes",
+            label: t("ct.missingSizes"),
+            active: params.missing === "sizes",
+            toggle: { missing: params.missing === "sizes" ? ("" as const) : ("sizes" as const) },
+          },
+        ]
+      : []),
+  ];
   const closeHref = catalogHref({ ...params, offerId: null });
 
   return (
@@ -148,22 +184,32 @@ export default async function CatalogPage({
                   </option>
                 ))}
               </select>
-              <label className="ct-check-inline">
-                <input
-                  type="checkbox"
-                  name="price"
-                  value="on_request"
-                  defaultChecked={params.priceOnRequest}
-                />
-                {t("ct.priceOnRequest")}
-              </label>
               {params.status !== "active" ? (
                 <input type="hidden" name="status" value={params.status} />
+              ) : null}
+              {params.priceOnRequest ? (
+                <input type="hidden" name="price" value="on_request" />
+              ) : null}
+              {params.missing ? (
+                <input type="hidden" name="missing" value={params.missing} />
               ) : null}
               <button type="submit" className="btn btn-sm">
                 {t("ct.search")}
               </button>
             </form>
+
+            <nav className="ct-needs" aria-label={t("ct.needsInfo")}>
+              {needsChips.map((chip) => (
+                <Link
+                  key={chip.key}
+                  href={catalogHref({ ...params, ...chip.toggle, page: 1, offerId: null })}
+                  className="ct-need"
+                  aria-current={chip.active ? "true" : undefined}
+                >
+                  {chip.label}
+                </Link>
+              ))}
+            </nav>
 
             <nav className="segmented ct-status" aria-label={t("ct.status")}>
               {STATUS_FILTERS.map((status) => (
@@ -272,7 +318,7 @@ export default async function CatalogPage({
                   <OfferForm
                     key={selected.id}
                     id={selected.id}
-                    values={toFormValues(selected)}
+                    values={toFormValues(selected, kinds.get(selected.offerTypeKey) ?? null)}
                     archived={selected.status === "archived"}
                     categories={categories}
                   />

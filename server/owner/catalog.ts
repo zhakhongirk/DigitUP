@@ -71,9 +71,13 @@ export interface CatalogParams {
   status: StatusFilter;
   availability: Availability | "";
   priceOnRequest: boolean;
+  missing: MissingFilter | "";
   page: number;
   offerId: string | null;
 }
+
+export const MISSING_FILTERS = ["photo", "sizes"] as const;
+export type MissingFilter = (typeof MISSING_FILTERS)[number];
 
 type RawParams = Record<string, string | string[] | undefined>;
 
@@ -90,6 +94,7 @@ export function parseCatalogParams(params: RawParams): CatalogParams {
     status: STATUS_FILTERS.find((s) => s === status) ?? "active",
     availability: AVAILABILITY_FILTERS.find((a) => a === first(params.availability)) ?? "",
     priceOnRequest: first(params.price) === "on_request",
+    missing: MISSING_FILTERS.find((m) => m === first(params.missing)) ?? "",
     page: Number.isFinite(page) && page > 0 ? page : 1,
     offerId: first(params.offer) || null,
   };
@@ -106,6 +111,7 @@ export function catalogHref(params: Partial<CatalogParams>): string {
   if (params.status && params.status !== "active") query.set("status", params.status);
   if (params.availability) query.set("availability", params.availability);
   if (params.priceOnRequest) query.set("price", "on_request");
+  if (params.missing) query.set("missing", params.missing);
   if (params.page && params.page > 1) query.set("page", String(params.page));
   if (params.offerId) query.set("offer", params.offerId);
   const text = query.toString();
@@ -113,15 +119,59 @@ export function catalogHref(params: Partial<CatalogParams>): string {
 }
 
 export function matchesFilters(
-  offer: Pick<OfferView, "availability" | "price" | "priceStatus">,
-  params: Pick<CatalogParams, "availability" | "priceOnRequest">,
+  offer: Pick<OfferView, "availability" | "price" | "priceStatus"> &
+    Partial<Pick<OfferView, "imageUrl" | "attributes" | "offerTypeKey">>,
+  params: Pick<CatalogParams, "availability" | "priceOnRequest"> &
+    Partial<Pick<CatalogParams, "missing">>,
+  sizeTypeKeys: ReadonlySet<string> = new Set(),
 ): boolean {
   if (params.availability && offer.availability !== params.availability) return false;
   if (params.priceOnRequest && offer.price !== null && offer.priceStatus !== "on_request") {
     return false;
   }
+  if (params.missing === "photo" && offer.imageUrl) return false;
+  if (params.missing === "sizes") {
+    if (!offer.offerTypeKey || !sizeTypeKeys.has(offer.offerTypeKey)) return false;
+    if (sizeList(attributesOf(offer.attributes).sizes).length > 0) return false;
+  }
   return true;
 }
+
+function attributesOf(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+export type SizesKind = "list" | "text";
+
+/** Offer type keys whose attribute schema defines an editable `sizes` attribute. */
+export function sizeKinds(
+  types: { key: string; attributeSchema: unknown }[],
+): Map<string, SizesKind> {
+  const result = new Map<string, SizesKind>();
+  for (const type of types) {
+    if (!Array.isArray(type.attributeSchema)) continue;
+    const def = (type.attributeSchema as { key?: string; type?: string }[]).find(
+      (attr) => attr.key === "sizes",
+    );
+    if (def?.type === "list" || def?.type === "text") result.set(type.key, def.type);
+  }
+  return result;
+}
+
+function sizeList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+  return [];
+}
+
+export function sizesText(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  return sizeList(value).join(", ");
+}
+
+const IMAGE_URL = /^(https:\/\/|\/(?!\/))\S+$/;
 
 /** The offer type most offers use, so a new offer starts like the rest of the catalog. */
 export function commonOfferType(
@@ -201,9 +251,15 @@ export interface OfferFormValues {
   priceOnRequest: boolean;
   availability: Availability;
   status: OfferStatus;
+  imageUrl: string;
+  sizes: string;
+  sizesKind: SizesKind | null;
 }
 
-export function toFormValues(offer: OfferView): OfferFormValues {
+export function toFormValues(
+  offer: OfferView,
+  sizesKind: SizesKind | null = null,
+): OfferFormValues {
   return {
     title: offer.title,
     description: offer.description,
@@ -213,6 +269,9 @@ export function toFormValues(offer: OfferView): OfferFormValues {
     priceOnRequest: offer.price === null,
     availability: offer.availability,
     status: offer.status,
+    imageUrl: offer.imageUrl ?? "",
+    sizes: sizesText(attributesOf(offer.attributes).sizes),
+    sizesKind,
   };
 }
 
@@ -236,6 +295,7 @@ export function buildOfferInput(
   current: OfferView,
   form: FormLike,
   lang: Lang = "en",
+  sizesKind: SizesKind | null = null,
 ): OfferInputResult {
   const title = text(form, "title");
   if (!title) return { error: tr(lang, "ct.errTitle") };
@@ -257,6 +317,22 @@ export function buildOfferInput(
     if (!currency) return { error: tr(lang, "ct.errCurrency") };
   }
 
+  const imageUrl =
+    form.get("imageUrl") === null ? (current.imageUrl ?? "") : text(form, "imageUrl");
+  if (imageUrl && (imageUrl.length > 500 || !IMAGE_URL.test(imageUrl))) {
+    return { error: tr(lang, "ct.errImage") };
+  }
+
+  const attributes = { ...attributesOf(current.attributes) };
+  if (sizesKind && form.get("sizes") !== null) {
+    const list = text(form, "sizes")
+      .split(/[,;\n]/)
+      .map((size) => size.trim())
+      .filter(Boolean);
+    if (list.length === 0) delete attributes.sizes;
+    else attributes.sizes = sizesKind === "list" ? list : list.join(", ");
+  }
+
   return {
     input: {
       id: current.id,
@@ -264,13 +340,13 @@ export function buildOfferInput(
       description: text(form, "description"),
       category: text(form, "category") || null,
       offer_type: current.offerTypeKey,
-      attributes: current.attributes,
+      attributes,
       price,
       currency: currency || null,
       price_status: price === null ? "on_request" : "confirmed",
       availability,
       status,
-      image_url: current.imageUrl,
+      image_url: imageUrl || null,
     },
   };
 }

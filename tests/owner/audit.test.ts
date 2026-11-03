@@ -152,3 +152,17 @@ describe("resolveAuditTargets", () => {
     expect(gone.get("b")).toEqual({ name: "Old boots", href: null });
   });
 });
+
+describe("parseAuditActor", () => {
+  it("accepts the actor enum and ignores anything else", async () => {
+    const { parseAuditActor, auditHref } = await import("@/server/owner/audit");
+    expect(parseAuditActor("system")).toBe("system");
+    expect(parseAuditActor(["owner", "system"])).toBe("owner");
+    expect(parseAuditActor("admin")).toBeNull();
+    expect(parseAuditActor(undefined)).toBeNull();
+    expect(auditHref({ all: true, actor: "owner", page: 2 })).toBe(
+      "/app/audit?all=1&actor=owner&page=2",
+    );
+    expect(auditHref({})).toBe("/app/audit");
+  });
+});

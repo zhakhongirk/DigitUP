@@ -40,11 +40,15 @@ export interface AuditService {
       entity?: string;
       entityId?: string;
       excludeAction?: string;
+      actor?: AuditEvent["actor"];
       limit?: number;
       offset?: number;
     },
   ): Promise<AuditEvent[]>;
-  count(ctx: TenantContext, options?: { excludeAction?: string }): Promise<number>;
+  count(
+    ctx: TenantContext,
+    options?: { excludeAction?: string; actor?: AuditEvent["actor"] },
+  ): Promise<number>;
 }
 
 export function createAuditService(db: Db): AuditService {
@@ -54,6 +58,7 @@ export function createAuditService(db: Db): AuditService {
       if (options.entity) conditions.push(eq(auditEvents.entity, options.entity));
       if (options.entityId) conditions.push(eq(auditEvents.entityId, options.entityId));
       if (options.excludeAction) conditions.push(ne(auditEvents.action, options.excludeAction));
+      if (options.actor) conditions.push(eq(auditEvents.actor, options.actor));
       return db
         .select()
         .from(auditEvents)
@@ -66,6 +71,7 @@ export function createAuditService(db: Db): AuditService {
     async count(ctx, options = {}) {
       const conditions = [eq(auditEvents.tenantId, ctx.tenantId)];
       if (options.excludeAction) conditions.push(ne(auditEvents.action, options.excludeAction));
+      if (options.actor) conditions.push(eq(auditEvents.actor, options.actor));
       const [row] = await db
         .select({ total: count() })
         .from(auditEvents)

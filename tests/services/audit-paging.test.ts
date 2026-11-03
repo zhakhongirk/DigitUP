@@ -58,4 +58,19 @@ describe("audit paging", () => {
     }
     expect(seen.size).toBe(total);
   });
+
+  it("filters list and count by actor", async () => {
+    const db = testDb();
+    const ctx = await createTestTenant({ actor: "owner" });
+    const audit = createAuditService(db);
+    await recordAudit(db, ctx, { action: "thing.a", entity: "thing" });
+    await recordAudit(db, { ...ctx, actor: "system" }, { action: "thing.b", entity: "thing" });
+    await recordAudit(db, { ...ctx, actor: "system" }, { action: "thing.c", entity: "thing" });
+
+    const system = await audit.list(ctx, { actor: "system" });
+    expect(system.every((e) => e.actor === "system")).toBe(true);
+    expect(system.map((e) => e.action)).toEqual(expect.arrayContaining(["thing.b", "thing.c"]));
+    expect(system).toHaveLength(await audit.count(ctx, { actor: "system" }));
+    expect(await audit.count(ctx, { actor: "customer_agent" })).toBe(0);
+  });
 });

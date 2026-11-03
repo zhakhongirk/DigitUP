@@ -6,6 +6,7 @@ import {
   matchesFilters,
   newOfferInput,
   pageCount,
+  sizeKinds,
   parseCatalogParams,
   parsePrice,
   statusesFor,
@@ -63,6 +64,7 @@ describe("parseCatalogParams", () => {
       status: "active",
       availability: "",
       priceOnRequest: false,
+      missing: "",
       page: 1,
       offerId: null,
     });
@@ -82,6 +84,7 @@ describe("parseCatalogParams", () => {
       status: "all",
       availability: "",
       priceOnRequest: false,
+      missing: "",
       page: 3,
       offerId: ID,
     });
@@ -113,6 +116,7 @@ describe("helpers", () => {
     expect(parseCatalogParams({ availability: "x", price: "y" })).toMatchObject({
       availability: "",
       priceOnRequest: false,
+      missing: "",
     });
     expect(catalogHref(parsed)).toBe("/app/catalog?availability=unknown&price=on_request");
   });
@@ -239,5 +243,78 @@ describe("buildOfferInput", () => {
     [{ status: "gone" }, "Choose a status."],
   ])("rejects %j", (patch, error) => {
     expect(buildOfferInput(offer(), form({ ...VALID, ...patch }))).toEqual({ error });
+  });
+});
+
+describe("needs-info filters", () => {
+  const sizeTypes = new Set(["product"]);
+
+  it("parses and keeps the missing filter in links", () => {
+    expect(parseCatalogParams({ missing: "photo" }).missing).toBe("photo");
+    expect(parseCatalogParams({ missing: "bogus" }).missing).toBe("");
+    expect(catalogHref({ missing: "sizes" })).toBe("/app/catalog?missing=sizes");
+  });
+
+  it("matches offers without a photo", () => {
+    const params = { availability: "" as const, priceOnRequest: false, missing: "photo" as const };
+    expect(matchesFilters(offer({ imageUrl: null }), params)).toBe(true);
+    expect(matchesFilters(offer(), params)).toBe(false);
+  });
+
+  it("matches missing sizes only for types that have sizes", () => {
+    const params = { availability: "" as const, priceOnRequest: false, missing: "sizes" as const };
+    expect(matchesFilters(offer({ attributes: {} }), params, sizeTypes)).toBe(true);
+    expect(matchesFilters(offer({ attributes: { sizes: [] } }), params, sizeTypes)).toBe(true);
+    expect(matchesFilters(offer({ attributes: { sizes: ["42"] } }), params, sizeTypes)).toBe(false);
+    expect(matchesFilters(offer({ attributes: {} }), params, new Set())).toBe(false);
+  });
+
+  it("finds the sizes attribute kind on offer types", () => {
+    const kinds = sizeKinds([
+      { key: "product", attributeSchema: [{ key: "sizes", type: "list" }] },
+      { key: "service", attributeSchema: [{ key: "duration", type: "number" }] },
+      { key: "legacy", attributeSchema: [{ key: "sizes", type: "text" }] },
+    ]);
+    expect([...kinds]).toEqual([
+      ["product", "list"],
+      ["legacy", "text"],
+    ]);
+  });
+});
+
+describe("editing sizes and photo", () => {
+  it("writes sizes as a list and the photo link", () => {
+    const result = buildOfferInput(
+      offer(),
+      form({ ...VALID, sizes: "40, 41;42", imageUrl: "https://x.test/a.jpg" }),
+      "en",
+      "list",
+    );
+    expect(result).toMatchObject({
+      input: {
+        attributes: { size: "42", sizes: ["40", "41", "42"] },
+        image_url: "https://x.test/a.jpg",
+      },
+    });
+  });
+
+  it("clears sizes and photo when emptied", () => {
+    const result = buildOfferInput(
+      offer({ attributes: { sizes: ["40"] } }),
+      form({ ...VALID, sizes: "", imageUrl: "" }),
+      "en",
+      "list",
+    );
+    expect(result).toMatchObject({ input: { attributes: {}, image_url: null } });
+  });
+
+  it("leaves sizes alone when the type has none", () => {
+    const result = buildOfferInput(offer(), form({ ...VALID, sizes: "40" }), "en", null);
+    expect(result).toMatchObject({ input: { attributes: { size: "42" } } });
+  });
+
+  it("rejects a photo link that is not https or a path", () => {
+    const result = buildOfferInput(offer(), form({ ...VALID, imageUrl: "http://x.test/a.jpg" }));
+    expect(result).toHaveProperty("error");
   });
 });
