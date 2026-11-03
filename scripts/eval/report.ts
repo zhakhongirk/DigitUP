@@ -242,6 +242,7 @@ function latestRunDir(): string {
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const dir = process.argv[2] ? resolve(process.argv[2]) : latestRunDir();
+  const dirArg = process.argv.slice(2).find((arg) => arg !== "--");
+  const dir = dirArg ? resolve(dirArg) : latestRunDir();
   console.log(writeReport(dir).join("\n"));
 }

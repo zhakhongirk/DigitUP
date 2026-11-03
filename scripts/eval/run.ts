@@ -176,6 +176,7 @@ function today(): string {
 
 async function main() {
   const { values } = parseArgs({
+    args: process.argv.slice(2).filter((arg) => arg !== "--"),
     options: {
       config: { type: "string", default: "A,B,C" },
       runs: { type: "string", default: "3" },
