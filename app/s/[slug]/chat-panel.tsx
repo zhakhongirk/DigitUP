@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import {
   MAX_MESSAGE_CHARS,
   SUGGESTIONS,
   UI_LABELS,
   chatReducer,
+  errorMessage,
   flushNdjson,
   initialChatState,
   hasOpenDraft,
@@ -16,6 +17,7 @@ import {
   parseNdjsonChunk,
   toOrderView,
   type OfferChip,
+  type ErrorTexts,
   type OrderCard,
   type StreamEvent,
   type UiLang,
@@ -53,16 +55,6 @@ function initials(name: string): string {
       .join("")
       .toUpperCase() || "S"
   );
-}
-
-async function errorMessage(res: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await res.json()) as { message?: unknown };
-    if (typeof body.message === "string" && body.message) return body.message;
-  } catch {
-    // Fall through to the generic text.
-  }
-  return fallback;
 }
 
 type OrderDetailsInput = {
@@ -200,7 +192,6 @@ function OrderSummary({
           >
             {t(uiLang, "addAnother")}
           </button>
-          {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
           <label className="chat-order-phone">
             <span>{t(uiLang, "fieldName")}</span>
             <input
@@ -372,6 +363,14 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
   const base = `/api/s/${encodeURIComponent(slug)}/chat`;
   const networkError = t(uiLang, "networkError");
   const genericError = t(uiLang, "genericError");
+  const errorTexts = useMemo<ErrorTexts>(
+    () => ({
+      invalidDetails: t(uiLang, "orderDetailsInvalid"),
+      fillRequired: t(uiLang, "fillRequired"),
+      generic: t(uiLang, "genericError"),
+    }),
+    [uiLang],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -442,7 +441,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
           return;
         }
         if (!res.ok || !res.body) {
-          dispatch({ type: "stream_failed", message: await errorMessage(res, genericError) });
+          dispatch({ type: "stream_failed", message: await errorMessage(res, errorTexts) });
           return;
         }
         const reader = res.body.getReader();
@@ -470,7 +469,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
         sendingRef.current = false;
       }
     },
-    [base, genericError, networkError],
+    [base, errorTexts, networkError],
   );
 
   const sendText = useCallback(
@@ -533,7 +532,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
           dispatch({
             type: "confirm_failed",
             orderId,
-            message: await errorMessage(res, genericError),
+            message: await errorMessage(res, errorTexts),
           });
           return;
         }
@@ -544,7 +543,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
         dispatch({ type: "confirm_failed", orderId, message: networkError });
       }
     },
-    [slug, genericError, networkError],
+    [slug, genericError, errorTexts, networkError],
   );
 
   const changeItems = useCallback(
@@ -563,7 +562,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
           dispatch({
             type: "confirm_failed",
             orderId,
-            message: await errorMessage(res, genericError),
+            message: await errorMessage(res, errorTexts),
           });
           return;
         }
@@ -574,7 +573,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
         dispatch({ type: "confirm_failed", orderId, message: networkError });
       }
     },
-    [slug, genericError, networkError],
+    [slug, genericError, errorTexts, networkError],
   );
 
   const onSubmit = (e: FormEvent) => {

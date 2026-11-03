@@ -128,6 +128,7 @@ const en = {
   confirmOrder: "Confirm order",
   fillRequired:
     "Fill in your name, phone and how you want to receive the order (city and address for delivery).",
+  orderDetailsInvalid: "Check your name, phone and delivery details.",
   availInStock: "In stock",
   availOutOfStock: "Out of stock",
   availUnknown: "Availability to be confirmed",
@@ -253,6 +254,7 @@ const ru: Record<StringKey, string> = {
   fulfillmentGroup: "Самовывоз или доставка",
   confirmOrder: "Подтвердить заказ",
   fillRequired: "Укажите имя, телефон и способ получения заказа (для доставки город и адрес).",
+  orderDetailsInvalid: "Проверьте имя, телефон и данные доставки.",
   availInStock: "В наличии",
   availOutOfStock: "Нет в наличии",
   availUnknown: "Наличие уточняется",
@@ -379,6 +381,7 @@ const kk: Record<StringKey, string> = {
   confirmOrder: "Тапсырысты растау",
   fillRequired:
     "Атыңызды, телефоныңызды және тапсырысты алу тәсілін көрсетіңіз (жеткізу үшін қала мен мекенжай).",
+  orderDetailsInvalid: "Атыңызды, телефоныңызды және жеткізу деректерін тексеріңіз.",
   availInStock: "Бар",
   availOutOfStock: "Қалмаған",
   availUnknown: "Бары нақтылануда",

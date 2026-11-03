@@ -3,6 +3,7 @@ import {
   UI_LABELS,
   chatReducer,
   detectUiLang,
+  errorMessage,
   flushNdjson,
   initialChatState,
   isOrderDetailsValid,
@@ -387,5 +388,24 @@ describe("order card with several items", () => {
       ev({ type: "tool_result", name: "create_order", data: twoLines }),
     ]);
     expect(s.items.filter((i) => i.kind === "order")).toHaveLength(1);
+  });
+});
+
+describe("errorMessage", () => {
+  const texts = { invalidDetails: "details", fillRequired: "fill", generic: "generic" };
+  const reply = (body: unknown) => new Response(JSON.stringify(body), { status: 409 });
+
+  it("maps error codes to storefront copy and ignores the server message", async () => {
+    expect(await errorMessage(reply({ error: "invalid_details", message: "English" }), texts)).toBe(
+      "details",
+    );
+    expect(await errorMessage(reply({ error: "invalid", message: "English" }), texts)).toBe("fill");
+    expect(await errorMessage(reply({ error: "conflict", message: "English" }), texts)).toBe(
+      "generic",
+    );
+  });
+
+  it("falls back to the generic text for an unreadable body", async () => {
+    expect(await errorMessage(new Response("nope", { status: 500 }), texts)).toBe("generic");
   });
 });

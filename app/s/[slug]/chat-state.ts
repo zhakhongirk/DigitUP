@@ -160,7 +160,6 @@ export type OrderCard = {
   total: number | string;
   currency: string;
   totalLabel: string | null;
-  nextStep: string | null;
   name: string;
   phone: string;
   fulfillment: "pickup" | "delivery" | null;
@@ -317,7 +316,6 @@ function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
     total: view.total,
     currency: view.currency,
     totalLabel: view.total_label ?? null,
-    nextStep: view.next_step ?? null,
     name: view.contact?.name ?? "",
     phone: view.contact?.phone ?? "",
     fulfillment:
@@ -511,4 +509,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         error: action.message,
       }));
   }
+}
+
+export type ErrorTexts = { invalidDetails: string; fillRequired: string; generic: string };
+
+export async function errorMessage(res: Response, texts: ErrorTexts): Promise<string> {
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (body.error === "invalid_details") return texts.invalidDetails;
+    if (body.error === "invalid") return texts.fillRequired;
+  } catch {
+    // Fall through to the generic text.
+  }
+  return texts.generic;
 }
