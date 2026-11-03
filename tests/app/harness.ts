@@ -12,6 +12,7 @@ import { createFileStorage } from "@/server/storage";
 import { SESSION_COOKIE } from "@/server/mcp/http";
 import type { TenantContext } from "@/server/services/context";
 import type { BusinessModelInput } from "@/shared/business-model";
+import { createIntentService } from "@/server/services/intent";
 import { createWebhookService } from "@/server/services/webhooks";
 import { createTelegramService } from "@/server/services/telegram";
 import { recordingEvents, TEST_AUTH_SECRET, testDb, uniqueSlug } from "../helpers/db";
@@ -25,9 +26,11 @@ export function testServices(): Services {
   if (!services) {
     const db = testDb();
     const events = recordingEvents();
+    const catalog = createCatalogService({ db, events });
     services = {
       tenancy: createTenancyService(db, { authSecret: TEST_AUTH_SECRET, bcryptRounds: 4 }),
-      catalog: createCatalogService({ db, events }),
+      catalog,
+      intent: createIntentService({ db, catalog }),
       orders: createOrdersService({ db, events }),
       conversations: createConversationsService({ db, events }),
       approvals: createApprovalsService(db),

@@ -63,6 +63,8 @@ export interface OfferSearch {
   offerTypeKey?: string;
   /** Exact attribute filters; a string also matches inside list attributes. */
   attributes?: Record<string, AttributeValue>;
+  /** Attribute filters where any of the listed values may match. */
+  attributesAny?: Record<string, string[]>;
   /** Price range; offers without a confirmed price are always kept and report priceStatus. */
   minPrice?: number;
   maxPrice?: number;
@@ -161,13 +163,17 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
     }
     if (search.category) conditions.push(ilike(offers.category, escapeLike(search.category)));
     if (search.offerTypeKey) conditions.push(eq(offerTypes.key, search.offerTypeKey));
-    for (const [key, value] of Object.entries(search.attributes ?? {})) {
+    const holds = (key: string, value: AttributeValue): SQL => {
       const exact = sql`${offers.attributes} @> ${JSON.stringify({ [key]: value })}::jsonb`;
-      conditions.push(
-        typeof value === "string"
-          ? or(exact, sql`${offers.attributes} @> ${JSON.stringify({ [key]: [value] })}::jsonb`)!
-          : exact,
-      );
+      return typeof value === "string"
+        ? or(exact, sql`${offers.attributes} @> ${JSON.stringify({ [key]: [value] })}::jsonb`)!
+        : exact;
+    };
+    for (const [key, value] of Object.entries(search.attributes ?? {})) {
+      conditions.push(holds(key, value));
+    }
+    for (const [key, values] of Object.entries(search.attributesAny ?? {})) {
+      if (values.length > 0) conditions.push(or(...values.map((value) => holds(key, value)))!);
     }
     const unpriced = or(isNull(offers.price), ne(offers.priceStatus, "confirmed"))!;
     if (search.minPrice !== undefined) {

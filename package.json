@@ -24,6 +24,7 @@
     "db:migrate": "tsx db/migrate.ts",
     "db:seed": "tsx db/seed.ts",
     "db:reset": "tsx scripts/db-reset.ts",
+    "db:vocabulary": "tsx scripts/backfill-vocabulary.ts",
     "demo:data": "tsx scripts/demo-data.ts",
     "smoke": "tsx scripts/smoke.ts"
   },

@@ -148,6 +148,8 @@ export const businessProfiles = pgTable("business_profiles", {
   contacts: jsonb("contacts").notNull().default({}),
   policies: jsonb("policies").notNull().default({}),
   missingInfo: jsonb("missing_info").notNull().default([]),
+  /** Synonyms, categories, facet values and size grid derived from the catalog. */
+  vocabulary: jsonb("vocabulary"),
   updatedAt: updatedAt(),
 });
 
@@ -426,4 +428,32 @@ export const llmUsage = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index("llm_usage_tenant_created_idx").on(t.tenantId, t.createdAt)],
+);
+
+export const intentEvents = pgTable(
+  "intent_events",
+  {
+    /** The intent id returned to the caller for find_offers rows. */
+    id: id(),
+    tenantId: tenantId(),
+    /** find_offers, or the raw tool that was called after one. */
+    kind: text("kind").notNull(),
+    channel: text("channel").notNull(),
+    sessionKey: text("session_key"),
+    clientKey: text("client_key"),
+    text: text("text").notNull(),
+    applied: jsonb("applied"),
+    relaxed: jsonb("relaxed"),
+    resultIds: jsonb("result_ids").notNull().default([]),
+    verdict: text("verdict"),
+    comment: text("comment"),
+    afterIntentId: uuid("after_intent_id"),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("intent_events_tenant_idx").on(t.tenantId, t.createdAt),
+    index("intent_events_session_idx").on(t.tenantId, t.sessionKey, t.createdAt),
+    index("intent_events_client_idx").on(t.tenantId, t.clientKey, t.createdAt),
+    index("intent_events_after_idx").on(t.afterIntentId),
+  ],
 );

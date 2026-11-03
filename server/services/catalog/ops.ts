@@ -21,6 +21,7 @@ import {
 } from "@/shared/business-model";
 import { recordAudit } from "../audit";
 import { ServiceError, type TenantContext } from "../context";
+import { refreshVocabulary } from "../intent/store";
 
 export type OfferRecord = typeof offers.$inferSelect;
 export type OfferTypeRecord = typeof offerTypes.$inferSelect;
@@ -178,6 +179,7 @@ export async function applyBusinessModelTx(
   }
 
   const counts = { offerTypes: model.offer_types.length, offers: model.offers.length };
+  await refreshVocabulary(tx, ctx.tenantId);
   await recordAudit(tx, ctx, {
     action: "business_model.applied",
     entity: "tenant",

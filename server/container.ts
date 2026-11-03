@@ -7,6 +7,7 @@ import { createApprovalsService, type ApprovalsService } from "./services/approv
 import { createAuditService, type AuditService } from "./services/audit";
 import { createCatalogService, type CatalogService } from "./services/catalog";
 import { createConversationsService, type ConversationsService } from "./services/conversations";
+import { createIntentService, type IntentService } from "./services/intent";
 import { createIngestionService, type IngestionService } from "./services/ingestion";
 import { createNotificationsService, type NotificationsService } from "./services/notifications";
 import { createOrdersService, type OrdersService } from "./services/orders";
@@ -23,6 +24,7 @@ import { createFileStorage, type FileStorage } from "./storage";
 export interface Services {
   tenancy: TenancyService;
   catalog: CatalogService;
+  intent: IntentService;
   orders: OrdersService;
   conversations: ConversationsService;
   approvals: ApprovalsService;
@@ -59,9 +61,11 @@ export function createServices({
   storage,
   telegram,
 }: ServiceDeps): Services {
+  const catalog = createCatalogService({ db, events });
   return {
     tenancy: createTenancyService(db, { authSecret }),
-    catalog: createCatalogService({ db, events }),
+    catalog,
+    intent: createIntentService({ db, catalog }),
     orders: createOrdersService({ db, events }),
     conversations: createConversationsService({ db, events }),
     approvals: createApprovalsService(db, events),
