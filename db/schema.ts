@@ -5,6 +5,7 @@
 import { sql } from "drizzle-orm";
 import {
   index,
+  integer,
   jsonb,
   numeric,
   pgEnum,
@@ -92,6 +93,7 @@ export const users = pgTable(
     email: text("email").notNull().unique(),
     passwordHash: text("password_hash").notNull(),
     role: userRole("role").notNull().default("owner"),
+    sessionVersion: integer("session_version").notNull().default(1),
     createdAt: createdAt(),
   },
   (t) => [index("users_tenant_idx").on(t.tenantId)],
@@ -182,7 +184,7 @@ export const offers = pgTable(
   },
   (t) => [
     index("offers_tenant_idx").on(t.tenantId),
-    index("offers_tenant_status_idx").on(t.tenantId, t.status),
+    index("offers_tenant_status_idx").on(t.tenantId, t.status, t.title),
   ],
 );
 
@@ -200,7 +202,8 @@ export const conversations = pgTable(
     updatedAt: updatedAt(),
   },
   (t) => [
-    index("conversations_tenant_idx").on(t.tenantId),
+    index("conversations_tenant_updated_idx").on(t.tenantId, t.updatedAt.desc()),
+    index("conversations_tenant_agent_created_idx").on(t.tenantId, t.agent, t.createdAt),
     uniqueIndex("conversations_tenant_channel_session_uq").on(t.tenantId, t.channel, t.sessionKey),
   ],
 );
@@ -240,7 +243,8 @@ export const orders = pgTable(
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
   },
   (t) => [
-    index("orders_tenant_idx").on(t.tenantId),
+    index("orders_tenant_created_idx").on(t.tenantId, t.createdAt.desc(), t.id.desc()),
+    index("orders_tenant_status_idx").on(t.tenantId, t.status),
     uniqueIndex("orders_tenant_idempotency_uq").on(t.tenantId, t.idempotencyKey),
   ],
 );
@@ -257,10 +261,15 @@ export const inquiries = pgTable(
     details: text("details").notNull().default(""),
     contact: jsonb("contact").notNull().default({}),
     status: inquiryStatus("status").notNull().default("new"),
+    answer: text("answer"),
+    answeredAt: timestamp("answered_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [index("inquiries_tenant_idx").on(t.tenantId)],
+  (t) => [
+    index("inquiries_tenant_created_idx").on(t.tenantId, t.createdAt.desc(), t.id.desc()),
+    index("inquiries_tenant_status_idx").on(t.tenantId, t.status),
+  ],
 );
 
 export const sourceAssets = pgTable(
