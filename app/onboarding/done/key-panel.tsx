@@ -28,7 +28,7 @@ export function KeyPanel({
 
   return (
     <div className="ob-connect-steps">
-      <b>Talk to the store, no key needed</b>
+      <b>1. Talk to the store, no key needed</b>
       <span className="ob-hint">
         The public endpoint has one tool, talk_to_store, that passes messages to your store
         assistant.
@@ -38,7 +38,7 @@ export function KeyPanel({
         <CopyButton text={publicConfig} label="Copy config" />
       </div>
 
-      <b>Or give an agent direct catalog tools</b>
+      <b>2. Or give an agent direct catalog tools</b>
       <span className="ob-hint">
         Create a customer-agent key. It is shown once; only its hash is stored.
       </span>

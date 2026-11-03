@@ -30,7 +30,7 @@ export default async function ReviewPage() {
   const files = sources.filter((s) => s.kind !== "note").length;
 
   return (
-    <main className="ob-root ob-root-wide">
+    <main className="ob-root ob-root-review">
       <OnboardingHeader step={2} />
       <div className="ob-intro">
         <span className="ob-kicker">

@@ -2,10 +2,10 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 40px;
-  max-width: 1040px;
+  gap: 28px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 20px 72px;
+  padding: 56px 28px 64px;
 }
 
 .lp-top {
@@ -20,24 +20,26 @@
   align-items: center;
   gap: 10px;
   color: var(--text);
+  font-size: 15px;
   font-weight: 600;
   text-decoration: none;
 }
 
 .ln-logo:hover {
   color: var(--text);
+  text-decoration: none;
 }
 
 .ln-logo-mark {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
   background: var(--text);
   color: #fff;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 700;
 }
 
@@ -45,14 +47,15 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 16px;
-  max-width: 760px;
+  gap: 10px;
+  max-width: 720px;
   padding-top: 24px;
 }
 
 .lp-hero h1 {
-  font-size: clamp(32px, 7vw, 56px);
-  line-height: 1.04;
+  font-size: clamp(36px, 7vw, 56px);
+  line-height: 1.02;
+  letter-spacing: -0.04em;
   overflow-wrap: break-word;
 }
 
@@ -65,17 +68,27 @@
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  margin-top: 8px;
 }
 
-.lp-hero .lp-demos {
-  font-size: 14px;
+.lp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.lp-label {
+  margin: 0;
   color: var(--text-3);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.lp-steps,
 .lp-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
   gap: 14px;
 }
 
@@ -85,16 +98,27 @@
   gap: 6px;
   padding: 18px;
   border-radius: 24px;
+  background: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 8px 28px rgba(30, 40, 60, 0.08);
+  color: var(--text);
 }
 
-.lp-card h2,
 .lp-card h3 {
   font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
 .lp-card p {
+  margin: 0;
   color: var(--text-2);
   font-size: 14px;
+}
+
+.lp-card-link:hover {
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text);
+  text-decoration: none;
 }
 
 .lp-num {
@@ -103,62 +127,41 @@
   font-weight: 600;
 }
 
-.lp-block {
+.lp-route {
+  color: var(--text-3);
+  font-family: var(--mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.lp-principles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.45);
+}
+
+.lp-principles div {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
 }
 
-.lp-block > h2 {
-  font-size: 28px;
-}
-
-.lp-lead {
-  margin-bottom: 8px;
-  color: var(--text-2);
-}
-
-.lp-endpoints {
-  display: flex;
-  flex-direction: column;
-  margin: 0;
-  padding: 6px 18px;
-  border-radius: 24px;
-  list-style: none;
-}
-
-.lp-endpoints li {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--hairline-soft);
-}
-
-.lp-endpoints li:last-child {
-  border-bottom: 0;
-}
-
-.lp-endpoints code {
-  flex: 0 0 220px;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
-  font-size: 14px;
+.lp-principles b {
   font-weight: 600;
 }
 
-.lp-endpoints span {
-  flex: 1 1 240px;
+.lp-principles p {
+  margin: 0;
   color: var(--text-2);
   font-size: 14px;
 }
 
 @media (max-width: 600px) {
   .lp-root {
-    gap: 32px;
-  }
-
-  .lp-endpoints code {
-    flex-basis: 100%;
+    padding: 28px 16px 48px;
   }
 }

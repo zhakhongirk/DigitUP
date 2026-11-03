@@ -10,7 +10,7 @@ type Props = { searchParams: Promise<Record<string, string | string[] | undefine
 export default async function SignInPage({ searchParams }: Props) {
   const next = (await searchParams).next;
   return (
-    <main className="ob-root" style={{ maxWidth: 460 }}>
+    <main className="ob-root ob-root-signin">
       <div className="ob-top">
         <Link href="/" className="ob-logo">
           <span className="ob-logo-mark" aria-hidden="true">

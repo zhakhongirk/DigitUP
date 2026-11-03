@@ -67,6 +67,15 @@ export default async function DonePage() {
       url: storeUrl,
       href: `/s/${tenant.slug}`,
       cta: "Open storefront",
+      primary: true,
+    },
+    {
+      who: "For you",
+      title: "Workspace",
+      text: "Orders and customer questions arrive in your inbox. Review approvals and edit the catalog.",
+      url: `${base}/app`,
+      href: "/app",
+      cta: "Open workspace",
       primary: false,
     },
     {
@@ -81,7 +90,7 @@ export default async function DonePage() {
   ];
 
   return (
-    <main className="ob-root ob-root-wide">
+    <main className="ob-root ob-root-done">
       <OnboardingHeader step={3} />
       <div className="ob-hero-done">
         <span className="ob-done-mark" aria-hidden="true">
@@ -104,19 +113,7 @@ export default async function DonePage() {
               ? ` ${open} open ${open === 1 ? "question is" : "questions are"} shown to customers as "to be confirmed".`
               : ""}
           </p>
-          <p>
-            Orders and customer questions arrive in your <Link href="/app/inbox">inbox</Link>.
-          </p>
         </div>
-      </div>
-
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
-        <Link href="/app" className="btn">
-          Go to your workspace
-        </Link>
-        <Link href={`/s/${tenant.slug}`} className="btn btn-secondary">
-          Open storefront
-        </Link>
       </div>
 
       <div className="ob-cards">
@@ -136,7 +133,11 @@ export default async function DonePage() {
         ))}
       </div>
 
-      <section id="connect" className="ob-panel glass" aria-labelledby="ob-connect-title">
+      <section
+        id="connect"
+        className="ob-panel ob-connect-panel glass"
+        aria-labelledby="ob-connect-title"
+      >
         <div className="ob-intro">
           <h2 id="ob-connect-title">Connect an AI agent</h2>
           <p className="ob-hint">
@@ -147,7 +148,7 @@ export default async function DonePage() {
         <div className="ob-connect">
           <KeyPanel slug={tenant.slug} publicUrl={publicUrl} customerUrl={customerUrl} />
           <div className="ob-connect-steps">
-            <b>Tools with a customer-agent key</b>
+            <b>Tools on /mcp/customer/{tenant.slug}</b>
             <ul className="ob-tools">
               {TOOLS.map(([name, text]) => (
                 <li key={name}>
@@ -156,6 +157,9 @@ export default async function DonePage() {
                 </li>
               ))}
             </ul>
+            <span className="ob-hint">
+              Your own Business Agent uses <code>/mcp/business</code> with an owner key.
+            </span>
             <span className="ob-hint">
               Try: &quot;Find something in my size at {tenant.name} and compare two options.&quot;
             </span>
