@@ -70,7 +70,7 @@ export function KeyCreate({
             <>
               <pre className="ag-pre">{config}</pre>
               <div>
-                <CopyButton text={config} label="Copy config" />
+                <CopyButton text={config} label={t("ag.copyConfig")} />
               </div>
             </>
           ) : null}

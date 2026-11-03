@@ -117,6 +117,7 @@ export const store = pair(
     "ag.newCustomerKey": "New shopping-agent key",
     "ag.newOwnerKey": "New owner key",
     "ag.shownOnce": "Copy it now. It is shown once and only its hash is stored.",
+    "ag.copyConfig": "Copy config",
     "ag.chooseType": "Choose a key type.",
   },
   {
@@ -236,6 +237,7 @@ export const store = pair(
     "ag.newCustomerKey": "Новый ключ агента покупателя",
     "ag.newOwnerKey": "Новый ключ владельца",
     "ag.shownOnce": "Скопируйте его сейчас. Он показывается один раз, хранится только хеш.",
+    "ag.copyConfig": "Скопировать конфиг",
     "ag.chooseType": "Выберите тип ключа.",
   },
   {
@@ -357,6 +359,7 @@ export const store = pair(
     "ag.newCustomerKey": "Сатып алушы агентінің жаңа кілті",
     "ag.newOwnerKey": "Иесінің жаңа кілті",
     "ag.shownOnce": "Оны қазір көшіріп алыңыз. Ол бір рет көрсетіледі, тек хеш сақталады.",
+    "ag.copyConfig": "Конфигті көшіру",
     "ag.chooseType": "Кілт түрін таңдаңыз.",
   },
 );

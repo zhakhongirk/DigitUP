@@ -48,3 +48,11 @@ describe("signIn account limit", () => {
     expect(session.token).toBeNull();
   });
 });
+
+describe("signIn errors", () => {
+  it("asks for both fields when one is missing", async () => {
+    expect((await signIn(prev, form({ email: "a@example.com", password: "" }))).error).toBe(
+      "Enter your email and password.",
+    );
+  });
+});
