@@ -58,6 +58,10 @@
   overscroll-behavior: contain;
 }
 
+.chat-log > * {
+  flex-shrink: 0;
+}
+
 .chat-bubble {
   max-width: 84%;
   padding: 9px 14px;
