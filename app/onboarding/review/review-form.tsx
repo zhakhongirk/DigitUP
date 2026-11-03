@@ -1,11 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, type MouseEvent } from "react";
 import { useFormStatus } from "react-dom";
 import type { AttributeDefinition, BusinessModel } from "@/shared/business-model";
 import { AVAILABILITY_LABELS, CONTACT_FIELDS, POLICY_FIELDS } from "@/shared/labels";
+import type { Provenance, ReviewGap } from "@/server/onboarding/review";
 import { confirmModel, type ReviewState } from "./actions";
+import "./review.css";
+
+function goTo(event: MouseEvent<HTMLAnchorElement>, target: string) {
+  event.preventDefault();
+  const el = document.getElementById(target);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  el.focus({ preventScroll: true });
+}
+
+function From({ file }: { file: string | null | undefined }) {
+  return file ? <span className="rv-from">from {file}</span> : null;
+}
 
 function attributeType(def: AttributeDefinition): string {
   const base =
@@ -38,25 +52,30 @@ export function ReviewForm({
   model,
   slug,
   currency,
+  gaps,
+  provenance,
 }: {
   draftId: string;
   model: BusinessModel;
   slug: string;
   currency: string;
+  gaps: ReviewGap[];
+  provenance: Provenance;
 }) {
   const [state, action] = useActionState<ReviewState, FormData>(confirmModel, { errors: [] });
   const onRequest = model.offers.filter((o) => o.price === null).length;
   const unknownStock = model.offers.filter((o) => o.availability === "unknown").length;
   const attrHeader = model.offer_types[0]?.attributes[0]?.label ?? "Details";
-  const questions = model.missing_info;
+  const offerFiles = [...new Set(provenance.offers.filter((f): f is string => f !== null))];
+  const perRow = offerFiles.length > 1;
 
   return (
     <form action={action} className="ob-columns">
       <input type="hidden" name="draftId" value={draftId} />
       <div className="ob-main">
-        <section className="ob-panel glass" aria-labelledby="rv-profile">
+        <section id="rv-profile" className="ob-panel glass" aria-labelledby="rv-profile-title">
           <div className="ob-panel-head">
-            <h2 id="rv-profile">Profile</h2>
+            <h2 id="rv-profile-title">Profile</h2>
           </div>
           <div className="ob-grid">
             <label className="ob-label">
@@ -69,7 +88,7 @@ export function ReviewForm({
               />
             </label>
             <label className="ob-label">
-              Store address
+              Store link
               <input className="ob-input" value={`/s/${slug}`} readOnly />
             </label>
             <label className="ob-label">
@@ -85,6 +104,7 @@ export function ReviewForm({
               <label key={key} className="ob-label">
                 {label}
                 <input
+                  id={`rv-contact-${key}`}
                   name={`contact.${key}`}
                   className="ob-input"
                   defaultValue={model.profile.contacts[key] ?? ""}
@@ -127,9 +147,12 @@ export function ReviewForm({
           </section>
         ))}
 
-        <section className="ob-panel glass" aria-labelledby="rv-offers">
+        <section id="rv-offers" className="ob-panel glass" aria-labelledby="rv-offers-title">
           <div className="ob-panel-head">
-            <h2 id="rv-offers">Offers · {model.offers.length}</h2>
+            <h2 id="rv-offers-title">
+              Offers · {model.offers.length}
+              {perRow ? null : <From file={offerFiles[0]} />}
+            </h2>
             <div className="ob-chips">
               {onRequest > 0 ? (
                 <span className="chip chip-warn">{onRequest} price on request</span>
@@ -144,6 +167,7 @@ export function ReviewForm({
               <label className="ob-label" style={{ maxWidth: 200 }}>
                 Currency
                 <input
+                  id="rv-currency"
                   name="currency"
                   className="ob-input"
                   defaultValue={currency}
@@ -164,12 +188,23 @@ export function ReviewForm({
                   </thead>
                   <tbody>
                     {model.offers.map((offer, i) => (
-                      <tr key={i}>
-                        <td className="ob-cell-title">{offer.title}</td>
+                      <tr
+                        key={i}
+                        className={
+                          offer.price === null || offer.availability === "unknown"
+                            ? "rv-row-gap"
+                            : undefined
+                        }
+                      >
+                        <td className="ob-cell-title">
+                          {offer.title}
+                          {perRow ? <From file={provenance.offers[i]} /> : null}
+                        </td>
                         <td>{offer.category ?? ""}</td>
                         <td>{firstAttribute(model, offer)}</td>
                         <td>
                           <input
+                            id={`rv-price-${i}`}
                             name={`offer.${i}.price`}
                             className="ob-cell-input"
                             defaultValue={offer.price ?? ""}
@@ -180,6 +215,7 @@ export function ReviewForm({
                         </td>
                         <td>
                           <select
+                            id={`rv-availability-${i}`}
                             name={`offer.${i}.availability`}
                             className="ob-cell-input"
                             defaultValue={offer.availability}
@@ -209,8 +245,12 @@ export function ReviewForm({
           <h2 id="rv-policies">Policies</h2>
           {POLICY_FIELDS.map(([key, label]) => (
             <label key={key} className="ob-policy">
-              <b>{label}</b>
+              <b>
+                {label}
+                <From file={provenance.policies[key]} />
+              </b>
               <textarea
+                id={`rv-policy-${key}`}
                 name={`policy.${key}`}
                 rows={2}
                 className="ob-textarea"
@@ -226,24 +266,33 @@ export function ReviewForm({
         <section className="ob-panel glass" aria-labelledby="rv-missing">
           <div className="ob-panel-head">
             <h2 id="rv-missing">Missing info</h2>
-            <span className={questions.length > 0 ? "chip chip-warn" : "chip chip-ok"}>
-              {questions.length > 0 ? `${questions.length} open` : "Complete"}
+            <span className={gaps.length > 0 ? "chip chip-warn" : "chip chip-ok"}>
+              {gaps.length > 0 ? `${gaps.length} to fix` : "Complete"}
             </span>
           </div>
-          {questions.length > 0 ? (
+          {gaps.length > 0 ? (
             <>
               <p className="ob-hint">
-                Customers see open items as &quot;to be confirmed&quot; and can send an inquiry.
-                Fill them in the form to close them.
+                Nothing here stops you from launching. Shoppers see these as &quot;to be
+                confirmed&quot; and can ask the store.
               </p>
-              {questions.map((q, i) => (
-                <div key={i} className="ob-question" data-severity={q.severity}>
-                  <span className="ob-question-field">
-                    {q.field} · {q.severity}
-                  </span>
-                  <span>{q.question}</span>
-                </div>
-              ))}
+              <ul className="rv-gaps">
+                {gaps.map((gap) => (
+                  <li
+                    key={gap.id}
+                    className="ob-question"
+                    data-severity={gap.needed ? "blocking" : ""}
+                  >
+                    <span className="ob-question-field">
+                      {gap.needed ? "Needed" : "Recommended"}
+                    </span>
+                    <span>{gap.text}</span>
+                    <a href={`#${gap.target}`} onClick={(e) => goTo(e, gap.target)}>
+                      Fix
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </>
           ) : (
             <p className="ob-hint">Nothing is missing.</p>
@@ -262,7 +311,9 @@ export function ReviewForm({
           <Link href="/onboarding" className="btn btn-secondary">
             Back to files
           </Link>
-          <p className="ob-hint">Later price changes go through your approval.</p>
+          <p className="ob-hint">
+            After launch, price changes proposed by agents wait for your approval.
+          </p>
         </section>
       </aside>
     </form>

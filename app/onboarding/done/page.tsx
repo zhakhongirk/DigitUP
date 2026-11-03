@@ -67,7 +67,7 @@ export default async function DonePage() {
       url: storeUrl,
       href: `/s/${tenant.slug}`,
       cta: "Open storefront",
-      primary: true,
+      primary: false,
     },
     {
       who: "For other AI agents",
@@ -104,7 +104,19 @@ export default async function DonePage() {
               ? ` ${open} open ${open === 1 ? "question is" : "questions are"} shown to customers as "to be confirmed".`
               : ""}
           </p>
+          <p>
+            Orders and customer questions arrive in your <Link href="/app/inbox">inbox</Link>.
+          </p>
         </div>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        <Link href="/app" className="btn">
+          Go to your workspace
+        </Link>
+        <Link href={`/s/${tenant.slug}`} className="btn btn-secondary">
+          Open storefront
+        </Link>
       </div>
 
       <div className="ob-cards">

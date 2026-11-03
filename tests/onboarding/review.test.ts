@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { applyReviewEdits, primaryCurrency } from "@/server/onboarding/review";
+import {
+  applyReviewEdits,
+  primaryCurrency,
+  reviewGaps,
+  sourceProvenance,
+} from "@/server/onboarding/review";
 import { businessModelSchema, type BusinessModel } from "@/shared/business-model";
 
 function model(): BusinessModel {
@@ -98,5 +103,52 @@ describe("applyReviewEdits", () => {
   it("picks the most common currency", () => {
     expect(primaryCurrency(model())).toBe("KZT");
     expect(primaryCurrency({ ...model(), offers: [] })).toBeNull();
+  });
+});
+
+describe("reviewGaps", () => {
+  it("lists one plain-language item per gap", () => {
+    const gaps = reviewGaps(model());
+    const text = gaps.map((g) => g.text);
+    expect(text).toContain("Add your phone number so customers can reach you");
+    expect(text).toContain("1 offer has no price: it will show 'Price on request'");
+    expect(text).toContain("2 offers have no stock status: they will show 'To be confirmed'");
+    expect(gaps.find((g) => g.id === "contact")?.needed).toBe(true);
+    expect(new Set(gaps.map((g) => g.id)).size).toBe(gaps.length);
+  });
+
+  it("is empty when nothing is missing", () => {
+    const full = businessModelSchema.parse({
+      profile: {
+        name: "A",
+        contacts: { phone: "1", email: "a@b.co", address: "Main 1" },
+      },
+      offer_types: [{ key: "p", name: "P", kind: "product", attributes: [] }],
+      offers: [
+        {
+          title: "Cap",
+          offer_type: "p",
+          price: 5,
+          currency: "KZT",
+          price_status: "confirmed",
+          availability: "in_stock",
+        },
+      ],
+      policies: { delivery: "d", payment: "p", returns: "r", working_hours: "w" },
+    });
+    expect(reviewGaps(full)).toEqual([]);
+  });
+});
+
+describe("sourceProvenance", () => {
+  it("names the file an offer or policy was read from", () => {
+    const m = model();
+    m.policies.payment = "Pay by card or cash.";
+    const result = sourceProvenance(m, [
+      { filename: "terms.pdf", kind: "pdf", extractedText: "We accept it.\nPay by  card or cash." },
+      { filename: "prices.xlsx", kind: "xlsx", extractedText: "Haircut | 8000" },
+    ]);
+    expect(result.offers).toEqual(["prices.xlsx", null]);
+    expect(result.policies.payment).toBe("terms.pdf");
   });
 });

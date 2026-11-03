@@ -207,3 +207,83 @@ describe("handleOnboardingAnalyze", () => {
     expect(((await response.json()) as OnboardingStatus).run?.status).toBe("pending");
   });
 });
+
+describe("upload size cap", () => {
+  it("rejects files that together exceed 60 MB", async () => {
+    const email = newEmail();
+    const form = new FormData();
+    form.append("businessName", "Tea House");
+    form.append("email", email);
+    form.append("password", "correct-horse");
+    for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) {
+      form.append("files", new File([new Uint8Array(16 * 1024 * 1024)], name));
+    }
+    const encoded = new Response(form);
+    const contentType = encoded.headers.get("content-type") ?? "";
+    const bytes = new Uint8Array(await encoded.arrayBuffer());
+    let offset = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (offset >= bytes.length) return controller.close();
+        controller.enqueue(bytes.subarray(offset, offset + 1024 * 1024));
+        offset += 1024 * 1024;
+      },
+    });
+    const response = await handleOnboardingUpload(
+      new Request("http://localhost/api/onboarding", {
+        method: "POST",
+        body,
+        headers: { "content-type": contentType },
+        duplex: "half",
+      } as RequestInit),
+      services,
+    );
+    expect(response.status).toBe(413);
+    expect(response.headers.get("set-cookie")).toBeNull();
+    expect(await testDb().select().from(users).where(eq(users.email, email))).toEqual([]);
+  });
+});
+
+describe("chunked upload cap", () => {
+  it("rejects an oversize body without a content-length", async () => {
+    const chunk = new Uint8Array(1024 * 1024);
+    let sent = 0;
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (cancelled) return;
+        if (sent++ >= 70) controller.close();
+        else controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const request = new Request("http://localhost/api/onboarding", {
+      method: "POST",
+      body,
+      headers: { "content-type": "multipart/form-data; boundary=x" },
+      duplex: "half",
+    } as RequestInit);
+    const response = await handleOnboardingUpload(request, services);
+    expect(response.status).toBe(413);
+    expect(sent).toBeLessThan(70);
+  });
+
+  it("still accepts a normal upload", async () => {
+    const response = await handleOnboardingUpload(uploadRequest(signUpFields()), services);
+    expect(response.status).toBe(201);
+  });
+});
+
+describe("analyze rate limit", () => {
+  it("allows five runs per tenant in ten minutes", async () => {
+    const { cookie } = await signUp();
+    for (let i = 0; i < 5; i++) {
+      expect((await handleOnboardingAnalyze(post(cookie), services)).status).toBe(200);
+    }
+    const limited = await handleOnboardingAnalyze(post(cookie), services);
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).not.toBeNull();
+  });
+});

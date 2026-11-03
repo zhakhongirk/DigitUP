@@ -22,7 +22,7 @@ const STOCK = { in_stock: [4, 9, 6, 12, 3, 7], out_of_stock: [0], unknown: [] } 
 async function shoeCatalog() {
   const book = new ExcelJS.Workbook();
   const sheet = book.addWorksheet("Catalog");
-  sheet.addRow(["Stride Shoes price list, November"]);
+  sheet.addRow(["Qadam Shoes price list, November"]);
   sheet.addRow([]);
   sheet.addRow([
     "Name",
@@ -83,10 +83,10 @@ function simplePdf(lines: string[]): Buffer {
 
 async function storeTerms() {
   const lines = [
-    "Stride Shoes - store terms",
+    "Qadam Shoes - store terms",
     "",
-    "Stride Shoes is a shoe shop on Abay Avenue 52, Almaty.",
-    "Phone: +7 727 355 01 20. WhatsApp: +7 701 355 01 20. Instagram: @stride.shoes.almaty",
+    "Qadam Shoes is a shoe shop on Furmanov Street 110, Almaty.",
+    "Phone: +7 727 261 40 85. WhatsApp: +7 707 261 40 85. Instagram: @qadam.shoes.almaty",
     "",
     "Opening hours: every day 10:00-21:00.",
     "",

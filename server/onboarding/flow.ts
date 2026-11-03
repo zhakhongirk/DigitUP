@@ -3,6 +3,8 @@
  * re-analysis. The owner session is the same cookie the workspace uses.
  */
 import type { Services } from "@/server/container";
+import { BodyTooLargeError, boundedFormData } from "@/server/http/bounded-form";
+import { analyzeLimiter, limitRequest } from "@/server/http/rate-limit";
 import { sessionCookie } from "@/server/mcp/http";
 import { sessionCookieHeader } from "@/server/owner/session";
 import { ServiceError, type TenantContext } from "@/server/services/context";
@@ -114,14 +116,24 @@ export async function handleOnboardingUpload(
   }
   let form: FormData;
   try {
-    form = await request.formData();
-  } catch {
+    form = await boundedFormData(request, MAX_REQUEST_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return Response.json(
+        { error: "invalid", message: "Upload at most 60 MB at a time" },
+        { status: 413 },
+      );
+    }
     return Response.json({ error: "invalid", message: "Expected a form upload" }, { status: 400 });
   }
 
   try {
     const files = await filesFrom(form);
     services.ingestion.validateFiles(files);
+    const totalBytes = files.reduce((sum, file) => sum + file.bytes.byteLength, 0);
+    if (totalBytes > MAX_REQUEST_BYTES) {
+      throw new ServiceError("invalid", "Upload at most 60 MB at a time");
+    }
     const about = text(form, "about");
     if (about.trim() === "" && files.length === 0) {
       throw new ServiceError("invalid", "Describe the business or upload at least one file");
@@ -166,6 +178,8 @@ export async function handleOnboardingAnalyze(
 ): Promise<Response> {
   const ctx = await ownerFromRequest(request, services);
   if (!ctx) return Response.json({ error: "unauthorized" }, { status: 401 });
+  const limited = limitRequest(analyzeLimiter, ctx.tenantId);
+  if (limited) return limited;
   try {
     await services.ingestion.startRun(ctx);
     return Response.json(await onboardingStatus(services, ctx));

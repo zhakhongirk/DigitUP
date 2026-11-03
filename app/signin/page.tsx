@@ -23,7 +23,7 @@ export default async function SignInPage({ searchParams }: Props) {
         <h1>Welcome back.</h1>
         <p>Sign in to manage your store.</p>
       </div>
-      <SignInForm next={typeof next === "string" ? next : "/onboarding"} />
+      <SignInForm next={typeof next === "string" ? next : "/app"} />
       <p className="ob-hint">
         New here? <Link href="/onboarding">Set up a store</Link>
       </p>

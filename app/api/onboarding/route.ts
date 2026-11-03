@@ -1,4 +1,5 @@
 import { getServices } from "@/server/container";
+import { clientIp, limitRequest, signUpLimiter } from "@/server/http/rate-limit";
 import { handleOnboardingStatus, handleOnboardingUpload } from "@/server/onboarding/flow";
 
 export const dynamic = "force-dynamic";
@@ -9,5 +10,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const limited = limitRequest(signUpLimiter, clientIp(request));
+  if (limited) return limited;
   return handleOnboardingUpload(request, await getServices());
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { primaryCurrency } from "@/server/onboarding/review";
+import { primaryCurrency, reviewGaps, sourceProvenance } from "@/server/onboarding/review";
 import { currentOwner } from "@/server/owner/session";
 import { businessModelSchema } from "@/shared/business-model";
 import { OnboardingHeader } from "../header";
@@ -25,6 +25,8 @@ export default async function ReviewPage() {
   if (!draft || draft.status !== "draft") redirect("/onboarding");
 
   const model = businessModelSchema.parse(draft.payload);
+  const gaps = reviewGaps(model);
+  const provenance = sourceProvenance(model, sources);
   const files = sources.filter((s) => s.kind !== "note").length;
 
   return (
@@ -46,6 +48,8 @@ export default async function ReviewPage() {
         model={model}
         slug={tenant.slug}
         currency={primaryCurrency(model) ?? ""}
+        gaps={gaps}
+        provenance={provenance}
       />
     </main>
   );

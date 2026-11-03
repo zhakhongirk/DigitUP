@@ -1,0 +1,26 @@
+.rv-from {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.6;
+}
+
+.rv-gaps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rv-gaps a {
+  justify-self: start;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.rv-row-gap {
+  background: rgba(255, 159, 10, 0.08);
+}
