@@ -316,6 +316,6 @@ describe("webhook registration and notifications", () => {
     const text = storeLlmsTxt({ baseUrl: "https://x.test", slug: "a", name: "A" });
     expect(text).toContain("set_webhook");
     expect(text).toContain(SIGNATURE_HEADER);
-    expect(text).not.toContain("—");
+    expect(text).not.toContain(String.fromCharCode(0x2014));
   });
 });

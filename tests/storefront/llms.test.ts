@@ -11,7 +11,7 @@ describe("llms.txt", () => {
     expect(text).toContain("talk_to_store(message, session_id)");
     expect(text).toContain("No credentials are needed");
     expect(text).toContain(`${base}/sitemap.xml`);
-    expect(text).not.toContain("—");
+    expect(text).not.toContain(String.fromCharCode(0x2014));
   });
 
   it("describes one store with its own endpoint", () => {
