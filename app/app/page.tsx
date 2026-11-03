@@ -9,6 +9,7 @@ import { formatWhen } from "@/server/owner/inbox";
 import { currentOwner } from "@/server/owner/session";
 import {
   changeHref,
+  feedSummary,
   inboxBreakdown,
   inboxHref,
   loadWorkspace,
@@ -34,154 +35,243 @@ export default async function WorkspacePage() {
   const { health } = view;
   const setupLeft = view.setup.filter((item) => !item.done).length;
   const setupTotal = view.setup.length;
+  const newest = [
+    ...view.pending.map((c) => c.createdAt),
+    ...view.newItems.map((i) => i.at),
+    ...view.activity.map((a) => a.at),
+  ].sort((a, b) => b.getTime() - a.getTime())[0];
 
   return (
     <>
-      <div className="ws-title">
-        <h1>Workspace</h1>
-        <p className="ws-sub">What needs you today and how the store looks.</p>
-        <Link href="/app/notifications" className="wk-notify">
-          Notifications{unread > 0 ? ` (${unread} new)` : ""}
-        </Link>
-      </div>
+      <h1 className="sr-only">Workspace</h1>
+      <div className="wk-layout">
+        <section className="wk-feed glass-strong" aria-labelledby="wk-feed-title">
+          <header className="wk-feed-head">
+            <span className="wk-feed-avatar" aria-hidden="true">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              >
+                <path d="M12 3l2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z" />
+              </svg>
+            </span>
+            <div className="wk-feed-title">
+              <b id="wk-feed-title">Store activity</b>
+              <span>What changed in your store. Risky edits wait for you.</span>
+            </div>
+            <Link href="/app/notifications" className="wk-feed-link">
+              Notifications{unread > 0 ? ` (${unread} new)` : ""}
+            </Link>
+          </header>
 
-      <div className="wk-grid">
-        <section className="wk-card glass" aria-labelledby="wk-needs">
-          <h2 id="wk-needs">Needs you</h2>
-          {nothingWaiting ? (
-            <p className="wk-empty">
-              {setupLeft === 0 ? "You are all caught up." : "Nothing is waiting on you."}
-            </p>
-          ) : (
-            <div className="wk-stack">
-              {view.pendingCount > 0 ? (
-                <div className="wk-group wk-group-warn">
-                  <Link href="/app/approvals" className="wk-head">
-                    <b>{plural(view.pendingCount, "approval")} to review</b>
-                    <span>Awaiting your approval</span>
-                  </Link>
+          <div className="wk-feed-body">
+            {newest ? <span className="sys-line">{formatWhen(newest, now)}</span> : null}
+            <p className="wk-bubble">{feedSummary(view)}</p>
+
+            {view.pending.map((change) => (
+              <Link key={change.id} href={changeHref(change.id)} className="wk-card-item">
+                <span className="wk-card-row">
+                  <b>Approval · {change.summary}</b>
+                  <span className="wk-chip wk-chip-warn">Pending</span>
+                </span>
+                <span className="wk-card-text">Requested {formatWhen(change.createdAt, now)}</span>
+                <span className="wk-card-cta">Review changes</span>
+              </Link>
+            ))}
+            {view.pendingCount > view.pending.length ? (
+              <Link href="/app/approvals" className="wk-more">
+                See all {view.pendingCount} approvals
+              </Link>
+            ) : null}
+
+            {view.newItems.map((item) => (
+              <Link key={item.key} href={inboxHref(item)} className="wk-card-item">
+                <span className="wk-card-row">
+                  <b>
+                    {item.label} · {item.who}
+                  </b>
+                  <span className="wk-chip wk-chip-info">New</span>
+                </span>
+                <span className="wk-card-text wk-clip">{item.preview}</span>
+                <span className="wk-card-cta">Open in inbox</span>
+              </Link>
+            ))}
+            {newCount > view.newItems.length ? (
+              <Link href="/app/inbox?filter=new" className="wk-more">
+                See all {newCount} in inbox
+              </Link>
+            ) : null}
+
+            {setupLeft > 0 ? (
+              <>
+                <p className="wk-bubble">
+                  Finish setting up your store · {setupTotal - setupLeft}/{setupTotal}
+                </p>
+                <ol className="wk-list wk-setup">
+                  {view.setup.map((item) => (
+                    <li key={item.key} className={item.done ? "wk-done" : undefined}>
+                      <Link
+                        href={item.href}
+                        className="wk-step"
+                        {...(item.external ? { target: "_blank", rel: "noreferrer" } : {})}
+                      >
+                        <span className="wk-check" aria-hidden="true">
+                          {item.done ? "✓" : ""}
+                        </span>
+                        <span>
+                          <b>
+                            {item.title}
+                            <span className="sr-only">{item.done ? " (done)" : " (to do)"}</span>
+                          </b>
+                          <small>{item.hint}</small>
+                        </span>
+                      </Link>
+                      {item.copy ? <CopyButton text={`${base}${item.copy}`} /> : null}
+                    </li>
+                  ))}
+                </ol>
+              </>
+            ) : null}
+
+            {view.activity.length > 0 ? (
+              <>
+                <p className="wk-bubble">Latest changes:</p>
+                <div className="wk-list wk-changes">
                   <ul>
-                    {view.pending.map((change) => (
-                      <li key={change.id}>
-                        <Link href={changeHref(change.id)}>
-                          <span>{change.summary}</span>
-                          <time dateTime={change.createdAt.toISOString()}>
-                            {formatWhen(change.createdAt, now)}
-                          </time>
-                        </Link>
+                    {view.activity.map((row) => (
+                      <li key={row.id}>
+                        <span className="wk-tick" aria-hidden="true">
+                          ✓
+                        </span>
+                        <span className="wk-change-text">
+                          {ACTOR_LABELS[row.actor]}: {row.what}
+                          {row.change ? ` ${row.change}` : ""}
+                        </span>
+                        <time dateTime={row.at.toISOString()}>{formatWhen(row.at, now)}</time>
                       </li>
                     ))}
                   </ul>
+                  <Link href="/app/audit" className="wk-more">
+                    See in audit log
+                  </Link>
                 </div>
-              ) : null}
-              {newCount > 0 ? (
-                <div className="wk-group wk-group-info">
-                  <Link href="/app/inbox?filter=new" className="wk-head">
+              </>
+            ) : null}
+          </div>
+
+          <div className="wk-suggest">
+            {view.pendingCount > 0 ? (
+              <Link href="/app/approvals" className="suggestion">
+                Review approvals
+              </Link>
+            ) : null}
+            {view.newInquiries > 0 ? (
+              <Link href="/app/inbox?filter=new" className="suggestion">
+                Answer new questions
+              </Link>
+            ) : null}
+            {health.priceOnRequest > 0 ? (
+              <Link href="/app/catalog" className="suggestion">
+                Set missing prices
+              </Link>
+            ) : null}
+            <Link href="/app/agents" className="suggestion">
+              Connect an AI agent
+            </Link>
+          </div>
+
+          <Link href="/app/catalog/import" className="composer wk-composer">
+            <span className="wk-composer-btn wk-composer-plus" aria-hidden="true">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+            </span>
+            <span className="wk-composer-text">Upload a new price list or catalog</span>
+            <span className="wk-composer-btn wk-composer-go" aria-hidden="true">
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M12 19V5M5 12l7-7 7 7" />
+              </svg>
+            </span>
+          </Link>
+        </section>
+
+        <aside className="wk-aside">
+          <section className="wk-side glass" aria-labelledby="wk-health">
+            <b id="wk-health">Catalog health</b>
+            <dl className="wk-rows">
+              <div>
+                <dt>Active offers</dt>
+                <dd>{health.active}</dd>
+              </div>
+              <div>
+                <dt>Price on request</dt>
+                <dd className={health.priceOnRequest > 0 ? "wk-warn" : undefined}>
+                  {health.priceOnRequest}
+                </dd>
+              </div>
+              <div>
+                <dt>Stock unknown</dt>
+                <dd className={health.stockUnknown > 0 ? "wk-warn" : undefined}>
+                  {health.stockUnknown}
+                </dd>
+              </div>
+              <div>
+                <dt>Open questions</dt>
+                <dd className={view.newInquiries > 0 ? "wk-warn" : undefined}>
+                  {view.newInquiries}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section className="wk-side glass" aria-labelledby="wk-needs">
+            <b id="wk-needs">Needs you</b>
+            {nothingWaiting ? (
+              <p className="wk-empty">Nothing is waiting on you.</p>
+            ) : (
+              <>
+                {view.pendingCount > 0 ? (
+                  <Link href="/app/approvals" className="wk-tile wk-tile-warn">
+                    <b>
+                      {plural(view.pendingCount, "approval")}
+                      {view.pending[0] ? ` · ${view.pending[0].summary}` : ""}
+                    </b>
+                    <span>Awaiting approval</span>
+                  </Link>
+                ) : null}
+                {newCount > 0 ? (
+                  <Link href="/app/inbox?filter=new" className="wk-tile wk-tile-info">
                     <b>{newCount} new in inbox</b>
                     <span>{inboxBreakdown(view.newOrders, view.newInquiries)}</span>
                   </Link>
-                  <ul>
-                    {view.newItems.map((item) => (
-                      <li key={item.key}>
-                        <Link href={inboxHref(item)}>
-                          <span>
-                            <span>
-                              <b>{item.label}</b> · {item.who}
-                            </span>
-                            <span className="wk-preview">{item.preview}</span>
-                          </span>
-                          <time dateTime={item.at.toISOString()}>{formatWhen(item.at, now)}</time>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-            </div>
-          )}
-        </section>
-
-        <section className="wk-card glass" aria-labelledby="wk-health">
-          <h2 id="wk-health">Catalog health</h2>
-          <dl className="wk-rows">
-            <div>
-              <dt>Active offers</dt>
-              <dd>{health.active}</dd>
-            </div>
-            <div>
-              <dt>Price on request</dt>
-              <dd className={health.priceOnRequest > 0 ? "wk-warn" : undefined}>
-                {health.priceOnRequest}
-              </dd>
-            </div>
-            <div>
-              <dt>Stock unknown</dt>
-              <dd className={health.stockUnknown > 0 ? "wk-warn" : undefined}>
-                {health.stockUnknown}
-              </dd>
-            </div>
-          </dl>
-        </section>
+                ) : null}
+              </>
+            )}
+          </section>
+        </aside>
       </div>
-
-      {setupLeft > 0 ? (
-        <section className="wk-card glass wk-setup-card" aria-labelledby="wk-setup">
-          <h2 id="wk-setup">
-            Get your store ready
-            <span className="wk-count">
-              {setupTotal - setupLeft}/{setupTotal}
-            </span>
-          </h2>
-          <ol className="wk-setup">
-            {view.setup.map((item) => (
-              <li key={item.key} className={item.done ? "wk-done" : undefined}>
-                <Link
-                  href={item.href}
-                  className="wk-step"
-                  {...(item.external ? { target: "_blank", rel: "noreferrer" } : {})}
-                >
-                  <span className="wk-check" aria-hidden="true">
-                    {item.done ? "✓" : ""}
-                  </span>
-                  <span>
-                    <b>
-                      {item.title}
-                      <span className="sr-only">{item.done ? " (done)" : " (to do)"}</span>
-                    </b>
-                    <small>{item.hint}</small>
-                  </span>
-                </Link>
-                {item.copy ? <CopyButton text={`${base}${item.copy}`} /> : null}
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-
-      <section className="wk-card glass" aria-labelledby="wk-activity">
-        <div className="wk-card-head">
-          <h2 id="wk-activity">Recent activity</h2>
-          <Link href="/app/audit">See in audit log</Link>
-        </div>
-        {view.activity.length === 0 ? (
-          <p className="wk-empty">No changes recorded yet.</p>
-        ) : (
-          <ol className="wk-activity">
-            {view.activity.map((row) => (
-              <li key={row.id}>
-                <span className={`au-actor au-actor-${row.actor}`}>{ACTOR_LABELS[row.actor]}</span>
-                <span className="au-what">
-                  {row.what}
-                  {row.change ? <span className="au-change">{row.change}</span> : null}
-                </span>
-                <time dateTime={row.at.toISOString()} className="au-when">
-                  {formatWhen(row.at, now)}
-                </time>
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
     </>
   );
 }

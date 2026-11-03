@@ -12,6 +12,8 @@ export const metadata: Metadata = { title: "Audit log" };
 
 const PAGE_SIZE = 50;
 
+const ACTOR_INITIALS = { owner: "You", business_agent: "BA", customer_agent: "CA", system: "SY" };
+
 export default async function AuditPage({
   searchParams,
 }: {
@@ -38,17 +40,19 @@ export default async function AuditPage({
   return (
     <>
       <div className="ws-title">
-        <h1>Audit log</h1>
-        <p className="ws-sub">Every change to the store, by you, the agents or the system.</p>
+        <div className="ws-heading">
+          <h1>Audit log</h1>
+          <p className="ws-sub">Every change to the store: who, what, before and after.</p>
+        </div>
+        <nav className="segmented segmented-sm" aria-label="Audit filter">
+          <Link href="/app/audit" aria-current={all ? undefined : "page"}>
+            Changes
+          </Link>
+          <Link href="/app/audit?all=1" aria-current={all ? "page" : undefined}>
+            All activity
+          </Link>
+        </nav>
       </div>
-      <nav className="au-filter" aria-label="Audit filter">
-        <Link href="/app/audit" aria-current={all ? undefined : "page"}>
-          Changes
-        </Link>
-        <Link href="/app/audit?all=1" aria-current={all ? "page" : undefined}>
-          All activity
-        </Link>
-      </nav>
       <section className="au-list glass" aria-label="Recent changes">
         {events.length === 0 ? (
           <p className="au-empty">No changes recorded yet.</p>
@@ -59,21 +63,26 @@ export default async function AuditPage({
               const target = targets.get(event.id);
               return (
                 <li key={event.id}>
-                  <span className={`au-actor au-actor-${event.actor}`}>
-                    {ACTOR_LABELS[event.actor]}
-                  </span>
-                  <span className="au-what">
-                    {actionLabel(event.action)}
-                    {target ? (
-                      <span className="au-change">
-                        {target.href ? <Link href={target.href}>{target.name}</Link> : target.name}
-                      </span>
-                    ) : null}
-                    {change ? <span className="au-change">{change}</span> : null}
-                  </span>
                   <time dateTime={event.createdAt.toISOString()} className="au-when">
                     {formatWhen(event.createdAt, now)}
                   </time>
+                  <span className="au-actor">
+                    <span className={`au-avatar au-avatar-${event.actor}`} aria-hidden="true">
+                      {ACTOR_INITIALS[event.actor]}
+                    </span>
+                    {ACTOR_LABELS[event.actor]}
+                  </span>
+                  <span className="au-action" title={event.action}>
+                    {actionLabel(event.action)}
+                  </span>
+                  <span className="au-what">
+                    {target ? (
+                      <b>
+                        {target.href ? <Link href={target.href}>{target.name}</Link> : target.name}
+                      </b>
+                    ) : null}
+                    {change ? <span className="au-change">{change}</span> : null}
+                  </span>
                 </li>
               );
             })}

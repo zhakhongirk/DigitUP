@@ -51,8 +51,8 @@ export interface ChangeSetView {
 
 const REQUESTERS: Record<ChangeSet["requestedBy"], string> = {
   owner: "You",
-  business_agent: "Business agent",
-  customer_agent: "Customer agent",
+  business_agent: "Business Agent",
+  customer_agent: "Customer Agent",
   system: "System",
 };
 

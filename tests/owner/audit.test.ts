@@ -7,8 +7,8 @@ describe("ACTOR_LABELS", () => {
   it("labels every actor", () => {
     expect(ACTOR_LABELS).toEqual({
       owner: "You",
-      business_agent: "Business agent",
-      customer_agent: "Customer agent",
+      business_agent: "Business Agent",
+      customer_agent: "Customer Agent",
       system: "System",
     });
   });

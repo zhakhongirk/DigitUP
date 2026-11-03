@@ -227,7 +227,7 @@ describe("owner journey", () => {
     ]);
     expect(pending.selected).toMatchObject({
       id: changeSetId,
-      requestedBy: "Business agent",
+      requestedBy: "Business Agent",
       reason: "Cardamom prices went up",
     });
     const row = pending.selected?.groups[0]?.rows[0];

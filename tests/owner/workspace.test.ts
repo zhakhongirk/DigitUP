@@ -3,6 +3,7 @@ import {
   activityRow,
   buildSetup,
   changeHref,
+  feedSummary,
   healthFromStats,
   inboxBreakdown,
   inboxHref,
@@ -100,5 +101,26 @@ describe("buildSetup", () => {
   it("links the storefront with a copyable path", () => {
     const share = buildSetup(base).find((i) => i.key === "share");
     expect(share).toMatchObject({ href: "/s/shoes", copy: "/s/shoes" });
+  });
+});
+
+describe("feedSummary", () => {
+  const health = { active: 5, priceOnRequest: 0, stockUnknown: 0 };
+
+  it("says everything is handled when nothing is open", () => {
+    const view = { pendingCount: 0, newOrders: 0, newInquiries: 0, health };
+    expect(feedSummary(view)).toBe("You are all caught up. Nothing is waiting on you.");
+  });
+
+  it("lists approvals, inbox items and catalog gaps", () => {
+    const view = {
+      pendingCount: 1,
+      newOrders: 1,
+      newInquiries: 2,
+      health: { active: 5, priceOnRequest: 4, stockUnknown: 6 },
+    };
+    expect(feedSummary(view)).toBe(
+      "1 approval is waiting and 3 new in your inbox. 4 offers priced on request, 6 with unknown stock.",
+    );
   });
 });

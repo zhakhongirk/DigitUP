@@ -42,11 +42,26 @@ export default async function OwnerLayout({ children }: { children: ReactNode })
             <b>{tenant.name}</b>
             <span>Owner</span>
           </div>
+          <form action={signOut} className="ws-signout">
+            <button type="submit" aria-label="Sign out" title="Sign out">
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="M16 17l5-5-5-5M21 12H9" />
+              </svg>
+            </button>
+          </form>
         </div>
         <SideNav slug={tenant.slug} counts={{ inbox, changes }} />
-        <form action={signOut} className="ws-signout">
-          <button type="submit">Sign out</button>
-        </form>
       </nav>
       <main id="main" tabIndex={-1} className="ws-main">
         {children}

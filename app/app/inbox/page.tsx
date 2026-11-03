@@ -119,15 +119,12 @@ function Detail({
             ))
           )}
           {item.kind === "inquiry" && item.answer ? (
-            <div className="ib-msg ib-msg-assistant">
+            <div className="ib-msg ib-msg-owner">
               <span className="ib-msg-who">
                 You{item.answeredAt ? ` · ${formatWhen(item.answeredAt, now)}` : ""}
               </span>
               <p>{item.answer}</p>
             </div>
-          ) : null}
-          {item.kind === "inquiry" ? (
-            <ReplyForm key={item.id} id={item.id} answered={Boolean(item.answer)} />
           ) : null}
         </div>
         <dl className="ib-facts">
@@ -163,6 +160,9 @@ function Detail({
           ))}
         </dl>
       </div>
+      {item.kind === "inquiry" ? (
+        <ReplyForm key={item.id} id={item.id} answered={Boolean(item.answer)} />
+      ) : null}
     </section>
   );
 }
@@ -195,7 +195,7 @@ export default async function InboxPage({
     <>
       <div className="ws-title">
         <h1>Inbox</h1>
-        <div className="segmented" role="group" aria-label="Status">
+        <div className="segmented segmented-sm" role="group" aria-label="Status">
           {INBOX_FILTERS.map((f) => (
             <Link key={f} href={href(f)} aria-current={f === filter ? "page" : undefined}>
               {FILTER_LABELS[f]}

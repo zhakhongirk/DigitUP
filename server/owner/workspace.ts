@@ -129,6 +129,29 @@ export function inboxBreakdown(orders: number, inquiries: number): string {
   return parts.join(", ");
 }
 
+export function feedSummary(
+  view: Pick<WorkspaceView, "pendingCount" | "newOrders" | "newInquiries" | "health">,
+): string {
+  const { health } = view;
+  const waiting: string[] = [];
+  if (view.pendingCount > 0) {
+    waiting.push(
+      `${plural(view.pendingCount, "approval")} ${view.pendingCount === 1 ? "is" : "are"} waiting`,
+    );
+  }
+  const inbox = view.newOrders + view.newInquiries;
+  if (inbox > 0) waiting.push(`${inbox} new in your inbox`);
+  const catalog: string[] = [];
+  if (health.priceOnRequest > 0)
+    catalog.push(`${plural(health.priceOnRequest, "offer")} priced on request`);
+  if (health.stockUnknown > 0) catalog.push(`${health.stockUnknown} with unknown stock`);
+  const parts: string[] = [];
+  if (waiting.length > 0) parts.push(`${waiting.join(" and ")}.`);
+  if (catalog.length > 0) parts.push(`${catalog.join(", ")}.`);
+  if (parts.length === 0) return "You are all caught up. Nothing is waiting on you.";
+  return parts.join(" ");
+}
+
 export function inboxHref(item: Pick<InboxItem, "key">): string {
   return `/app/inbox?item=${encodeURIComponent(item.key)}`;
 }

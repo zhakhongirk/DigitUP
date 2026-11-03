@@ -9,6 +9,14 @@ import { DecisionButtons } from "./decision-buttons";
 
 export const metadata: Metadata = { title: "Approvals" };
 
+function deltaClass(delta: string | null): string {
+  if (!delta) return "";
+  if (delta === "Newly priced") return " cs-delta-new";
+  if (delta.startsWith("+")) return " cs-delta-up";
+  if (delta.startsWith("-")) return " cs-delta-down";
+  return "";
+}
+
 function Banner({ view }: { view: ChangeSetView }) {
   if (view.status === "applied") {
     return (
@@ -48,10 +56,10 @@ function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
             Requested by {view.requestedBy} · {formatWhen(view.createdAt, now)}
           </span>
           <h1>{view.summary}</h1>
-          {view.reason ? <p className="cs-reason">{view.reason}</p> : null}
         </div>
         <span className={`cs-chip cs-chip-${view.status}`}>{view.statusLabel}</span>
       </div>
+      {view.reason ? <p className="cs-reason">{view.reason}</p> : null}
 
       <Banner view={view} />
 
@@ -61,7 +69,12 @@ function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
         ) : null}
         {view.groups.map((group, i) => (
           <div key={`${group.op}-${i}`} className="cs-group">
-            <h2>{group.title}</h2>
+            <div className="cs-group-head">
+              <h2>{group.title}</h2>
+              <span className="cs-group-count">
+                {group.rows.length} {group.rows.length === 1 ? "offer" : "offers"}
+              </span>
+            </div>
             <div className="cs-table-wrap">
               <table className="cs-table">
                 <thead>
@@ -76,9 +89,19 @@ function Detail({ view, now }: { view: ChangeSetView; now: Date }) {
                   {group.rows.map((row) => (
                     <tr key={row.key} className={row.flagged ? "cs-flagged" : undefined}>
                       <td>{row.title}</td>
-                      {pending ? <td className="cs-num cs-before">{row.before ?? ""}</td> : null}
+                      {pending ? (
+                        <td
+                          className={`cs-num cs-before${row.before === "On request" ? " cs-before-none" : ""}`}
+                        >
+                          {row.before ?? ""}
+                        </td>
+                      ) : null}
                       <td className="cs-num cs-after">{row.after}</td>
-                      {pending ? <td className="cs-num cs-delta">{row.delta ?? ""}</td> : null}
+                      {pending ? (
+                        <td className={`cs-num cs-delta${deltaClass(row.delta)}`}>
+                          {row.delta ?? ""}
+                        </td>
+                      ) : null}
                     </tr>
                   ))}
                 </tbody>

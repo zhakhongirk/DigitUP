@@ -6,8 +6,8 @@ import { orderNumber } from "./inbox";
 
 export const ACTOR_LABELS: Record<AuditEvent["actor"], string> = {
   owner: "You",
-  business_agent: "Business agent",
-  customer_agent: "Customer agent",
+  business_agent: "Business Agent",
+  customer_agent: "Customer Agent",
   system: "System",
 };
 

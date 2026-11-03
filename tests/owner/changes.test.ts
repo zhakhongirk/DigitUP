@@ -215,7 +215,7 @@ describe("describeChangeSet: resolved and invalid", () => {
       offers([[A, { price: 50000 }]]),
     );
     expect(view.statusLabel).toBe(label);
-    expect(view.requestedBy).toBe("Business agent");
+    expect(view.requestedBy).toBe("Business Agent");
     expect(view.groups[0]!.rows[0]).toMatchObject({
       before: null,
       delta: null,
