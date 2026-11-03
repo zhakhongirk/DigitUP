@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import type { Db } from "@/db/client";
 import { businessModelDrafts, businessProfiles, offers, offerTypes, tenants } from "@/db/schema";
+import { readSearchMisses, recordSearchMiss, type MissedQuery } from "./search-misses";
 import type { EventPublisher } from "@/server/events/types";
 import { EVENTS } from "@/server/events/types";
 import {
@@ -91,6 +92,12 @@ export interface CatalogService {
     ctx: TenantContext,
     search?: OfferSearch,
   ): Promise<{ items: OfferView[]; total: number }>;
+  /** Counts a storefront search that found nothing; never throws. */
+  recordSearchMiss(ctx: TenantContext, query: string): Promise<void>;
+  searchMisses(
+    ctx: TenantContext,
+    options?: { days?: number; limit?: number; now?: Date },
+  ): Promise<MissedQuery[]>;
   catalogStats(ctx: TenantContext): Promise<CatalogStats>;
   getOffer(ctx: TenantContext, offerId: string): Promise<OfferView | null>;
   getOffers(ctx: TenantContext, offerIds: string[]): Promise<OfferView[]>;
@@ -259,6 +266,10 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
       ]);
       return { items: rows.map(toView), total: total?.value ?? 0 };
     },
+
+    recordSearchMiss: (ctx, query) => recordSearchMiss(db, ctx.tenantId, query),
+
+    searchMisses: (ctx, options) => readSearchMisses(db, ctx.tenantId, options),
 
     async catalogStats(ctx) {
       const active = eq(offers.status, "active");

@@ -112,6 +112,7 @@ function Detail({
           id={item.id}
           next={item.next}
           canCancel={item.kind === "order" && item.canCancel}
+          checkStock={item.kind === "order" && item.status === "submitted"}
         />
       </header>
 

@@ -167,8 +167,12 @@ export function orderItem(order: Order, lang: Lang = "en"): OrderInboxItem {
     {
       label: tr(lang, "ib.items"),
       value:
-        lines.map((line) => `${line.title} × ${line.quantity}`).join("; ") ||
-        tr(lang, "ib.noItems"),
+        lines
+          .map((line) => {
+            const size = line.size ? `, ${tr(lang, "ib.size", { size: line.size })}` : "";
+            return `${line.title}${size} × ${line.quantity}`;
+          })
+          .join("; ") || tr(lang, "ib.noItems"),
     },
   ];
   if (total) facts.push({ label: tr(lang, "ib.total"), value: total });
@@ -182,7 +186,7 @@ export function orderItem(order: Order, lang: Lang = "en"): OrderInboxItem {
       value: tr(lang, order.fulfillment === "delivery" ? "ib.delivery" : "ib.pickup"),
     });
   }
-  if (order.deliveryAddress) {
+  if (order.deliveryAddress || order.city) {
     facts.push({
       label: tr(lang, "ib.address"),
       value: [order.deliveryAddress, order.city].filter(Boolean).join(", "),

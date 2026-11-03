@@ -6,11 +6,14 @@ import { negotiateLang, type Lang } from "@/server/storefront/i18n";
 import { orderNumber } from "@/server/storefront/order-status";
 import { formatPrice } from "@/shared/format";
 import { tr, trn } from "@/shared/owner-copy";
+import type { OrderItem } from "../orders";
 import { ServiceError, assertOwner, type TenantContext } from "../context";
 import type { TelegramClient, TelegramUpdate } from "./client";
 import { readTenantLang, saveTenantLang } from "./lang";
 
 export * from "./client";
+
+const MAX_ITEM_LINES = 15;
 
 export const LINK_CODE_TTL_MS = 15 * 60 * 1000;
 const OFFSET_KEY = "telegram.update_offset";
@@ -63,6 +66,24 @@ function money(total: number | null, currency: string | null, lang: Lang): strin
   if (total === null) return tr(lang, "tg.toBeConfirmed");
   if (lang === "ru") return formatPrice(total, currency, lang);
   return `${total.toLocaleString("en-US", { maximumFractionDigits: 2 })} ${currency ?? ""}`.trim();
+}
+
+export function orderDetailLines(
+  order: Pick<typeof orders.$inferSelect, "items" | "deliveryAddress" | "city">,
+  lang: Lang,
+): string {
+  const lines = (Array.isArray(order.items) ? order.items : []) as OrderItem[];
+  const out = lines.slice(0, MAX_ITEM_LINES).map((line) => {
+    const size = line.size ? `, ${tr(lang, "tg.size", { size: oneLine(line.size, 20) })}` : "";
+    return `- ${oneLine(line.title, 80)}${size} × ${line.quantity}`;
+  });
+  if (lines.length > MAX_ITEM_LINES) out.push(`+${lines.length - MAX_ITEM_LINES}`);
+  const where = [order.deliveryAddress, order.city]
+    .map((part) => oneLine(part ?? "", 200))
+    .filter(Boolean)
+    .join(", ");
+  if (where) out.push(tr(lang, "tg.delivery", { where }));
+  return out.length > 0 ? `\n${out.join("\n")}` : "";
 }
 
 function oneLine(value: string, max: number): string {
@@ -137,7 +158,7 @@ export function createTelegramService(deps: TelegramDeps): TelegramService {
         number: orderNumber(order.id),
         who: oneLine(who, 80),
         total: money(order.total, order.currency, lang),
-      })}${link(`/app/inbox?item=order:${order.id}`)}`;
+      })}${orderDetailLines(order, lang)}${link(`/app/inbox?item=order:${order.id}`)}`;
     }
     if (kind === "inquiry") {
       const [inquiry] = await db

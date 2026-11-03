@@ -114,6 +114,7 @@ export default async function AnalyticsPage({
   const view = await loadAnalytics(services, owner, range, undefined, lang);
   const { outcome } = view;
   const maxQuery = Math.max(1, ...view.queries.map((q) => q.count));
+  const maxMissed = Math.max(1, ...view.missedQueries.map((q) => q.count));
   const hasActivity = view.days.some((d) => d.conversations + d.orders + d.inquiries > 0);
 
   return (
@@ -234,6 +235,23 @@ export default async function AnalyticsPage({
           )}
         </section>
       </div>
+
+      <section className="an-card an-wide glass" aria-labelledby="an-missed">
+        <h2 id="an-missed">{t("an.missed")}</h2>
+        <p className="an-q-meta">{t("an.missedNote")}</p>
+        {view.missedQueries.length === 0 ? (
+          <p className="an-empty">{t("an.noMissed")}</p>
+        ) : (
+          <Bars
+            items={view.missedQueries.map((q) => ({
+              key: q.query,
+              label: q.query,
+              value: String(q.count),
+              share: q.count / maxMissed,
+            }))}
+          />
+        )}
+      </section>
 
       <div className="an-row">
         <section className="an-card an-list glass" aria-labelledby="an-open">

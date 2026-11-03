@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
 import { passwordChangeLimiter } from "@/server/http/rate-limit";
 import { ownerT } from "@/server/owner/lang";
-import { parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
+import { hasInvalidWhatsapp, parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
 import { clearSessionCookie, currentOwner, setSessionCookie } from "@/server/owner/session";
 import { ServiceError } from "@/server/services/context";
 
@@ -23,6 +23,7 @@ export async function saveProfile(_prev: SettingsState, form: FormData): Promise
 
   const input = parseProfileForm(form);
   if (!input.name) return { error: t("st.errName"), saved: false };
+  if (hasInvalidWhatsapp(input.contacts)) return { error: t("st.errWhatsapp"), saved: false };
   try {
     await services.catalog.updateProfile(owner, input);
   } catch (error) {

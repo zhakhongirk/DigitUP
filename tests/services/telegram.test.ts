@@ -7,6 +7,7 @@ import { EVENTS } from "@/server/events/types";
 import { ServiceError } from "@/server/services/context";
 import {
   createTelegramService,
+  orderDetailLines,
   LINK_CODE_TTL_MS,
   type TelegramClient,
   type TelegramUpdate,
@@ -51,6 +52,36 @@ async function chatOf(tenantId: string) {
   const [row] = await testDb().select().from(tenants).where(eq(tenants.id, tenantId));
   return row;
 }
+
+describe("orderDetailLines", () => {
+  const items = [
+    {
+      offerId: "a",
+      title: "Trail Runner",
+      quantity: 2,
+      unitPrice: 1,
+      currency: "KZT",
+      lineTotal: 2,
+      size: "42",
+    },
+    { offerId: "b", title: "Socks", quantity: 1, unitPrice: 1, currency: "KZT", lineTotal: 1 },
+  ];
+
+  it("lists every line with size and the delivery city", () => {
+    expect(orderDetailLines({ items, deliveryAddress: "Abay 10", city: "Almaty" }, "en")).toBe(
+      "\n- Trail Runner, size 42 × 2\n- Socks × 1\nDelivery: Abay 10, Almaty",
+    );
+  });
+
+  it("is localized and skips a missing destination", () => {
+    expect(orderDetailLines({ items: [items[0]!], deliveryAddress: null, city: null }, "ru")).toBe(
+      "\n- Trail Runner, размер 42 × 2",
+    );
+    expect(orderDetailLines({ items: [], deliveryAddress: null, city: "Almaty" }, "ru")).toBe(
+      "\nДоставка: Almaty",
+    );
+  });
+});
 
 describe("telegram link codes", () => {
   it("issues a link that expires after 15 minutes", async () => {

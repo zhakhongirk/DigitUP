@@ -234,6 +234,8 @@ export async function searchCatalog(
     }),
     loadTypeDefs(services, ctx),
   ]);
+  if (result.total === 0 && query && page === 1)
+    await services.catalog.recordSearchMiss(ctx, query);
   return {
     items: result.items.map((offer) => toCard(offer, defs, 3)),
     total: result.total,

@@ -99,6 +99,9 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           limit: args.limit,
           offset: args.offset,
         });
+        if (result.total === 0 && args.offset === 0 && args.query?.trim()) {
+          await catalog.recordSearchMiss(ctx, args.query);
+        }
         return { total: result.total, offers: result.items.map(publicOffer) };
       }),
   );

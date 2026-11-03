@@ -11,11 +11,13 @@ export function StatusActions({
   id,
   next,
   canCancel,
+  checkStock = false,
 }: {
   kind: "order" | "inquiry";
   id: string;
   next: { status: string; label: string } | null;
   canCancel: boolean;
+  checkStock?: boolean;
 }) {
   const { t } = useT();
   const [state, action, pending] = useActionState<ActionState, FormData>(updateStatus, initial);
@@ -86,6 +88,9 @@ export function StatusActions({
             {t("ib.keepOrder")}
           </button>
         </>
+      ) : null}
+      {checkStock && next ? (
+        <p className="ib-reply-hint ib-stock-hint">{t("ib.checkStock")}</p>
       ) : null}
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">

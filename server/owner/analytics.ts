@@ -1,4 +1,5 @@
 import type { Services } from "@/server/container";
+import type { MissedQuery } from "@/server/services/catalog/search-misses";
 import type { TenantContext } from "@/server/services/context";
 import type { Conversation, ConversationStats, DayCount } from "@/server/services/conversations";
 import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
@@ -169,12 +170,14 @@ export interface AnalyticsView {
   outcome: AgentOutcome;
   offers: TopOffer[];
   queries: TopQuery[];
+  missedQueries: MissedQuery[];
   days: DayPoint[];
   openQuestions: OpenQuestion[];
 }
 
 const QUERIES_SAMPLE = 200;
 const OPEN_QUESTIONS = 4;
+const MISSED_QUERIES = 8;
 
 export async function loadAnalytics(
   services: Services,
@@ -185,15 +188,23 @@ export async function loadAnalytics(
 ): Promise<AnalyticsView> {
   const since = new Date(now.getTime() - range * DAY);
   const timeZone = appTimeZone();
-  const [conversations, orders, firstMessages, dailyConversations, daily, unresolved] =
-    await Promise.all([
-      services.conversations.stats(ctx, { since }),
-      services.orders.stats(ctx, { since }),
-      services.conversations.firstUserMessages(ctx, { since, limit: QUERIES_SAMPLE }),
-      services.conversations.dailyCounts(ctx, { since, timeZone }),
-      services.orders.dailyCounts(ctx, { since, timeZone }),
-      services.orders.listInquiries(ctx, { status: "new", limit: OPEN_QUESTIONS }),
-    ]);
+  const [
+    conversations,
+    orders,
+    firstMessages,
+    dailyConversations,
+    daily,
+    unresolved,
+    missedQueries,
+  ] = await Promise.all([
+    services.conversations.stats(ctx, { since }),
+    services.orders.stats(ctx, { since }),
+    services.conversations.firstUserMessages(ctx, { since, limit: QUERIES_SAMPLE }),
+    services.conversations.dailyCounts(ctx, { since, timeZone }),
+    services.orders.dailyCounts(ctx, { since, timeZone }),
+    services.orders.listInquiries(ctx, { status: "new", limit: OPEN_QUESTIONS }),
+    services.catalog.searchMisses(ctx, { days: 30, limit: MISSED_QUERIES, now }),
+  ]);
   const placed = Object.entries(orders.byStatus).reduce(
     (sum, [status, n]) => (status === "draft" ? sum : sum + n),
     0,
@@ -211,6 +222,7 @@ export async function loadAnalytics(
     outcome: agentOutcome(conversations, orders.inquiries),
     offers: orders.topOffers,
     queries: topQueries(firstMessages.map((m) => m.content)),
+    missedQueries,
     days: dailySeries(
       now,
       range,

@@ -1,11 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
+import { hasInvalidWhatsapp, parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
 
 function form(entries: Record<string, string>): FormData {
   const data = new FormData();
   for (const [key, value] of Object.entries(entries)) data.set(key, value);
   return data;
 }
+
+describe("hasInvalidWhatsapp", () => {
+  it("accepts numbers and wa.me links, and an empty field", () => {
+    expect(hasInvalidWhatsapp({})).toBe(false);
+    expect(hasInvalidWhatsapp({ whatsapp: "+7 701 000 00 00" })).toBe(false);
+    expect(hasInvalidWhatsapp({ whatsapp: "https://wa.me/77010000000" })).toBe(false);
+  });
+
+  it("rejects text that cannot become a wa.me link", () => {
+    expect(hasInvalidWhatsapp({ whatsapp: "call me" })).toBe(true);
+    expect(hasInvalidWhatsapp({ whatsapp: "12345" })).toBe(true);
+  });
+});
 
 describe("parseProfileForm", () => {
   it("trims values and drops empty contacts", () => {

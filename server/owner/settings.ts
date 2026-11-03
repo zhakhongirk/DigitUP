@@ -1,4 +1,5 @@
 import { CONTACT_FIELDS, POLICY_FIELDS } from "@/shared/labels";
+import { whatsappDigits } from "@/server/storefront/whatsapp";
 import type { Contacts, Policies } from "@/shared/business-model";
 
 export interface ProfileInput {
@@ -25,6 +26,10 @@ export function parseProfileForm(form: FormData): ProfileInput {
     category: text(form, "category") || null,
     contacts,
   };
+}
+
+export function hasInvalidWhatsapp(contacts: Contacts): boolean {
+  return contacts.whatsapp !== undefined && whatsappDigits(contacts.whatsapp) === null;
 }
 
 export function parsePoliciesForm(form: FormData): Policies {

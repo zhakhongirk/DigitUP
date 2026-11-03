@@ -94,6 +94,36 @@ describe("inbox items", () => {
     ]);
   });
 
+  it("lists every line with its size and quantity", () => {
+    const item = orderItem(
+      order({
+        items: [
+          {
+            offerId: "o1",
+            title: "Trail Runner",
+            quantity: 2,
+            unitPrice: 1,
+            currency: "KZT",
+            lineTotal: 2,
+            size: "42",
+          },
+          {
+            offerId: "o2",
+            title: "Socks",
+            quantity: 1,
+            unitPrice: 1,
+            currency: "KZT",
+            lineTotal: 1,
+          },
+        ],
+      }),
+    );
+    expect(item.facts[0]).toEqual({
+      label: "Items",
+      value: "Trail Runner, size 42 × 2; Socks × 1",
+    });
+  });
+
   it("lists delivery address with the city and the cancel reason", () => {
     const delivery = orderItem(
       order({ fulfillment: "delivery", deliveryAddress: "Abay 10", city: "Almaty" }),
@@ -103,6 +133,9 @@ describe("inbox items", () => {
 
     const noCity = orderItem(order({ fulfillment: "delivery", deliveryAddress: "Abay 10" }));
     expect(noCity.facts).toContainEqual({ label: "Address", value: "Abay 10" });
+
+    const cityOnly = orderItem(order({ fulfillment: "delivery", city: "Almaty" }));
+    expect(cityOnly.facts).toContainEqual({ label: "Address", value: "Almaty" });
 
     const cancelled = orderItem(order({ status: "cancelled", cancelReason: "Out of stock" }));
     expect(cancelled.facts).toContainEqual({ label: "Cancel reason", value: "Out of stock" });
