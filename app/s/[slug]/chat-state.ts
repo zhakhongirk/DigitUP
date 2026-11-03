@@ -301,6 +301,14 @@ export function isOrderDetailsValid(details: {
   );
 }
 
+export function hasOpenDraft(items: ChatItem[]): boolean {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i];
+    if (item?.kind === "order") return item.order.status === "draft";
+  }
+  return false;
+}
+
 function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
   return {
     orderId: view.order_id,

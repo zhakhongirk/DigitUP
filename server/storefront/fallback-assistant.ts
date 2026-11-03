@@ -78,6 +78,10 @@ const CITY_RE = /(?:^|[\s,;])(?:city|город|қала\p{L}*)\s*[:-]?\s*(\p{L}
 const ADD_SOURCE =
   "(?<![\\p{L}])(?:add|adding|also|another|plus|добав\\p{L}*|ещё|еще|плюс|также|заодно|тоже|қос\\p{L}*|тағы|сондай-ақ)(?![\\p{L}])";
 const ADD_RE = new RegExp(ADD_SOURCE, "iu");
+const ADD_CARD_RE = /^(?:Add to order|Добавить в заказ|Тапсырысқа қосу):\s*(.+)$/isu;
+const ADDED_REPLY_RE =
+  /× \d+\. (?:Your order now has \d+ items|В заказе теперь позиций: \d+|Тапсырыста қазір \d+ тауар)\.$/u;
+const MAX_LINE_QUANTITY = 20;
 const ADD_MORE_RE = /^\W*(?:add another item|добавить ещё товар|тағы тауар қосу)\W*$/iu;
 const REMOVE_SOURCE =
   "(?<![\\p{L}])(?:remove|delete|drop|убери\\p{L}*|убрать|удали\\p{L}*|удалить|без|алып\\s+таста\\p{L}*|жой\\p{L}*|өшір\\p{L}*)(?![\\p{L}])";
@@ -341,7 +345,7 @@ export function parseIntent(input: string): Intent {
   for (const re of QUANTITY_RES) {
     const match = re.exec(rest);
     if (match) {
-      quantity = Math.min(Math.max(Number(match[1]), 1), 20);
+      quantity = Math.min(Math.max(Number(match[1]), 1), MAX_LINE_QUANTITY);
       rest = rest.replace(match[0], " ");
       break;
     }
@@ -411,6 +415,9 @@ const COPY = {
     orderPrompt:
       'To place it, press "Confirm order" below, or tell me your name, phone number and whether you want pickup or delivery (with the address). Reply no to cancel.',
     sizeWord: "size",
+    maxQty: "You can order up to 20 of one item.",
+    added: (title: string, size: string | null, qty: number, n: number) =>
+      `Added ${title}${size ? ` (${size})` : ""} × ${qty}. Your order now has ${n} items.`,
     askCity: "What city is the delivery to?",
     askAdd: "Which product would you like to add? Tell me the name.",
     removeWhich: (titles: string) => `Which item should I remove? ${titles}`,
@@ -472,6 +479,9 @@ const COPY = {
     orderPrompt:
       "Чтобы оформить, нажмите «Подтвердить заказ» ниже или напишите имя, телефон и что вам удобнее: самовывоз или доставка (с адресом). Ответьте нет, чтобы отменить.",
     sizeWord: "размер",
+    maxQty: "Можно заказать не больше 20 шт. одного товара.",
+    added: (title: string, size: string | null, qty: number, n: number) =>
+      `Добавила ${title}${size ? ` (${size})` : ""} × ${qty}. В заказе теперь позиций: ${n}.`,
     askCity: "В какой город доставить?",
     askAdd: "Какой товар добавить? Напишите название.",
     removeWhich: (titles: string) => `Какой товар убрать? ${titles}`,
@@ -533,6 +543,9 @@ const COPY = {
     orderPrompt:
       "Рәсімдеу үшін төмендегі «Тапсырысты растау» түймесін басыңыз немесе атыңызды, телефоныңызды және өзі алып кету не жеткізу ыңғайлы екенін (мекенжайымен) жазыңыз. Бас тарту үшін жоқ деп жауап беріңіз.",
     sizeWord: "өлшемі",
+    maxQty: "Бір тауардан 20 данадан артық тапсырыс беруге болмайды.",
+    added: (title: string, size: string | null, qty: number, n: number) =>
+      `${title}${size ? ` (${size})` : ""} × ${qty} қосылды. Тапсырыста қазір ${n} тауар.`,
     askCity: "Қай қалаға жеткізу керек?",
     askAdd: "Қай тауарды қосайын? Атауын жазыңыз.",
     removeWhich: (titles: string) => `Қай тауарды алып тастайын? ${titles}`,
@@ -903,7 +916,11 @@ export function readContext(history: LlmMessage[]): FallbackContext {
     pending = { kind: "add" };
   } else if (endsWithPrompt(lastText, "addContact")) {
     pending = { kind: "inquiry_sent" };
-  } else if (endsWithPrompt(lastText, "orderPrompt") || askingOf(lastText) !== null) {
+  } else if (
+    endsWithPrompt(lastText, "orderPrompt") ||
+    ADDED_REPLY_RE.test(lastText) ||
+    askingOf(lastText) !== null
+  ) {
     const create = batches.filter((b) => b.calls.some((c) => c.name === "create_order")).at(-1);
     const args = create?.calls.find((c) => c.name === "create_order")?.arguments;
     const key = typeof args?.idempotency_key === "string" ? args.idempotency_key : null;
@@ -1191,6 +1208,29 @@ function orderStep(
   };
 }
 
+function atCap(draft: Draft | null, line: { offer_id: string; quantity: number; size?: string }) {
+  const existing = draft?.items.find(
+    (item) => item.offer_id === line.offer_id && (item.size ?? "") === (line.size ?? ""),
+  );
+  return existing !== undefined && existing.quantity + line.quantity > MAX_LINE_QUANTITY;
+}
+
+function addedReply(
+  data: Record<string, unknown>,
+  call: { arguments: Record<string, unknown> },
+  copy: Copy,
+): string | null {
+  const [added] = Array.isArray(call.arguments.items) ? call.arguments.items : [];
+  const line = asRecord(added);
+  const items = draftItems(data.items);
+  if (!line || !items) return null;
+  const size = typeof line.size === "string" && line.size ? line.size : "";
+  const item = items.find(
+    (entry) => entry.offer_id === line.offer_id && (entry.size ?? "") === size,
+  );
+  return item ? copy.added(item.title, size || null, item.quantity, items.length) : null;
+}
+
 function startDecision(
   intent: Intent,
   ctx: FallbackContext,
@@ -1204,6 +1244,7 @@ function startDecision(
     const size = intent.size ?? BARE_SIZE_RE.exec(text)?.[1]?.replace(",", ".") ?? null;
     if (size && pending.sizes.includes(size)) {
       const line = { offer_id: pending.offerId, quantity: pending.quantity, size };
+      if (atCap(pending.draft, line)) return { reply: copy.maxQty };
       const all = [...(pending.draft?.items ?? []), { ...line, title: pending.title }];
       return {
         calls: [
@@ -1325,7 +1366,10 @@ function continueDecision(
   if (first === "create_order") {
     const data = asRecord(resultOf(last, "create_order")?.data);
     if (!data) return { reply: copy.orderError };
-    return { reply: data.status === "draft" ? orderSummary(data, copy) : copy.orderSent };
+    if (data.status !== "draft") return { reply: copy.orderSent };
+    const call = last.calls[0];
+    const added = call?.arguments.merge === true ? addedReply(data, call, copy) : null;
+    return { reply: added ?? orderSummary(data, copy) };
   }
 
   if (first === "search_offers" || first === "get_offer_details") {
@@ -1373,6 +1417,7 @@ function continueDecision(
       }
       const line = lineArg(offer, intent.quantity, size);
       const draft = adding ? ctx.draft : null;
+      if (atCap(draft, line)) return { reply: copy.maxQty };
       const all = [...(draft?.items ?? []), { ...line, title: offer.title }];
       return {
         calls: [
@@ -1426,18 +1471,21 @@ export function decide(messages: LlmMessage[], key: string): Decision {
     ctx.draft !== null &&
     (ADD_RE.test(text) ||
       (ctx.pending?.kind === "add" && ["search", "buy", "price", "stock"].includes(plain.kind)));
-  const intent: Intent = adding
-    ? (() => {
-        const stripped = ADD_MORE_RE.test(text) ? "" : stripWords(text, ADD_SOURCE);
-        const parsed = parseIntent(stripped);
-        return {
-          ...parsed,
-          lang,
-          quantity: plain.quantity > 1 ? plain.quantity : parsed.quantity,
-          kind: parsed.terms.length > 0 ? "buy" : "search",
-        };
-      })()
-    : { ...plain, lang };
+  const card = ADD_CARD_RE.exec(text);
+  const intent: Intent = card?.[1]
+    ? { ...parseIntent(card[1]), lang, quantity: 1, size: null, kind: "buy" }
+    : adding
+      ? (() => {
+          const stripped = ADD_MORE_RE.test(text) ? "" : stripWords(text, ADD_SOURCE);
+          const parsed = parseIntent(stripped);
+          return {
+            ...parsed,
+            lang,
+            quantity: plain.quantity > 1 ? plain.quantity : parsed.quantity,
+            kind: parsed.terms.length > 0 ? "buy" : "search",
+          };
+        })()
+      : { ...plain, lang };
   const batches = readBatches(messages.slice(lastUser + 1));
   if (batches.length === 0) return startDecision(intent, ctx, text, key, adding);
   const withCurrent = { ...ctx, userMessages: [...ctx.userMessages, text] };

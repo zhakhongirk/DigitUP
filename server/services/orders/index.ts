@@ -251,12 +251,19 @@ const truncMs = (expr: SQL | AnyColumn) => sql`date_trunc('milliseconds', ${expr
 const afterCursor = (at: SQL, id: AnyColumn, cursor: ListCursor) =>
   sql`(${at}, ${id}) < (${new Date(cursor.at).toISOString()}::timestamptz, ${cursor.id}::uuid)`;
 const clampOffset = (offset?: number) => Math.max(Math.trunc(offset ?? 0), 0);
+const MAX_LINE_QUANTITY = 20;
+
 function mergeLines(requested: OrderItemInput[]): OrderItemInput[] {
   const merged = new Map<string, OrderItemInput>();
   for (const line of requested) {
     const key = `${line.offerId}|${line.size ?? ""}`;
     const existing = merged.get(key);
-    merged.set(key, existing ? { ...existing, quantity: existing.quantity + line.quantity } : line);
+    merged.set(
+      key,
+      existing
+        ? { ...existing, quantity: Math.min(existing.quantity + line.quantity, MAX_LINE_QUANTITY) }
+        : line,
+    );
   }
   return [...merged.values()];
 }

@@ -242,6 +242,7 @@ async function main() {
   });
 
   let chatOrderPlaced = false;
+  let orderTitles: string[] = [];
   let cardHeight = -1;
   await check("storefront order via chat", async () => {
     if (!chatAvailable) throw new Skip("assistant unavailable (no LLM key in .env)");
@@ -268,9 +269,28 @@ async function main() {
       await box.press("Enter");
       await settle();
     };
+    ensure((await add.count()) >= 2, "need two product cards");
+    const titles = await sp
+      .locator(".chat-offers")
+      .last()
+      .locator(".chat-offer", { has: sp.getByRole("button", { name: storeT("en", "addToOrder") }) })
+      .locator(".chat-offer-title")
+      .allInnerTexts();
     await add.nth(0).click();
     await settle();
     await answerSize();
+    await add.nth(1).click();
+    await settle();
+    await answerSize();
+    const twoLines = await sp.locator(".chat-order").last().locator(".chat-order-lines li").count();
+    ensure(twoLines >= 3, `card tap did not add a second line (${twoLines - 1} line(s))`);
+    for (const title of titles.slice(0, 2)) {
+      ensure(
+        (await sp.locator(".chat-order").last().innerText()).includes(title.trim()),
+        `order card misses ${title}: ${(await sp.locator(".chat-order").last().innerText()).replace(/\s+/g, " ")} | ${(await lastReply()).slice(0, 120)}`,
+      );
+    }
+    orderTitles = titles.slice(0, 2).map((title) => title.trim());
     await sp
       .locator(".chat-order")
       .last()
@@ -315,6 +335,9 @@ async function main() {
     await detail.waitFor();
     const text = await detail.innerText();
     ensure((text.match(/size \S+/g) ?? []).length >= 2, "sizes missing");
+    if (chatOrderPlaced) {
+      for (const title of orderTitles) ensure(text.includes(title), `inbox order misses ${title}`);
+    }
     ensure(text.includes("Almaty"), "city missing");
     await shot(op, "inbox-order");
     ensure(text.includes(en("ib.checkStock")), "check stock hint missing");

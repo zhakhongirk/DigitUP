@@ -273,3 +273,180 @@ describe("city for delivery", () => {
     expect(call?.arguments).not.toHaveProperty("city");
   });
 });
+
+describe("Add to order from a product card", () => {
+  const tap = (title: string, lang: "en" | "ru" | "kk" = "en") =>
+    ({
+      en: `Add to order: ${title}`,
+      ru: `Добавить в заказ: ${title}`,
+      kk: `Тапсырысқа қосу: ${title}`,
+    })[lang];
+  const found = (offer: Record<string, unknown>) =>
+    toolTurn("search_offers", {}, { total: 1, offers: [offer] });
+  const capLine = { offerId: cap.offer_id, title: "Cap", quantity: 1 };
+
+  function withCap(): LlmMessage[] {
+    return [
+      ...firstOrder(),
+      user(tap("Cap")),
+      ...found(cap),
+      ...toolTurn(
+        "create_order",
+        {
+          idempotency_key: "key-1234567",
+          items: [{ offer_id: cap.offer_id, quantity: 1 }],
+          merge: true,
+        },
+        draftOf([runnerLine, capLine], "120 KZT"),
+      ),
+    ];
+  }
+
+  it("appends the tapped product as a second line", () => {
+    const history = [...firstOrder(), user(tap("Cap")), ...found(cap)];
+    const [call] = calls(decide(history, "fresh-key-123"));
+    expect(call?.arguments).toMatchObject({
+      idempotency_key: "key-1234567",
+      items: [{ offer_id: cap.offer_id, quantity: 1 }],
+      merge: true,
+      submit: false,
+    });
+  });
+
+  it("confirms with one line and the item count", () => {
+    const history = [
+      ...firstOrder(),
+      user(tap("Cap")),
+      ...found(cap),
+      {
+        role: "assistant" as const,
+        content: null,
+        toolCalls: [
+          {
+            id: "c9",
+            name: "create_order",
+            arguments: {
+              idempotency_key: "key-1234567",
+              items: [{ offer_id: cap.offer_id, quantity: 1 }],
+              merge: true,
+              submit: false,
+            },
+          },
+        ],
+      },
+      {
+        role: "tool" as const,
+        toolCallId: "c9",
+        name: "create_order",
+        content: JSON.stringify(draftOf([runnerLine, capLine], "120 KZT")),
+      },
+    ];
+    expect(reply(decide(history, "k"))).toBe("Added Cap × 1. Your order now has 2 items.");
+  });
+
+  it("raises the quantity when the same product is tapped again", () => {
+    const history = [
+      ...withCap(),
+      assistant("Added Cap × 1. Your order now has 2 items."),
+      user(tap("Cap")),
+      ...found(cap),
+    ];
+    expect(readContext(history.slice(0, -2)).pending).toMatchObject({ kind: "order" });
+    const [call] = calls(decide(history, "k"));
+    expect(call?.arguments).toMatchObject({
+      idempotency_key: "key-1234567",
+      items: [{ offer_id: cap.offer_id, quantity: 1 }],
+      merge: true,
+    });
+  });
+
+  it("refuses to go past 20 of one item", () => {
+    const full = [
+      ...firstOrder(),
+      ...toolTurn(
+        "create_order",
+        { idempotency_key: "key-1234567" },
+        draftOf([runnerLine, { ...capLine, quantity: 20 }]),
+      ),
+      assistant("Added Cap × 20. Your order now has 2 items."),
+      user(tap("Cap")),
+      ...found(cap),
+    ];
+    expect(reply(decide(full, "k"))).toBe("You can order up to 20 of one item.");
+  });
+
+  it("starts a new draft once the order was sent", () => {
+    const sent = [
+      ...firstOrder(),
+      ...toolTurn("create_order", { idempotency_key: "key-1234567" }, { status: "submitted" }),
+      assistant("Order sent."),
+      user(tap("Cap")),
+      ...found(cap),
+    ];
+    const [call] = calls(decide(sent, "new-key-12345"));
+    expect(call?.arguments).toMatchObject({
+      idempotency_key: "new-key-12345",
+      items: [{ offer_id: cap.offer_id, quantity: 1 }],
+    });
+    expect(call?.arguments).not.toHaveProperty("merge");
+  });
+
+  it("asks the size for the tapped product and keeps the draft", () => {
+    const history = [...firstOrder(), user(tap("Samba")), ...found(samba)];
+    expect(reply(decide(history, "k"))).toBe("Which size? Available: 38, 39.");
+    const asked = [...history, assistant("Which size? Available: 38, 39.")];
+    expect(readContext(asked).pending).toMatchObject({
+      kind: "size",
+      draft: { key: "key-1234567" },
+    });
+    const [call] = calls(decide([...asked, user("39")], "k"));
+    expect(call?.arguments).toMatchObject({
+      idempotency_key: "key-1234567",
+      items: [{ offer_id: samba.offer_id, quantity: 1, size: "39" }],
+      merge: true,
+    });
+  });
+
+  it("matches the add-to-order message in every language", () => {
+    for (const lang of ["en", "ru", "kk"] as const) {
+      const history = [...firstOrder(), user(tap("Cap", lang)), ...found(cap)];
+      const [call] = calls(decide(history, "k"));
+      expect(call?.arguments).toMatchObject({ merge: true, idempotency_key: "key-1234567" });
+    }
+  });
+
+  it("confirms in Russian and Kazakh", () => {
+    for (const [lang, text] of [
+      ["ru", "Добавила Cap × 1. В заказе теперь позиций: 2."],
+      ["kk", "Cap × 1 қосылды. Тапсырыста қазір 2 тауар."],
+    ] as const) {
+      const history = [
+        ...firstOrder(),
+        user(tap("Cap", lang)),
+        ...found(cap),
+        {
+          role: "assistant" as const,
+          content: null,
+          toolCalls: [
+            {
+              id: "c9",
+              name: "create_order",
+              arguments: {
+                idempotency_key: "key-1234567",
+                items: [{ offer_id: cap.offer_id, quantity: 1 }],
+                merge: true,
+              },
+            },
+          ],
+        },
+        {
+          role: "tool" as const,
+          toolCallId: "c9",
+          name: "create_order",
+          content: JSON.stringify(draftOf([runnerLine, capLine], "120 KZT")),
+        },
+      ];
+      expect(reply(decide(history, "k"))).toBe(text);
+    }
+  });
+});

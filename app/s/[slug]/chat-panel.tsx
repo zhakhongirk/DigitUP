@@ -10,6 +10,7 @@ import {
   chatReducer,
   flushNdjson,
   initialChatState,
+  hasOpenDraft,
   isOrderDetailsValid,
   lastUserLang,
   parseNdjsonChunk,
@@ -34,6 +35,12 @@ function formatMoney(value: number | string, currency: string): string {
   const amount = Number(value);
   if (!Number.isFinite(amount)) return `${value} ${currency}`.trim();
   return formatPrice(amount, currency);
+}
+
+function isUnpriced(line: { lineTotal: number | string | null }): boolean {
+  return (
+    line.lineTotal === null || line.lineTotal === "" || !Number.isFinite(Number(line.lineTotal))
+  );
 }
 
 function initials(name: string): string {
@@ -160,12 +167,20 @@ function OrderSummary({
                 </span>
               )}
             </span>
-            <span>{formatMoney(line.lineTotal, line.currency || order.currency)}</span>
+            <span>
+              {isUnpriced(line)
+                ? t(uiLang, "priceOnRequest")
+                : formatMoney(line.lineTotal, line.currency || order.currency)}
+            </span>
           </li>
         ))}
         <li className="chat-order-total">
           <b>{t(uiLang, "total")}</b>
-          <b>{formatMoney(order.total, order.currency)}</b>
+          <b>
+            {order.items.some(isUnpriced)
+              ? t(uiLang, "totalConfirmedByShop")
+              : formatMoney(order.total, order.currency)}
+          </b>
         </li>
       </ul>
       {sent ? (
@@ -275,12 +290,14 @@ function OfferCards({
   lang,
   onSend,
   disabled,
+  draftOpen,
 }: {
   slug: string;
   offers: OfferChip[];
   lang: Lang;
   onSend: (text: string) => void;
   disabled: boolean;
+  draftOpen: boolean;
 }) {
   return (
     <ul className="chat-offers" aria-label={t(lang, "offersFromStore")}>
@@ -324,7 +341,15 @@ function OfferCards({
               disabled={disabled}
               onClick={() =>
                 onSend(
-                  t(lang, o.canOrder ? "chatOrderMessage" : "chatAskMessage", { title: o.title }),
+                  t(
+                    lang,
+                    o.canOrder
+                      ? draftOpen
+                        ? "chatAddMessage"
+                        : "chatOrderMessage"
+                      : "chatAskMessage",
+                    { title: o.title },
+                  ),
                 )
               }
             >
@@ -625,6 +650,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
                 lang={uiLang}
                 onSend={sendText}
                 disabled={state.sending || !state.available}
+                draftOpen={hasOpenDraft(state.items)}
               />
             );
           }
