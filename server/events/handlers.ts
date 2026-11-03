@@ -7,6 +7,8 @@ import { notifications } from "@/db/schema";
 import type { IngestionService } from "@/server/services/ingestion";
 import type { TelegramService } from "@/server/services/telegram";
 import type { ProvisioningService } from "@/server/services/provisioning";
+import { deliverWithRetry, type PostWebhook } from "@/server/services/webhooks/deliver";
+import type { WebhookService } from "@/server/services/webhooks";
 import { EVENTS, type EventName, type EventPayloads } from "./types";
 
 export interface HandlerDeps {
@@ -15,6 +17,10 @@ export interface HandlerDeps {
   provisioning?: ProvisioningService;
   ingestion?: IngestionService;
   telegram?: TelegramService;
+  webhooks?: WebhookService;
+  postWebhook?: PostWebhook;
+  /** Sleep between in-process delivery attempts; tests pass an instant one. */
+  sleep?: (ms: number) => Promise<void>;
   /** Builds a Business Model draft for a finished ingestion run. */
   propose?: (input: { tenantId: string; runId: string }) => Promise<void>;
 }
@@ -82,6 +88,27 @@ export const handlers: EventHandlers = {
     if (!provisioning) throw new Error("provisioning is not configured in this worker");
     const outcome = await provisioning.provision({ tenantId, draftId });
     log?.(`[worker] model.confirmed: ${outcome.status} /s/${outcome.slug}`);
+  },
+  [EVENTS.agentStatusChanged]: async (payload, { webhooks, postWebhook, sleep, log }) => {
+    const config = await webhooks?.get(payload.tenantId);
+    if (!config) return;
+    const body = JSON.stringify({
+      event: `${payload.kind}.status_changed`,
+      id: payload.entityId,
+      status: payload.status,
+      previous_status: payload.previousStatus,
+      changed_at: payload.changedAt,
+    });
+    const outcome = await deliverWithRetry({
+      url: config.url,
+      secret: config.secret,
+      body,
+      post: postWebhook,
+      sleep,
+    });
+    if (outcome.ok) return;
+    log?.(`[worker] webhook for ${payload.kind} ${payload.entityId} failed: ${outcome.reason}`);
+    if (outcome.retryable) throw new Error(`Webhook delivery failed: ${outcome.reason}`);
   },
   [EVENTS.conversationMessage]: acknowledgeOnly(EVENTS.conversationMessage),
 };

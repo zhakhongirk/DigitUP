@@ -11,6 +11,7 @@ import {
   type AnyColumn,
   type SQL,
 } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Db, DbTx } from "@/db/client";
 import { conversations, inquiries, messages, offers, orders } from "@/db/schema";
@@ -358,6 +359,47 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
       .from(orders)
       .where(and(eq(orders.tenantId, ctx.tenantId), eq(orders.idempotencyKey, key)));
     return order;
+  }
+
+  async function publishStatusChange(
+    tx: DbTx,
+    ctx: TenantContext,
+    kind: "order" | "inquiry",
+    entityId: string,
+    status: string,
+    previousStatus: string,
+  ) {
+    await events.publish(
+      tx,
+      EVENTS.agentStatusChanged,
+      {
+        tenantId: ctx.tenantId,
+        kind,
+        entityId,
+        status,
+        previousStatus,
+        changedAt: new Date().toISOString(),
+      },
+      { singletonKey: `${kind}:${entityId}:${randomUUID()}` },
+    );
+  }
+
+  /** Inquiries sent by an agent (or without a conversation) report status changes to its webhook. */
+  async function publishInquiryStatus(
+    tx: DbTx,
+    ctx: TenantContext,
+    before: typeof inquiries.$inferSelect,
+    status: string,
+  ) {
+    if (before.status === status) return;
+    if (before.conversationId) {
+      const [conversation] = await tx
+        .select({ channel: conversations.channel })
+        .from(conversations)
+        .where(eq(conversations.id, before.conversationId));
+      if (conversation?.channel !== "external_agent") return;
+    }
+    await publishStatusChange(tx, ctx, "inquiry", before.id, status, before.status);
   }
 
   /** Validates offers and snapshots them as order items. */
@@ -722,6 +764,9 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         if (reason && order.conversationId) {
           await postCancellationToConversation(tx, order.conversationId, reason);
         }
+        if (order.source === "external_agent") {
+          await publishStatusChange(tx, ctx, "order", orderId, status, order.status);
+        }
         return updated!;
       });
     },
@@ -930,6 +975,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           before: { status: before.status },
           after: { status },
         });
+        await publishInquiryStatus(tx, ctx, before, updated!.status);
         return updated!;
       });
     },
@@ -960,6 +1006,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         if (before.conversationId && before.answer !== answer) {
           await postAnswerToConversation(tx, before.conversationId, answer);
         }
+        await publishInquiryStatus(tx, ctx, before, updated!.status);
         return updated!;
       });
     },

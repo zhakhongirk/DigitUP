@@ -82,6 +82,7 @@ export async function handleCustomerMcp(
     services,
     source: channel === "external_agent" ? "external_agent" : "storefront",
     conversationId,
+    webhooks: services.webhooks,
   });
   return serveMcp(request, server);
 }

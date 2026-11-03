@@ -15,6 +15,14 @@ const HOW_TO_CONNECT = [
   "An order is only placed after the shopper confirms it in the conversation.",
 ];
 
+const WEBHOOKS = [
+  "Agents with a customer API key can get status notifications through the keyed MCP endpoint (send the header X-Storefront-Channel: external_agent so orders are attributed to the agent).",
+  "- set_webhook(url): registers a public https URL and returns a signing secret once. Calling it again rotates the secret. clear_webhook() removes it.",
+  "- When an order or inquiry the agent created changes status, the store sends a POST with JSON {event, id, status, previous_status, changed_at}. Events: order.status_changed, inquiry.status_changed.",
+  "- Headers: X-Storefront-Timestamp (unix seconds) and X-Storefront-Signature = sha256=<hex HMAC-SHA256 of '<timestamp>.<body>' using the secret>. Reject requests with an old timestamp.",
+  "- Answer with any 2xx within 5 seconds. Failed deliveries are retried a few times.",
+];
+
 export function platformLlmsTxt(baseUrl: string): string {
   return [
     `# ${PLATFORM_NAME}`,
@@ -61,6 +69,10 @@ export function storeLlmsTxt({ baseUrl, slug, name, description }: StoreLlmsInpu
     "",
     "How to connect:",
     ...HOW_TO_CONNECT.map((line) => `- ${line}`),
+    "",
+    "## Status webhooks",
+    "",
+    ...WEBHOOKS,
     "",
     "## Pages",
     "",

@@ -17,6 +17,7 @@ import {
   type TelegramService,
 } from "./services/telegram";
 import { createTenancyService, type TenancyService } from "./services/tenancy";
+import { createWebhookService, type WebhookService } from "./services/webhooks";
 import { createFileStorage, type FileStorage } from "./storage";
 
 export interface Services {
@@ -29,6 +30,7 @@ export interface Services {
   ingestion: IngestionService;
   notifications: NotificationsService;
   telegram: TelegramService;
+  webhooks: WebhookService;
 }
 
 export interface ServiceDeps {
@@ -67,6 +69,7 @@ export function createServices({
     ingestion: createIngestionService({ db, events, storage: storage ?? createFileStorage() }),
     notifications: createNotificationsService(db),
     telegram: telegram ?? telegramFromEnv(db),
+    webhooks: createWebhookService(db),
   };
 }
 

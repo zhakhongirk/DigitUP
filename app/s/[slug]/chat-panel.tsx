@@ -22,6 +22,7 @@ import {
 import { t, type Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
 import { availabilityText } from "./labels";
+import { OfferImage } from "./offer-image";
 import { CHAT_PREFILL_EVENT, type ChatPrefill } from "./chat-bridge";
 import "./chat.css";
 
@@ -268,14 +269,36 @@ function OrderSummary({
   );
 }
 
-function OfferCards({ slug, offers, lang }: { slug: string; offers: OfferChip[]; lang: Lang }) {
+function OfferCards({
+  slug,
+  offers,
+  lang,
+  onSend,
+  disabled,
+}: {
+  slug: string;
+  offers: OfferChip[];
+  lang: Lang;
+  onSend: (text: string) => void;
+  disabled: boolean;
+}) {
   return (
     <ul className="chat-offers" aria-label={t(lang, "offersFromStore")}>
       {offers.map((o) => (
-        <li key={o.id}>
-          <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer">
+        <li key={o.id} className="chat-offer">
+          <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer-main">
             <span className="chat-offer-thumb" aria-hidden="true">
-              {initials(o.title)}
+              {o.imageUrl ? (
+                <OfferImage
+                  src={o.imageUrl}
+                  alt=""
+                  className="chat-offer-img"
+                  size={96}
+                  sizes="48px"
+                />
+              ) : (
+                initials(o.title)
+              )}
             </span>
             <span className="chat-offer-text">
               <b className="chat-offer-title">{o.title}</b>
@@ -291,6 +314,23 @@ function OfferCards({ slug, offers, lang }: { slug: string; offers: OfferChip[];
               </span>
             </span>
           </Link>
+          <span className="chat-offer-actions">
+            <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer-btn">
+              {t(lang, "viewOffer")}
+            </Link>
+            <button
+              type="button"
+              className="chat-offer-btn chat-offer-btn-primary"
+              disabled={disabled}
+              onClick={() =>
+                onSend(
+                  t(lang, o.canOrder ? "chatOrderMessage" : "chatAskMessage", { title: o.title }),
+                )
+              }
+            >
+              {t(lang, o.canOrder ? "addToOrder" : "askAboutOffer")}
+            </button>
+          </span>
         </li>
       ))}
     </ul>
@@ -577,7 +617,16 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
             );
           }
           if (item.kind === "offers") {
-            return <OfferCards key={item.id} slug={slug} offers={item.offers} lang={uiLang} />;
+            return (
+              <OfferCards
+                key={item.id}
+                slug={slug}
+                offers={item.offers}
+                lang={uiLang}
+                onSend={sendText}
+                disabled={state.sending || !state.available}
+              />
+            );
           }
           if (item.kind === "order") {
             return (

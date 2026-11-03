@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { handleBusinessMcp, handleCustomerMcp } from "@/server/mcp/endpoints";
-import { CUSTOMER_TOOLS } from "@/server/mcp/customer/server";
+import { CUSTOMER_TOOLS, WEBHOOK_TOOLS } from "@/server/mcp/customer/server";
 import type { BusinessModelInput } from "@/shared/business-model";
 import { createTestTenant, testTenancy, uniqueSlug } from "../helpers/db";
 import { mcpRequest, testServices } from "../helpers/mcp";
@@ -110,13 +110,13 @@ describe("customer MCP endpoint", () => {
     expect(response.status).toBe(404);
   });
 
-  it("lists the seven customer tools for a valid key on a live store", async () => {
+  it("lists the customer tools for a valid key on a live store", async () => {
     const store = await newStore();
     const response = await customer(store.owner.slug, listBody, auth(store.customerKey));
     expect(response.status).toBe(200);
     const names = (await rpc(response)).result?.tools?.map((t) => t.name).sort();
-    expect(names).toEqual([...CUSTOMER_TOOLS].sort());
-    expect(names).toHaveLength(8);
+    expect(names).toEqual([...CUSTOMER_TOOLS, ...WEBHOOK_TOOLS].sort());
+    expect(names).toHaveLength(10);
   });
 
   it("runs search_offers through HTTP", async () => {

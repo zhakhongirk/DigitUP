@@ -7,6 +7,8 @@ import {
   initialChatState,
   isOrderDetailsValid,
   parseNdjsonChunk,
+  safeChatImage,
+  toOfferChips,
   type ChatAction,
   type ChatState,
   type StreamEvent,
@@ -170,6 +172,35 @@ describe("offer cards", () => {
     ]);
     expect(s.items.map((i) => i.kind)).toEqual(["message", "message", "offers"]);
     expect(s.pendingOffers).toEqual([]);
+  });
+});
+
+describe("offer card data", () => {
+  it("maps image, availability and orderability from a search result", () => {
+    const chips = toOfferChips({
+      offers: [
+        {
+          offer_id: "a",
+          title: "Runner",
+          price_label: "10 KZT",
+          availability: "in_stock",
+          availability_label: "In stock",
+          image_url: "/demo/a.svg",
+          can_order: true,
+        },
+        { offer_id: "b", title: "Boot", image_url: "http://insecure.example/x.png" },
+        { offer_id: "c", title: "Sandal", image_url: "javascript:alert(1)", can_order: false },
+      ],
+    });
+    expect(chips[0]).toMatchObject({ imageUrl: "/demo/a.svg", canOrder: true });
+    expect(chips[1]).toMatchObject({
+      imageUrl: null,
+      canOrder: false,
+      priceLabel: "Price on request",
+    });
+    expect(chips[2]?.imageUrl).toBeNull();
+    expect(safeChatImage("https://cdn.example/x.png")).toBe("https://cdn.example/x.png");
+    expect(safeChatImage("//evil.example/x.png")).toBeNull();
   });
 });
 

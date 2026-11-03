@@ -10,6 +10,7 @@ export const EVENTS = {
   inquirySubmitted: "inquiry.submitted",
   changeSetCreated: "change_set.created",
   conversationMessage: "conversation.message",
+  agentStatusChanged: "agent.status_changed",
 } as const;
 
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
@@ -25,6 +26,14 @@ export interface EventPayloads {
   "inquiry.submitted": { tenantId: string; inquiryId: string };
   "change_set.created": { tenantId: string; changeSetId: string };
   "conversation.message": { tenantId: string; conversationId: string; messageId: string };
+  "agent.status_changed": {
+    tenantId: string;
+    kind: "order" | "inquiry";
+    entityId: string;
+    status: string;
+    previousStatus: string;
+    changedAt: string;
+  };
 }
 
 export interface PublishOptions {

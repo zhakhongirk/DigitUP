@@ -14,6 +14,8 @@ import {
   type Order,
   type OrderSource,
 } from "@/server/services/orders";
+import type { WebhookService } from "@/server/services/webhooks";
+import { WebhookUrlError } from "@/server/services/webhooks/guard";
 import { attributeValueSchema } from "@/shared/business-model";
 import { runTool } from "../tools";
 import { inquiryView, orderView, policiesWithStates, priceLabel, publicOffer } from "../views";
@@ -25,6 +27,8 @@ export interface CustomerMcpOptions {
   source: OrderSource;
   /** Conversation the agent is serving, bound by the server, never taken from the model. */
   conversationId?: string;
+  /** Present only for API-key agents; the storefront chat assistant never manages webhooks. */
+  webhooks?: WebhookService;
 }
 
 export const CUSTOMER_TOOLS = [
@@ -37,6 +41,8 @@ export const CUSTOMER_TOOLS = [
   "submit_inquiry",
   "get_inquiry",
 ] as const;
+
+export const WEBHOOK_TOOLS = ["set_webhook", "clear_webhook"] as const;
 
 const contactSchema = z
   .object({
@@ -57,7 +63,7 @@ function orderDetailsView(order: Order) {
 }
 
 export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer {
-  const { ctx, services, source, conversationId } = options;
+  const { ctx, services, source, conversationId, webhooks } = options;
   const { catalog, orders } = services;
 
   const server = new McpServer(
@@ -342,6 +348,42 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
         };
       }),
   );
+
+  if (webhooks) {
+    server.registerTool(
+      "set_webhook",
+      {
+        description:
+          "Register an https URL that receives a signed POST when the status of an order or inquiry created by an external agent changes. " +
+          "The body is JSON {event, id, status, previous_status, changed_at}; headers X-Storefront-Timestamp (unix seconds) and " +
+          "X-Storefront-Signature (sha256=hex HMAC-SHA256 of '<timestamp>.<body>' with the returned secret). " +
+          "The secret is returned only by this call; calling it again replaces the URL and issues a new secret.",
+        inputSchema: { url: z.string().url().max(2000).describe("Public https URL") },
+      },
+      ({ url }) =>
+        runTool("set_webhook", async () => {
+          try {
+            const config = await webhooks.set(ctx.tenantId, url);
+            return { url: config.url, secret: config.secret };
+          } catch (error) {
+            if (error instanceof WebhookUrlError) throw new ServiceError("invalid", error.message);
+            throw error;
+          }
+        }),
+    );
+
+    server.registerTool(
+      "clear_webhook",
+      {
+        description: "Stop status notifications by removing the registered webhook.",
+        inputSchema: {},
+      },
+      () =>
+        runTool("clear_webhook", async () => ({
+          cleared: await webhooks.clear(ctx.tenantId),
+        })),
+    );
+  }
 
   return server;
 }

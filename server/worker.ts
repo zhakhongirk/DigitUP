@@ -35,6 +35,7 @@ async function main() {
     }),
     ingestion: services.ingestion,
     telegram: services.telegram,
+    webhooks: services.webhooks,
     propose: async (input) => {
       const outcome = await runProposal({ services, llm, log: note }, input);
       note(`ingestion.completed: proposal ${outcome.status}`);
