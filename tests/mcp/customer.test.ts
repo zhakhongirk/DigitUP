@@ -361,7 +361,7 @@ describe("create_order", () => {
       })
     ).data as View;
     expect(delivery.fulfillment).toBe("delivery");
-    expect(delivery.missing_fields).toEqual(["address"]);
+    expect(delivery.missing_fields).toEqual(["address", "city"]);
 
     const full = (
       await mcp.call("create_order", {

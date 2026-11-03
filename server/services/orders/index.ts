@@ -34,6 +34,7 @@ export interface OrderItem {
   unitPrice: number;
   currency: string;
   lineTotal: number;
+  size?: string;
 }
 
 export interface OrderStats {
@@ -68,19 +69,20 @@ export const deliveryAddressSchema = z.string().trim().min(1).max(500);
 export const citySchema = z.string().trim().min(1).max(100);
 export const cancelReasonSchema = z.string().trim().min(1).max(500);
 
-export type MissingOrderField = "name" | "phone" | "fulfillment" | "address";
+export type MissingOrderField = "name" | "phone" | "fulfillment" | "address" | "city";
 
 /** Fields that must be present before a draft can be submitted. */
 export function missingOrderFields(
-  order: Pick<Order, "contact" | "fulfillment" | "deliveryAddress">,
+  order: Pick<Order, "contact" | "fulfillment" | "deliveryAddress"> & { city?: string | null },
 ): MissingOrderField[] {
   const contact = order.contact as OrderContact;
   const missing: MissingOrderField[] = [];
   if (!contact.name?.trim()) missing.push("name");
   if (!contact.phone?.trim()) missing.push("phone");
   if (!order.fulfillment) missing.push("fulfillment");
-  else if (order.fulfillment === "delivery" && !order.deliveryAddress?.trim()) {
-    missing.push("address");
+  else if (order.fulfillment === "delivery") {
+    if (!order.deliveryAddress?.trim()) missing.push("address");
+    if (!order.city?.trim()) missing.push("city");
   }
   return missing;
 }
@@ -90,6 +92,7 @@ const MISSING_LABELS: Record<MissingOrderField, string> = {
   phone: "phone number",
   fulfillment: "fulfillment method (pickup or delivery)",
   address: "delivery address",
+  city: "delivery city",
 };
 
 export const draftDetailsSchema = z.object({
@@ -101,12 +104,20 @@ export const draftDetailsSchema = z.object({
 });
 export type DraftDetails = z.input<typeof draftDetailsSchema>;
 
+export const orderItemInputSchema = z.object({
+  offerId: z.uuid(),
+  quantity: z.number().int().min(1).max(1000),
+  size: z.string().trim().min(1).max(40).optional(),
+});
+export type OrderItemInput = z.input<typeof orderItemInputSchema>;
+
+const orderItemsInputSchema = z.array(orderItemInputSchema).min(1).max(50);
+
 export const createOrderSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(200),
-  items: z
-    .array(z.object({ offerId: z.uuid(), quantity: z.number().int().min(1).max(1000) }))
-    .min(1)
-    .max(50),
+  items: orderItemsInputSchema,
+  /** On a repeated call for a draft: add the items to it instead of replacing its items. */
+  merge: z.boolean().optional(),
   contact: orderContactSchema.default({}),
   fulfillment: fulfillmentSchema.optional(),
   deliveryAddress: deliveryAddressSchema.optional(),
@@ -155,6 +166,8 @@ export interface OrdersService {
   ): Promise<{ order: Order; created: boolean }>;
   /** Draft → Submitted after the shopper's explicit confirmation. Idempotent. */
   submitOrder(ctx: TenantContext, orderId: string): Promise<Order>;
+  /** Replaces the items of a still-draft order, e.g. from the shopper's order card. */
+  updateDraftItems(ctx: TenantContext, orderId: string, items: OrderItemInput[]): Promise<Order>;
   /** Overwrites contact and fulfillment details of a still-draft order, e.g. from the shopper's order card. */
   updateDraftDetails(ctx: TenantContext, orderId: string, details: DraftDetails): Promise<Order>;
   getOrder(ctx: TenantContext, orderId: string): Promise<Order | null>;
@@ -236,6 +249,39 @@ const truncMs = (expr: SQL | AnyColumn) => sql`date_trunc('milliseconds', ${expr
 const afterCursor = (at: SQL, id: AnyColumn, cursor: ListCursor) =>
   sql`(${at}, ${id}) < (${new Date(cursor.at).toISOString()}::timestamptz, ${cursor.id}::uuid)`;
 const clampOffset = (offset?: number) => Math.max(Math.trunc(offset ?? 0), 0);
+function mergeLines(requested: OrderItemInput[]): OrderItemInput[] {
+  const merged = new Map<string, OrderItemInput>();
+  for (const line of requested) {
+    const key = `${line.offerId}|${line.size ?? ""}`;
+    const existing = merged.get(key);
+    merged.set(key, existing ? { ...existing, quantity: existing.quantity + line.quantity } : line);
+  }
+  return [...merged.values()];
+}
+
+function sameLines(current: OrderItem[], wanted: OrderItemInput[]): boolean {
+  const lines = mergeLines(wanted);
+  return (
+    current.length === lines.length &&
+    lines.every((line) =>
+      current.some(
+        (item) =>
+          item.offerId === line.offerId &&
+          item.quantity === line.quantity &&
+          (item.size ?? "") === (line.size ?? ""),
+      ),
+    )
+  );
+}
+
+function toLines(items: OrderItem[]): OrderItemInput[] {
+  return items.map((item) => ({
+    offerId: item.offerId,
+    quantity: item.quantity,
+    ...(item.size ? { size: item.size } : {}),
+  }));
+}
+
 const asList = <T>(value: T | T[]): T[] => (Array.isArray(value) ? value : [value]);
 
 function assertUuid(id: string, message: string) {
@@ -318,10 +364,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
   async function buildItems(
     tx: DbTx,
     ctx: TenantContext,
-    requested: { offerId: string; quantity: number }[],
+    requested: OrderItemInput[],
   ): Promise<{ items: OrderItem[]; total: number; currency: string }> {
+    const lines = mergeLines(requested);
     const quantities = new Map<string, number>();
-    for (const { offerId, quantity } of requested) {
+    for (const { offerId, quantity } of lines) {
       quantities.set(offerId, (quantities.get(offerId) ?? 0) + quantity);
     }
     const rows = await tx
@@ -332,7 +379,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
     const items: OrderItem[] = [];
     const problems: string[] = [];
-    for (const [offerId, quantity] of quantities) {
+    for (const { offerId, quantity, size } of lines) {
       const offer = byId.get(offerId);
       if (!offer || offer.status !== "active") {
         problems.push(`offer ${offerId} is not available`);
@@ -357,6 +404,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         unitPrice: offer.price,
         currency: offer.currency,
         lineTotal: round2(offer.price * quantity),
+        ...(size ? { size } : {}),
       });
     }
     if (problems.length > 0) throw new ServiceError("invalid", problems.join("; "));
@@ -388,18 +436,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
   ): Promise<Order> {
     const provided = Object.entries(input.contact).filter(([, value]) => value);
     const hasExtras = Boolean(input.fulfillment || input.deliveryAddress || input.city);
-    if (existing.status !== "draft" || (provided.length === 0 && !hasExtras)) return existing;
-    const wanted = new Map<string, number>();
-    for (const { offerId, quantity } of input.items) {
-      wanted.set(offerId, (wanted.get(offerId) ?? 0) + quantity);
-    }
+    if (existing.status !== "draft") return existing;
     const current = existing.items as OrderItem[];
-    if (
-      current.length !== wanted.size ||
-      current.some((item) => wanted.get(item.offerId) !== item.quantity)
-    ) {
-      return existing;
-    }
+    const wanted = input.merge ? [...toLines(current), ...input.items] : input.items;
+    const itemsChanged = !sameLines(current, wanted);
+    if (provided.length === 0 && !hasExtras && !itemsChanged) return existing;
 
     return db.transaction(async (tx) => {
       const locked = await loadOrderForUpdate(tx, ctx, existing.id);
@@ -416,23 +457,35 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         patch.deliveryAddress = input.deliveryAddress;
       }
       if (input.city && input.city !== locked.city) patch.city = input.city;
-      if (Object.keys(patch).length === 0) return locked;
+      const itemPatch: Partial<Pick<Order, "items" | "total" | "currency">> = {};
+      if (itemsChanged) {
+        const built = await buildItems(tx, ctx, wanted);
+        itemPatch.items = built.items;
+        itemPatch.total = built.total;
+        itemPatch.currency = built.currency;
+        if (input.contact.note) {
+          patch.contact = { ...(patch.contact ?? before), note: input.contact.note };
+        }
+      }
+      if (Object.keys(patch).length === 0 && !itemsChanged) return locked;
       const [updated] = await tx
         .update(orders)
-        .set(patch)
+        .set({ ...patch, ...itemPatch })
         .where(eq(orders.id, locked.id))
         .returning();
       await recordAudit(tx, ctx, {
-        action: "order.contact_updated",
+        action: itemsChanged ? "order.items_updated" : "order.contact_updated",
         entity: "order",
         entityId: locked.id,
         before: {
+          ...(itemsChanged ? { items: locked.items, total: locked.total } : {}),
           contact: before,
           fulfillment: locked.fulfillment,
           deliveryAddress: locked.deliveryAddress,
           city: locked.city,
         },
         after: {
+          ...(itemsChanged ? { items: updated!.items, total: updated!.total } : {}),
           contact: updated!.contact,
           fulfillment: updated!.fulfillment,
           deliveryAddress: updated!.deliveryAddress,
@@ -519,6 +572,29 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
           { singletonKey: orderId },
         );
         return submitted!;
+      });
+    },
+
+    async updateDraftItems(ctx, orderId, rawItems) {
+      const items = parseOrThrow(orderItemsInputSchema, rawItems, "order items");
+      return db.transaction(async (tx) => {
+        const order = await loadOrderForUpdate(tx, ctx, orderId);
+        if (order.status !== "draft") return order;
+        if (sameLines(order.items as OrderItem[], items)) return order;
+        const built = await buildItems(tx, ctx, items);
+        const [updated] = await tx
+          .update(orders)
+          .set({ items: built.items, total: built.total, currency: built.currency })
+          .where(eq(orders.id, orderId))
+          .returning();
+        await recordAudit(tx, ctx, {
+          action: "order.items_updated",
+          entity: "order",
+          entityId: orderId,
+          before: { items: order.items, total: order.total },
+          after: { items: updated!.items, total: updated!.total },
+        });
+        return updated!;
       });
     },
 

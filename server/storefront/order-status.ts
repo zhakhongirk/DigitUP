@@ -3,6 +3,7 @@ import type { Order, OrderStatus } from "@/server/services/orders";
 import { formatPrice } from "@/shared/format";
 import { loadStore } from "./data";
 import { t, type Lang, type StringKey } from "./i18n";
+import { whatsappLink } from "./whatsapp";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,6 +35,7 @@ export interface OrderStatusLine {
   quantity: number;
   unitPriceLabel: string;
   lineTotalLabel: string;
+  sizeLabel: string | null;
 }
 
 export interface OrderStatusView {
@@ -49,6 +51,7 @@ export interface OrderStatusView {
   firstName: string | null;
   cancelReason: string | null;
   kaspi: { value: string; href: string | null } | null;
+  whatsappHref: string | null;
   updatedAt: Date;
 }
 
@@ -101,6 +104,10 @@ function linesOf(order: Order, lang: Lang): OrderStatusLine[] {
         quantity: num(item.quantity),
         unitPriceLabel: formatPrice(num(item.unitPrice), currency),
         lineTotalLabel: formatPrice(num(item.lineTotal), currency),
+        sizeLabel:
+          typeof item.size === "string" && item.size
+            ? t(lang, "sizeLabel", { size: item.size })
+            : null,
       },
     ];
   });
@@ -126,6 +133,13 @@ export function toOrderStatusView(
     firstName: firstNameOf(order.contact),
     cancelReason: order.status === "cancelled" ? order.cancelReason?.trim() || null : null,
     kaspi: PAYABLE.includes(order.status) ? kaspiOf(store.contacts) : null,
+    whatsappHref: whatsappLink(
+      (store.contacts as { whatsapp?: unknown } | undefined)?.whatsapp,
+      t(lang, "whatsappOrderMessage", {
+        number: orderNumber(order.id),
+        store: store.name,
+      }),
+    ),
     updatedAt: order.updatedAt,
   };
 }

@@ -80,7 +80,13 @@ describe("order status view", () => {
     const view = toOrderStatusView(fakeOrder(), store)!;
     expect(view.number).toBe("ABCDEF");
     expect(view.lines).toEqual([
-      { title: "Runner", quantity: 2, unitPriceLabel: "5 000 ₸", lineTotalLabel: "10 000 ₸" },
+      {
+        title: "Runner",
+        quantity: 2,
+        unitPriceLabel: "5 000 ₸",
+        lineTotalLabel: "10 000 ₸",
+        sizeLabel: null,
+      },
     ]);
     expect(view.totalLabel).toBe("10 000 ₸");
   });
@@ -190,5 +196,58 @@ describe("loadOrderStatus", () => {
     expect(await loadOrderStatus(services, other.slug, order.id)).toBeNull();
     expect(await loadOrderStatus(services, draftStore.slug, order.id)).toBeNull();
     expect(await loadOrderStatus(services, "missing-store-slug", order.id)).toBeNull();
+  });
+});
+
+describe("order status with several items and WhatsApp", () => {
+  const items = [
+    {
+      offerId: "00000000-0000-4000-8000-000000000001",
+      title: "Runner",
+      quantity: 2,
+      unitPrice: 5000,
+      currency: "KZT",
+      lineTotal: 10000,
+      size: "42",
+    },
+    {
+      offerId: "00000000-0000-4000-8000-000000000002",
+      title: "Cap",
+      quantity: 1,
+      unitPrice: 1000,
+      currency: "KZT",
+      lineTotal: 1000,
+    },
+  ];
+
+  it("lists every item with its size and the combined total", () => {
+    const view = toOrderStatusView(fakeOrder({ items, total: 11000 }), store)!;
+    expect(view.lines.map((l) => [l.title, l.quantity, l.sizeLabel])).toEqual([
+      ["Runner", 2, "Size 42"],
+      ["Cap", 1, null],
+    ]);
+    expect(view.totalLabel).toBe("11 000 ₸");
+    const ru = toOrderStatusView(fakeOrder({ items, total: 11000 }), store, "ru")!;
+    expect(ru.lines[0]?.sizeLabel).toBe("Размер 42");
+  });
+
+  it("builds a WhatsApp link naming the store and the order number", () => {
+    const view = toOrderStatusView(fakeOrder(), {
+      name: "Shoe Shop",
+      contacts: { whatsapp: "+7 (700) 111-22-33" },
+    })!;
+    const url = new URL(view.whatsappHref!);
+    expect(url.origin + url.pathname).toBe("https://wa.me/77001112233");
+    expect(url.searchParams.get("text")).toBe(
+      "Hello! I have a question about order ABCDEF in Shoe Shop.",
+    );
+  });
+
+  it("has no WhatsApp link without a usable number", () => {
+    expect(toOrderStatusView(fakeOrder(), store)!.whatsappHref).toBeNull();
+    expect(
+      toOrderStatusView(fakeOrder(), { name: "Shop", contacts: { whatsapp: "ask us" } })!
+        .whatsappHref,
+    ).toBeNull();
   });
 });

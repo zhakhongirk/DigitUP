@@ -4,6 +4,7 @@ import {
   handleChatHistory,
   handleChatMessage,
   handleOrderConfirm,
+  handleOrderItems,
   newChatSession,
 } from "@/server/storefront/chat";
 import type { BusinessModelInput } from "@/shared/business-model";
@@ -420,3 +421,103 @@ describe("handleOrderConfirm", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("handleOrderItems", () => {
+  function changeItems(slug: string, orderId: string, cookie: string | undefined, body: unknown) {
+    return handleOrderItems(
+      new Request(`${URL_BASE}/orders/${orderId}/items`, {
+        method: "POST",
+        headers: cookie ? { cookie } : {},
+        body: JSON.stringify(body),
+      }),
+      slug,
+      orderId,
+      services,
+    );
+  }
+
+  async function twoLineDraft() {
+    const store = await newStore();
+    const llm = new ScriptedLlm([
+      {
+        call: [
+          {
+            name: "create_order",
+            arguments: {
+              idempotency_key: `key-${uniqueSlug()}`,
+              items: [
+                { offer_id: store.offerId, quantity: 1, size: "41" },
+                { offer_id: store.offerId, quantity: 2, size: "42" },
+              ],
+              submit: false,
+            },
+          },
+        ],
+      },
+      { reply: "Please confirm." },
+    ]);
+    const res = await handleChatMessage(post({ message: "order two" }), store.slug, services, llm);
+    const cookie = cookieOf(res);
+    const result = (await events(res)).find((e) => e.type === "tool_result");
+    const orderId = (result?.data as { order_id: string }).order_id;
+    return { ...store, cookie, orderId };
+  }
+
+  it("changes a quantity and removes a line of the shopper's own draft", async () => {
+    const { slug, ctx, cookie, orderId } = await twoLineDraft();
+    const more = await changeItems(slug, orderId, cookie, {
+      items: [
+        { offerId: (await lineIds(ctx, orderId))[0], quantity: 3, size: "41" },
+        { offerId: (await lineIds(ctx, orderId))[0], quantity: 2, size: "42" },
+      ],
+    });
+    expect(more.status).toBe(200);
+    const body = (await more.json()) as { items: { quantity: number }[]; total: number };
+    expect(body.items.map((i) => i.quantity)).toEqual([3, 2]);
+    expect(body.total).toBe(500);
+
+    const fewer = await changeItems(slug, orderId, cookie, {
+      items: [{ offerId: (await lineIds(ctx, orderId))[0], quantity: 2, size: "42" }],
+    });
+    expect(fewer.status).toBe(200);
+    expect(((await fewer.json()) as { items: unknown[] }).items).toHaveLength(1);
+  });
+
+  it("rejects lines that are not in the order and empty lists", async () => {
+    const { slug, ctx, cookie, orderId } = await twoLineDraft();
+    const offerId = (await lineIds(ctx, orderId))[0];
+    for (const items of [
+      [{ offerId: crypto.randomUUID(), quantity: 1 }],
+      [{ offerId, quantity: 1, size: "50" }],
+      [{ offerId, quantity: 0, size: "41" }],
+      [],
+    ]) {
+      const res = await changeItems(slug, orderId, cookie, { items });
+      expect(res.status).toBe(400);
+    }
+    expect(((await services.orders.getOrder(ctx, orderId))?.items as unknown[]).length).toBe(2);
+  });
+
+  it("returns 404 for another session and 409 once the order was sent", async () => {
+    const { slug, ctx, cookie, orderId } = await twoLineDraft();
+    const offerId = (await lineIds(ctx, orderId))[0];
+    const items = [{ offerId, quantity: 1, size: "41" }];
+    expect((await changeItems(slug, orderId, undefined, { items })).status).toBe(404);
+    expect(
+      (await changeItems(slug, orderId, `sf_session=${newChatSession()}`, { items })).status,
+    ).toBe(404);
+
+    await services.orders.updateDraftDetails(ctx, orderId, {
+      name: "Aidar",
+      phone: "+7 700 111 22 33",
+      fulfillment: "pickup",
+    });
+    await services.orders.submitOrder(ctx, orderId);
+    expect((await changeItems(slug, orderId, cookie, { items })).status).toBe(409);
+  });
+});
+
+async function lineIds(ctx: Parameters<typeof services.orders.getOrder>[0], orderId: string) {
+  const order = await services.orders.getOrder(ctx, orderId);
+  return (order?.items as { offerId: string }[]).map((i) => i.offerId);
+}

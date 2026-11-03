@@ -61,7 +61,7 @@ const SIZE_RE =
 const BARE_SIZE_RE = /^\s*(\d{2}(?:[.,]5)?)\s*$/;
 const QUANTITY_RES = [
   /(\d{1,2})\s*(?:pcs|pieces|piece|pairs?|units?|шт|штук|штуки|пар|пары)(?![\p{L}])/iu,
-  /(?:buy|order|take|купить|заказать|беру|возьму)\s+(\d{1,2})(?=\s)/iu,
+  /(?:buy|order|take|add|also|plus|купить|заказать|беру|возьму|добав\p{L}*|ещё|еще)\s+(\d{1,2})(?=\s)/iu,
   /(?:^|\s)x\s?(\d{1,2})(?=$|[\s,.!?])/i,
 ];
 const PICKUP_RE =
@@ -70,7 +70,19 @@ const DELIVERY_RE =
   /(?<![\p{L}])(?:deliver\p{L}*|ship\p{L}*|courier|доставк\p{L}*|доставьте|курьер\p{L}*|привез\p{L}*)/iu;
 const ADDRESS_RE =
   /(?:(?:deliver\p{L}*|ship\p{L}*)\s+(?:to|at)|(?:доставк\p{L}*|доставьте)\s+(?:на|по|в)|(?<![\p{L}])(?:address|адрес))\s*[:-]?\s*(\S.{3,})$/iu;
+const CITY_RE = /(?:^|[\s,;])(?:city|город)\s*[:-]?\s*(\p{L}[\p{L} .-]{1,59})$/iu;
+const ADD_SOURCE =
+  "(?<![\\p{L}])(?:add|adding|also|another|plus|добав\\p{L}*|ещё|еще|плюс|также|заодно|тоже)(?![\\p{L}])";
+const ADD_RE = new RegExp(ADD_SOURCE, "iu");
+const ADD_MORE_RE = /^\W*(?:add another item|добавить ещё товар)\W*$/iu;
+const REMOVE_SOURCE =
+  "(?<![\\p{L}])(?:remove|delete|drop|убери\\p{L}*|убрать|удали\\p{L}*|удалить|без)(?![\\p{L}])";
+const REMOVE_RE = new RegExp(REMOVE_SOURCE, "iu");
 const END = "(?=$|[\\s,.!?])";
+
+function stripWords(text: string, source: string): string {
+  return text.replace(new RegExp(source, "giu"), " ").replace(/\s+/g, " ").trim();
+}
 
 const YES_RE = new RegExp(
   `^\\W*(yes|yeah|yep|yup|ok|okay|sure|confirm|confirmed|go ahead|please do|да|ага|угу|ок|окей|давай|давайте|конечно|подтверждаю|подтвердить|оформляй|оформляйте|оформите)${END}`,
@@ -366,7 +378,10 @@ const COPY = {
       `Your order: ${lines}. Total ${total}. It is not placed yet.`,
     orderPrompt:
       'To place it, press "Confirm order" below, or tell me your name, phone number and whether you want pickup or delivery (with the address). Reply no to cancel.',
-    orderSize: (size: string) => `Size: ${size}.`,
+    sizeWord: "size",
+    askCity: "What city is the delivery to?",
+    askAdd: "Which product would you like to add? Tell me the name.",
+    removeWhich: (titles: string) => `Which item should I remove? ${titles}`,
     sizeAsk: (list: string) => `Which size? Available: ${list}.`,
     askName: "What is your name?",
     askPhone: "What phone number can the store reach you at?",
@@ -424,7 +439,10 @@ const COPY = {
       `Ваш заказ: ${lines}. Итого ${total}. Он ещё не оформлен.`,
     orderPrompt:
       "Чтобы оформить, нажмите «Подтвердить заказ» ниже или напишите имя, телефон и что вам удобнее: самовывоз или доставка (с адресом). Ответьте нет, чтобы отменить.",
-    orderSize: (size: string) => `Размер: ${size}.`,
+    sizeWord: "размер",
+    askCity: "В какой город доставить?",
+    askAdd: "Какой товар добавить? Напишите название.",
+    removeWhich: (titles: string) => `Какой товар убрать? ${titles}`,
     sizeAsk: (list: string) => `Какой размер? Есть: ${list}.`,
     askName: "Как вас зовут?",
     askPhone: "На какой номер телефона магазин может вам позвонить?",
@@ -446,7 +464,7 @@ type Copy = (typeof COPY)[Lang];
 
 const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть): (.+)\.$/u;
 
-type AskKind = "name" | "phone" | "fulfillment" | "address";
+type AskKind = "name" | "phone" | "fulfillment" | "address" | "city";
 type PromptKey =
   | "handoff"
   | "addContact"
@@ -454,13 +472,16 @@ type PromptKey =
   | "askName"
   | "askPhone"
   | "askFulfillment"
-  | "askAddress";
+  | "askAddress"
+  | "askCity"
+  | "askAdd";
 
 const ASKS: [AskKind, PromptKey][] = [
   ["name", "askName"],
   ["phone", "askPhone"],
   ["fulfillment", "askFulfillment"],
   ["address", "askAddress"],
+  ["city", "askCity"],
 ];
 
 function endsWithPrompt(text: string, key: PromptKey): boolean {
@@ -477,13 +498,23 @@ export interface OrderDetails {
   email?: string;
   fulfillment?: "pickup" | "delivery";
   address?: string;
+  city?: string;
 }
 
 function parseOrderDetails(text: string, asking: AskKind | null, inOrder: boolean): OrderDetails {
   const { contact, rest } = extractContact(text);
   const details: OrderDetails = { ...contact };
-  const clean = rest.replace(/\s+/g, " ").trim();
+  let clean = rest.replace(/\s+/g, " ").trim();
   if (inOrder || asking) {
+    const cityMatch = CITY_RE.exec(clean);
+    if (cityMatch?.[1]) {
+      details.city = cityMatch[1].trim().slice(0, 100);
+      clean = clean
+        .replace(cityMatch[0], " ")
+        .replace(/\s+/g, " ")
+        .replace(/[\s,;]+$/, "")
+        .trim();
+    }
     if (PICKUP_RE.test(clean)) details.fulfillment = "pickup";
     else if (DELIVERY_RE.test(clean)) details.fulfillment = "delivery";
     const inline = ADDRESS_RE.exec(clean)?.[1]?.trim();
@@ -495,6 +526,22 @@ function parseOrderDetails(text: string, asking: AskKind | null, inOrder: boolea
   if (asking === "address" && !details.address && clean && !PICKUP_RE.test(clean)) {
     details.address = clean.slice(0, 500);
     details.fulfillment = "delivery";
+  }
+  if (
+    asking === "city" &&
+    !details.city &&
+    !details.fulfillment &&
+    clean &&
+    !/[\d?]/.test(clean) &&
+    wordCount(clean) <= 4 &&
+    !YES_RE.test(clean) &&
+    !NO_RE.test(clean)
+  ) {
+    details.city = clean
+      .replace(/[.,!;]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100);
   }
   if (
     asking === "name" &&
@@ -533,20 +580,42 @@ interface ShownOffer {
   attributes?: Record<string, unknown>;
 }
 
+export interface DraftItem {
+  offer_id: string;
+  title: string;
+  quantity: number;
+  size?: string;
+}
+
+/** The shopper's order that was drafted in this conversation and not yet sent or cancelled. */
+export interface Draft {
+  key: string;
+  items: DraftItem[];
+}
+
 export type Pending =
   | { kind: "handoff"; question: string }
-  | { kind: "size"; offerId: string; quantity: number; sizes: string[] }
+  | { kind: "add" }
+  | {
+      kind: "size";
+      offerId: string;
+      quantity: number;
+      sizes: string[];
+      title: string;
+      draft: Draft | null;
+    }
   | { kind: "inquiry_sent" }
   | {
       kind: "order";
       key: string;
-      items: { offer_id: string; quantity: number }[];
+      items: { offer_id: string; quantity: number; size?: string }[];
       asking: AskKind | null;
       details: OrderDetails;
     };
 
 export interface FallbackContext {
   pending: Pending | null;
+  draft: Draft | null;
   lastOffer: ShownOffer | null;
   userMessages: string[];
 }
@@ -630,7 +699,61 @@ function collectDetails(history: LlmMessage[]): OrderDetails {
   return details;
 }
 
+function draftItems(value: unknown): DraftItem[] | null {
+  if (!Array.isArray(value)) return null;
+  const items: DraftItem[] = [];
+  for (const raw of value) {
+    const item = asRecord(raw);
+    const id = item?.offerId ?? item?.offer_id;
+    if (!item || typeof id !== "string" || typeof item.quantity !== "number") return null;
+    items.push({
+      offer_id: id,
+      title: typeof item.title === "string" ? item.title : "",
+      quantity: item.quantity,
+      ...(typeof item.size === "string" && item.size ? { size: item.size } : {}),
+    });
+  }
+  return items.length > 0 ? items : null;
+}
+
+function openDraft(history: LlmMessage[]): Draft | null {
+  let draft: Draft | null = null;
+  let key: string | null = null;
+  for (const message of history) {
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      const call = message.toolCalls.find((c) => c.name === "create_order");
+      if (typeof call?.arguments.idempotency_key === "string") key = call.arguments.idempotency_key;
+    } else if (message.role === "tool" && message.name === "create_order") {
+      const data = asRecord(parseJson(message.content));
+      if (data && typeof data.status === "string" && key) {
+        const items = draftItems(data.items);
+        draft = data.status === "draft" && items ? { key, items } : null;
+      }
+    } else if (message.role === "assistant") {
+      const text = messageText(message);
+      if (text === COPY.en.orderCancelled || text === COPY.ru.orderCancelled) draft = null;
+    }
+  }
+  return draft;
+}
+
+function addedBefore(history: LlmMessage[], askIndex: number): boolean {
+  let index = askIndex - 1;
+  while (index >= 0 && history[index]?.role !== "user") index--;
+  if (index < 0) return false;
+  if (ADD_RE.test(messageText(history[index]))) return true;
+  for (let i = index - 1; i >= 0; i--) {
+    const message = history[i];
+    if (message?.role === "user") return false;
+    if (message?.role === "assistant" && !message.toolCalls?.length && messageText(message)) {
+      return endsWithPrompt(messageText(message), "askAdd");
+    }
+  }
+  return false;
+}
+
 export function readContext(history: LlmMessage[]): FallbackContext {
+  const draft = openDraft(history);
   const batches = readBatches(history);
   let lastOffer: ShownOffer | null = null;
   for (const batch of batches) {
@@ -665,19 +788,22 @@ export function readContext(history: LlmMessage[]): FallbackContext {
       });
     const buy = [...userMessages]
       .reverse()
-      .map(parseIntent)
-      .find((i) => i.kind === "buy");
+      .find((m) => ADD_RE.test(m) || parseIntent(m).kind === "buy");
     if (offer) {
       pending = {
         kind: "size",
         offerId: offer.offer_id,
-        quantity: buy?.quantity ?? 1,
+        quantity: buy ? parseIntent(buy).quantity : 1,
         sizes: listed.split(", "),
+        title: offer.title,
+        draft: addedBefore(history, lastIndex) ? draft : null,
       };
     }
   } else if (endsWithPrompt(lastText, "handoff")) {
     const before = history.slice(0, lastIndex).filter((m) => m.role === "user");
     pending = { kind: "handoff", question: messageText(before.at(-1)) };
+  } else if (draft && endsWithPrompt(lastText, "askAdd")) {
+    pending = { kind: "add" };
   } else if (endsWithPrompt(lastText, "addContact")) {
     pending = { kind: "inquiry_sent" };
   } else if (endsWithPrompt(lastText, "orderPrompt") || askingOf(lastText) !== null) {
@@ -688,13 +814,19 @@ export function readContext(history: LlmMessage[]): FallbackContext {
       pending = {
         kind: "order",
         key,
-        items: args.items as { offer_id: string; quantity: number }[],
+        items: draft
+          ? draft.items.map(({ offer_id, quantity, size }) => ({
+              offer_id,
+              quantity,
+              ...(size ? { size } : {}),
+            }))
+          : (args.items as { offer_id: string; quantity: number; size?: string }[]),
         asking: askingOf(lastText),
         details: collectDetails(history),
       };
     }
   }
-  return { pending, lastOffer, userMessages };
+  return { pending, draft, lastOffer, userMessages };
 }
 
 export type Decision =
@@ -844,16 +976,19 @@ function infoReply(topic: InfoTopic, data: unknown, copy: Copy): string {
   return `${copy.topicHeading(label)}: ${stripLabel(topic, value)}`;
 }
 
-function orderSummary(data: Record<string, unknown>, copy: Copy, size: string | null): string {
+function orderSummary(data: Record<string, unknown>, copy: Copy): string {
   const items = Array.isArray(data.items) ? data.items : [];
   const lines = items
     .map((item) => asRecord(item))
     .filter((item): item is Record<string, unknown> => item !== null)
-    .map((item) => `${String(item.title)} x ${String(item.quantity)}`)
+    .map((item) => {
+      const size =
+        typeof item.size === "string" && item.size ? ` (${copy.sizeWord} ${item.size})` : "";
+      return `${String(item.title)}${size} x ${String(item.quantity)}`;
+    })
     .join(", ");
   const total = typeof data.total_label === "string" ? data.total_label : copy.priceOnRequest;
-  const sizeLine = size ? ` ${copy.orderSize(size)}` : "";
-  return `${copy.orderDraft(lines, total)}${sizeLine} ${copy.orderPrompt}`;
+  return `${copy.orderDraft(lines, total)} ${copy.orderPrompt}`;
 }
 
 function resultOf(batch: ToolBatch, name: string): { data: unknown } | null {
@@ -862,6 +997,56 @@ function resultOf(batch: ToolBatch, name: string): { data: unknown } | null {
 
 function noteArg(size: string | null): Record<string, unknown> {
   return size ? { note: `Size: ${size}` } : {};
+}
+
+function noteOf(items: { title: string; size?: string }[]): Record<string, unknown> {
+  const sized = items.filter((item) => item.size);
+  if (sized.length === 0) return {};
+  const first = sized[0];
+  const note =
+    items.length === 1 && first
+      ? `Size: ${first.size}`
+      : `Sizes: ${sized.map((item) => `${item.title} ${item.size}`).join("; ")}`;
+  return { contact: { note } };
+}
+
+function lineArg(offer: ShownOffer, quantity: number, size: string | null) {
+  return { offer_id: offer.offer_id, quantity, ...(size ? { size } : {}) };
+}
+
+function removeDecision(intent: Intent, ctx: FallbackContext, text: string): Decision | null {
+  const draft = ctx.draft;
+  if (!draft || !REMOVE_RE.test(text)) return null;
+  const copy = COPY[intent.lang];
+  const terms = searchTerms(stripWords(text, REMOVE_SOURCE));
+  const wanted = [...terms, ...englishTerms(terms).all];
+  const hits = draft.items.filter((item) =>
+    wanted.some((word) => item.title.toLowerCase().includes(word)),
+  );
+  const hitIds = new Set(hits.map((item) => item.offer_id));
+  if (terms.length === 0 || hitIds.size !== 1) {
+    const titles = [...new Set(draft.items.map((item) => item.title))].join(", ");
+    return { reply: copy.removeWhich(titles) };
+  }
+  const remaining = draft.items.filter((item) => !hitIds.has(item.offer_id));
+  if (remaining.length === 0) return { reply: copy.orderCancelled };
+  return {
+    calls: [
+      {
+        name: "create_order",
+        arguments: {
+          idempotency_key: draft.key,
+          items: remaining.map(({ offer_id, quantity, size }) => ({
+            offer_id,
+            quantity,
+            ...(size ? { size } : {}),
+          })),
+          submit: false,
+          ...noteOf(remaining),
+        },
+      },
+    ],
+  };
 }
 
 function orderStep(
@@ -880,11 +1065,15 @@ function orderStep(
         ? copy.askFulfillment
         : details.fulfillment === "delivery" && !details.address
           ? copy.askAddress
-          : null;
+          : details.fulfillment === "delivery" && !details.city
+            ? copy.askCity
+            : null;
   if (ask) return { reply: ask };
   const contact = {
     ...contactArg(details),
-    ...noteArg(shopperSize(intent, ctx.userMessages)),
+    ...(pending.items.some((item) => item.size)
+      ? {}
+      : noteArg(shopperSize(intent, ctx.userMessages))),
   };
   return {
     calls: [
@@ -896,35 +1085,54 @@ function orderStep(
           submit: true,
           contact,
           fulfillment: details.fulfillment,
-          ...(details.fulfillment === "delivery" ? { delivery_address: details.address } : {}),
+          ...(details.fulfillment === "delivery"
+            ? { delivery_address: details.address, city: details.city }
+            : {}),
         },
       },
     ],
   };
 }
 
-function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: string): Decision {
+function startDecision(
+  intent: Intent,
+  ctx: FallbackContext,
+  text: string,
+  key: string,
+  adding: boolean,
+): Decision {
   const copy = COPY[intent.lang];
   const { pending } = ctx;
   if (pending?.kind === "size") {
     const size = intent.size ?? BARE_SIZE_RE.exec(text)?.[1]?.replace(",", ".") ?? null;
     if (size && pending.sizes.includes(size)) {
+      const line = { offer_id: pending.offerId, quantity: pending.quantity, size };
+      const all = [...(pending.draft?.items ?? []), { ...line, title: pending.title }];
       return {
         calls: [
           {
             name: "create_order",
             arguments: {
-              idempotency_key: key,
-              items: [{ offer_id: pending.offerId, quantity: pending.quantity }],
+              idempotency_key: pending.draft?.key ?? key,
+              items: [line],
+              ...(pending.draft ? { merge: true } : {}),
               submit: false,
-              contact: noteArg(size),
+              ...noteOf(all),
             },
           },
         ],
       };
     }
     if (size) return { reply: copy.sizeAsk(pending.sizes.join(", ")) };
-    if (intent.kind === "no") return { reply: copy.orderCancelled };
+    if (intent.kind === "no") {
+      return { reply: pending.draft ? copy.orderWaiting : copy.orderCancelled };
+    }
+  }
+  const removal = removeDecision(intent, ctx, text);
+  if (removal) return removal;
+  if (adding && ctx.draft) {
+    if (intent.terms.length === 0) return { reply: copy.askAdd };
+    return { calls: [{ name: "search_offers", arguments: searchArgs(intent.terms) }] };
   }
   if (pending?.kind === "order" && intent.kind !== "no") {
     const fresh = parseOrderDetails(text, pending.asking, true);
@@ -943,6 +1151,7 @@ function startDecision(intent: Intent, ctx: FallbackContext, text: string, key: 
     case "no":
       if (pending?.kind === "order") return { reply: copy.orderCancelled };
       if (pending?.kind === "handoff") return { reply: copy.declined };
+      if (pending?.kind === "add") return { reply: copy.orderWaiting };
       return { reply: copy.help };
     case "contact":
       if (pending?.kind === "handoff") return inquiryCall(pending.question, ctx, intent.contact);
@@ -988,6 +1197,7 @@ function continueDecision(
   ctx: FallbackContext,
   batches: ToolBatch[],
   key: string,
+  adding: boolean,
 ): Decision {
   const copy = COPY[intent.lang];
   const last = batches.at(-1);
@@ -1018,8 +1228,7 @@ function continueDecision(
   if (first === "create_order") {
     const data = asRecord(resultOf(last, "create_order")?.data);
     if (!data) return { reply: copy.orderError };
-    const size = shopperSize(intent, ctx.userMessages);
-    return { reply: data.status === "draft" ? orderSummary(data, copy, size) : copy.orderSent };
+    return { reply: data.status === "draft" ? orderSummary(data, copy) : copy.orderSent };
   }
 
   if (first === "search_offers" || first === "get_offer_details") {
@@ -1046,7 +1255,7 @@ function continueDecision(
 
     if (intent.kind === "buy") {
       if (offers.length === 0) return { reply: `${copy.noMatch} ${handoffText(copy)}` };
-      const size = shopperSize(intent, ctx.userMessages);
+      const size = adding ? intent.size : shopperSize(intent, ctx.userMessages);
       const offer = pickOffer(offers, english.primary.length ? english.primary : intent.terms);
       if (!offer) {
         const titles = offers.slice(0, MAX_LISTED).map((o) => `- ${o.title}: ${priceOf(o, copy)}`);
@@ -1065,15 +1274,19 @@ function continueDecision(
       if (sizes.length > 0 && (!size || !sizes.includes(size))) {
         return { reply: copy.sizeAsk(sizes.join(", ")) };
       }
+      const line = lineArg(offer, intent.quantity, size);
+      const draft = adding ? ctx.draft : null;
+      const all = [...(draft?.items ?? []), { ...line, title: offer.title }];
       return {
         calls: [
           {
             name: "create_order",
             arguments: {
-              idempotency_key: key,
-              items: [{ offer_id: offer.offer_id, quantity: intent.quantity }],
+              idempotency_key: draft?.key ?? key,
+              items: [line],
+              ...(draft ? { merge: true } : {}),
               submit: false,
-              ...(size ? { contact: noteArg(size) } : {}),
+              ...noteOf(all),
             },
           },
         ],
@@ -1110,12 +1323,28 @@ export function decide(messages: LlmMessage[], key: string): Decision {
   const lang = conversationLang(
     messages.filter((m) => m.role === "user").map((m) => messageText(m)),
   );
-  const intent = { ...parseIntent(text), lang };
   const ctx = readContext(messages.slice(0, lastUser));
+  const plain = parseIntent(text);
+  const adding =
+    ctx.draft !== null &&
+    (ADD_RE.test(text) ||
+      (ctx.pending?.kind === "add" && ["search", "buy", "price", "stock"].includes(plain.kind)));
+  const intent: Intent = adding
+    ? (() => {
+        const stripped = ADD_MORE_RE.test(text) ? "" : stripWords(text, ADD_SOURCE);
+        const parsed = parseIntent(stripped);
+        return {
+          ...parsed,
+          lang,
+          quantity: plain.quantity > 1 ? plain.quantity : parsed.quantity,
+          kind: parsed.terms.length > 0 ? "buy" : "search",
+        };
+      })()
+    : { ...plain, lang };
   const batches = readBatches(messages.slice(lastUser + 1));
-  if (batches.length === 0) return startDecision(intent, ctx, text, key);
+  if (batches.length === 0) return startDecision(intent, ctx, text, key, adding);
   const withCurrent = { ...ctx, userMessages: [...ctx.userMessages, text] };
-  return continueDecision(intent, withCurrent, batches, key);
+  return continueDecision(intent, withCurrent, batches, key, adding);
 }
 
 export function createFallbackLlm(): LlmClient {

@@ -118,6 +118,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+.os-wa {
+  align-self: flex-start;
+}
+
 .os-qty {
   color: var(--text-3);
 }

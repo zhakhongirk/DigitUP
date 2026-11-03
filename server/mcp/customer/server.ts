@@ -225,7 +225,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
       description:
         "Create an order for offers with a confirmed price that are in stock. Every order needs the shopper's " +
         "name and phone (in contact) and a fulfillment method: 'pickup' or 'delivery'; delivery also needs " +
-        "delivery_address (city is optional). Call it with submit=false to get the order summary and " +
+        "delivery_address and city. An order can hold several items: list every item, or call it again with the same idempotency_key and the full item list to change a draft (merge=true adds the given items to the draft instead). Call it with submit=false to get the order summary and " +
         "missing_fields, ask the shopper for anything missing, show the summary, and call it again with the " +
         "same idempotency_key, the collected details and submit=true only after the shopper explicitly " +
         "confirmed. Submitting with missing details fails. For anything else use submit_inquiry.",
@@ -236,13 +236,23 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           .max(200)
           .describe("Unique per intended order; reuse it when retrying or confirming"),
         items: z
-          .array(z.object({ offer_id: z.uuid(), quantity: z.number().int().min(1).max(100) }))
+          .array(
+            z.object({
+              offer_id: z.uuid(),
+              quantity: z.number().int().min(1).max(100),
+              size: z.string().min(1).max(40).optional().describe("Size, when the offer has sizes"),
+            }),
+          )
           .min(1)
           .max(20),
+        merge: z
+          .boolean()
+          .default(false)
+          .describe("With an existing draft: add items to it instead of replacing its items"),
         contact: contactSchema.optional(),
         fulfillment: fulfillmentSchema.optional().describe("pickup or delivery"),
         delivery_address: deliveryAddressSchema.optional().describe("Required for delivery"),
-        city: citySchema.optional(),
+        city: citySchema.optional().describe("Required for delivery"),
         submit: z
           .boolean()
           .default(false)
@@ -253,7 +263,12 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
       runTool("create_order", async () => {
         const { order, created } = await orders.createOrder(ctx, {
           idempotencyKey: args.idempotency_key,
-          items: args.items.map((item) => ({ offerId: item.offer_id, quantity: item.quantity })),
+          items: args.items.map((item) => ({
+            offerId: item.offer_id,
+            quantity: item.quantity,
+            ...(item.size ? { size: item.size } : {}),
+          })),
+          merge: args.merge,
           contact: args.contact ?? {},
           fulfillment: args.fulfillment,
           deliveryAddress: args.delivery_address,

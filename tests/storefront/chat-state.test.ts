@@ -247,16 +247,20 @@ describe("isOrderDetailsValid", () => {
     phone: "+7 701 000 11 22",
     fulfillment: "pickup" as "pickup" | "delivery" | null,
     address: "",
+    city: "",
   };
 
-  it("accepts pickup without an address", () => {
+  it("accepts pickup without an address or city", () => {
     expect(isOrderDetailsValid(ok)).toBe(true);
   });
 
-  it("requires an address for delivery", () => {
-    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery" })).toBe(false);
-    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery", address: "   " })).toBe(false);
-    expect(isOrderDetailsValid({ ...ok, fulfillment: "delivery", address: "Abay 10" })).toBe(true);
+  it("requires an address and a city for delivery only", () => {
+    const delivery = { ...ok, fulfillment: "delivery" as const };
+    expect(isOrderDetailsValid(delivery)).toBe(false);
+    expect(isOrderDetailsValid({ ...delivery, address: "   ", city: "Almaty" })).toBe(false);
+    expect(isOrderDetailsValid({ ...delivery, address: "Abay 10" })).toBe(false);
+    expect(isOrderDetailsValid({ ...delivery, address: "Abay 10", city: "  " })).toBe(false);
+    expect(isOrderDetailsValid({ ...delivery, address: "Abay 10", city: "Almaty" })).toBe(true);
   });
 
   it("requires a name, a phone with at least seven digits and a fulfillment choice", () => {
@@ -298,5 +302,51 @@ describe("order card details", () => {
       fulfillment: null,
       address: "",
     });
+  });
+});
+
+describe("order card with several items", () => {
+  const twoLines = {
+    ...draft,
+    items: [
+      {
+        offerId: "a",
+        size: "42",
+        title: "Runner",
+        quantity: 1,
+        unitPrice: 50,
+        currency: "USD",
+        lineTotal: 50,
+      },
+      { offerId: "b", title: "Cap", quantity: 2, unitPrice: 10, currency: "USD", lineTotal: 20 },
+    ],
+    total: 70,
+    total_label: "$70.00",
+    city: "Almaty",
+  };
+
+  it("replaces the lines and the total when the order is updated", () => {
+    const s = run([
+      ev({ type: "tool_result", name: "create_order", data: draft }),
+      { type: "confirm_started", orderId: "o-1" },
+      { type: "order_updated", order: twoLines },
+    ]);
+    expect(s.items).toHaveLength(1);
+    expect(s.items[0]).toMatchObject({
+      order: { confirming: false, total: 70, totalLabel: "$70.00", city: "Almaty" },
+    });
+    const card = s.items[0];
+    expect(card?.kind === "order" && card.order.items.map((i) => i.title)).toEqual([
+      "Runner",
+      "Cap",
+    ]);
+  });
+
+  it("keeps a single card when the assistant adds an item to the same order", () => {
+    const s = run([
+      ev({ type: "tool_result", name: "create_order", data: draft }),
+      ev({ type: "tool_result", name: "create_order", data: twoLines }),
+    ]);
+    expect(s.items.filter((i) => i.kind === "order")).toHaveLength(1);
   });
 });

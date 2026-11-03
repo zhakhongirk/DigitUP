@@ -8,7 +8,14 @@ import type { AgentEvent } from "@/server/agents/runtime";
 import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
 import { ServiceError } from "@/server/services/context";
-import { draftDetailsSchema, missingOrderFields, type Order } from "@/server/services/orders";
+import { z } from "zod";
+import {
+  draftDetailsSchema,
+  missingOrderFields,
+  orderItemInputSchema,
+  type Order,
+  type OrderItem,
+} from "@/server/services/orders";
 import { orderView } from "@/server/mcp/views";
 
 export function storefrontOrderView(order: Order) {
@@ -145,6 +152,66 @@ export async function handleChatHistory(
  * The Confirm button under an order summary. Only the shopper whose
  * conversation created the draft can submit it.
  */
+async function ownDraft(request: Request, slug: string, orderId: string, services: Services) {
+  const ctx = await services.tenancy.contextFromSlug(slug, "customer_agent");
+  if (!ctx) return null;
+  const session = readChatSession(request);
+  if (!session || !/^[0-9a-f-]{36}$/i.test(orderId)) return null;
+  const [conversation] = await services.conversations.list(ctx, {
+    agent: "customer",
+    channel: "storefront",
+    limit: 1,
+    sessionKey: session,
+  });
+  const order = await services.orders.getOrder(ctx, orderId);
+  if (!conversation || !order || order.conversationId !== conversation.id) return null;
+  return { ctx, order };
+}
+
+/**
+ * Changes the quantities or removes lines of the shopper's own draft from the
+ * order card. Only lines already in the order can be kept.
+ */
+export async function handleOrderItems(
+  request: Request,
+  slug: string,
+  orderId: string,
+  services: Services,
+): Promise<Response> {
+  const found = await ownDraft(request, slug, orderId, services);
+  if (!found) return Response.json({ error: "not_found" }, { status: 404 });
+  const { ctx, order } = found;
+  if (order.status !== "draft") {
+    return Response.json({ error: "conflict", message: "Order is already sent." }, { status: 409 });
+  }
+
+  const body = ((await request.json().catch(() => null)) ?? {}) as { items?: unknown };
+  const parsed = z.array(orderItemInputSchema).min(1).max(50).safeParse(body.items);
+  const current = order.items as OrderItem[];
+  const allowed = parsed.success
+    ? parsed.data.every((line) =>
+        current.some(
+          (item) => item.offerId === line.offerId && (item.size ?? "") === (line.size ?? ""),
+        ),
+      )
+    : false;
+  if (!parsed.success || !allowed) {
+    return Response.json(
+      { error: "invalid_items", message: "Check the items of your order." },
+      { status: 400 },
+    );
+  }
+  try {
+    const updated = await services.orders.updateDraftItems(ctx, orderId, parsed.data);
+    return Response.json(storefrontOrderView(updated));
+  } catch (error) {
+    if (error instanceof ServiceError) {
+      return Response.json({ error: error.code, message: error.message }, { status: 409 });
+    }
+    throw error;
+  }
+}
+
 export async function handleOrderConfirm(
   request: Request,
   slug: string,

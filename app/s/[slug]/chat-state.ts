@@ -60,6 +60,8 @@ export const SUGGESTIONS: { en: string; ru: string }[] = [
 ];
 
 export type OrderLine = {
+  offerId?: string;
+  size?: string;
   title: string;
   quantity: number;
   unitPrice: number | string;
@@ -78,6 +80,7 @@ export type OrderView = {
   contact?: { name?: string; phone?: string };
   fulfillment?: string | null;
   delivery_address?: string | null;
+  city?: string | null;
 };
 
 export type StreamEvent =
@@ -137,6 +140,7 @@ export type OrderCard = {
   phone: string;
   fulfillment: "pickup" | "delivery" | null;
   address: string;
+  city: string;
   confirming: boolean;
   error: string | null;
 };
@@ -215,6 +219,7 @@ export type ChatAction =
   | { type: "unavailable" }
   | { type: "confirm_started"; orderId: string }
   | { type: "confirm_succeeded"; order: OrderView }
+  | { type: "order_updated"; order: OrderView }
   | { type: "confirm_failed"; orderId: string; message: string };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -240,6 +245,7 @@ export function toOrderView(data: unknown): OrderView | null {
     },
     fulfillment: typeof r.fulfillment === "string" ? r.fulfillment : null,
     delivery_address: typeof r.delivery_address === "string" ? r.delivery_address : null,
+    city: typeof r.city === "string" ? r.city : null,
   };
 }
 
@@ -248,12 +254,14 @@ export function isOrderDetailsValid(details: {
   phone: string;
   fulfillment: "pickup" | "delivery" | null;
   address: string;
+  city: string;
 }): boolean {
   return (
     details.name.trim().length > 0 &&
     details.phone.replace(/\D/g, "").length >= 7 &&
     details.fulfillment !== null &&
-    (details.fulfillment === "pickup" || details.address.trim().length > 0)
+    (details.fulfillment === "pickup" ||
+      (details.address.trim().length > 0 && details.city.trim().length > 0))
   );
 }
 
@@ -271,6 +279,7 @@ function cardFrom(view: OrderView, previous?: OrderCard): OrderCard {
     fulfillment:
       view.fulfillment === "pickup" || view.fulfillment === "delivery" ? view.fulfillment : null,
     address: view.delivery_address ?? "",
+    city: view.city ?? "",
     confirming: false,
     error: previous?.status === view.status ? previous.error : null,
   };
@@ -448,6 +457,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...cardFrom(action.order, c),
         error: null,
       }));
+    case "order_updated":
+      return updateOrder(state, action.order.order_id, (c) => cardFrom(action.order, c));
     case "confirm_failed":
       return updateOrder(state, action.orderId, (c) => ({
         ...c,

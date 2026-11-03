@@ -59,6 +59,10 @@
   font-size: 12.5px;
 }
 
+.sf-wa {
+  flex-shrink: 0;
+}
+
 .sf-body {
   display: flex;
   flex-wrap: wrap;

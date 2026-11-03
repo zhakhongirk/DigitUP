@@ -11,6 +11,7 @@ import { HeaderSearch } from "./header-search";
 import { policyLabel } from "./labels";
 import { storefrontLang } from "./lang";
 import { stripPolicyLabel } from "./policy";
+import { whatsappLink } from "@/server/storefront/whatsapp";
 import { StoreShell } from "./store-shell";
 import "./storefront.css";
 
@@ -50,9 +51,16 @@ function initials(name: string): string {
   return letters.join("").toUpperCase() || "S";
 }
 
-function contactValue(key: string, value: string): ReactNode {
+function contactValue(key: string, value: string, whatsapp: string | null): ReactNode {
   if (key === "phone") return <a href={`tel:${value.replace(/[^\d+]/g, "")}`}>{value}</a>;
   if (key === "email") return <a href={`mailto:${value}`}>{value}</a>;
+  if (key === "whatsapp" && whatsapp) {
+    return (
+      <a href={whatsapp} target="_blank" rel="noopener noreferrer">
+        {value}
+      </a>
+    );
+  }
   if (key === "website" && /^https?:\/\//i.test(value)) return <a href={value}>{value}</a>;
   return value;
 }
@@ -75,6 +83,10 @@ export default async function StoreLayout({ children, params }: Props) {
     return value ? [{ key, label: lang === "ru" ? ru : en, value }] : [];
   });
   const address = store.contacts.address;
+  const whatsappHref = whatsappLink(
+    store.contacts.whatsapp,
+    t(lang, "whatsappMessage", { store: store.name }),
+  );
 
   const tbc = (text: string) => text === "To be confirmed";
   const hours = store.policies.find((p) => p.key === "working_hours");
@@ -90,7 +102,7 @@ export default async function StoreLayout({ children, params }: Props) {
           {contacts.map((c) => (
             <div key={c.key} className="sf-policy">
               <dt>{c.label}</dt>
-              <dd>{contactValue(c.key, c.value)}</dd>
+              <dd>{contactValue(c.key, c.value, whatsappHref)}</dd>
             </div>
           ))}
           {store.policies.map((p) => (
@@ -124,6 +136,16 @@ export default async function StoreLayout({ children, params }: Props) {
         <Link href={`/s/${slug}/my-order`} className="sf-brand-sub">
           {t(lang, "myOrder")}
         </Link>
+        {whatsappHref ? (
+          <a
+            className="btn btn-secondary btn-sm sf-wa"
+            href={whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t(lang, "writeWhatsapp")}
+          </a>
+        ) : null}
         <Suspense fallback={null}>
           <HeaderSearch
             action={`/s/${slug}`}

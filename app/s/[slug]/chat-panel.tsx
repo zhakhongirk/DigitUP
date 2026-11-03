@@ -62,7 +62,10 @@ type OrderDetailsInput = {
   phone: string;
   fulfillment: "pickup" | "delivery" | null;
   address: string;
+  city: string;
 };
+
+type LineChange = { offerId: string; quantity: number; size?: string };
 
 function OrderSummary({
   slug,
@@ -70,12 +73,16 @@ function OrderSummary({
   lang,
   uiLang,
   onConfirm,
+  onItems,
+  onAddMore,
 }: {
   slug: string;
   order: OrderCard;
   lang: UiLang;
   uiLang: Lang;
   onConfirm: (orderId: string, details: OrderDetailsInput) => void;
+  onItems: (orderId: string, items: LineChange[]) => void;
+  onAddMore: () => void;
 }) {
   const sent = order.status !== "draft";
   const labels = UI_LABELS[lang];
@@ -83,7 +90,18 @@ function OrderSummary({
   const [phone, setPhone] = useState(order.phone);
   const [fulfillment, setFulfillment] = useState(order.fulfillment);
   const [address, setAddress] = useState(order.address);
-  const details = { name, phone, fulfillment, address };
+  const [city, setCity] = useState(order.city);
+  const details = { name, phone, fulfillment, address, city };
+  const editable = order.items.every((line) => line.offerId);
+  const changeLines = (index: number, quantity: number) => {
+    const next = order.items.flatMap((line, i): LineChange[] => {
+      const q = i === index ? quantity : line.quantity;
+      return q > 0 && line.offerId
+        ? [{ offerId: line.offerId, quantity: q, ...(line.size ? { size: line.size } : {}) }]
+        : [];
+    });
+    if (next.length > 0) onItems(order.orderId, next);
+  };
   const valid = isOrderDetailsValid(details);
   return (
     <section className="chat-order" aria-label={t(uiLang, "orderSummary")}>
@@ -96,9 +114,50 @@ function OrderSummary({
       <ul className="chat-order-lines">
         {order.items.map((line, i) => (
           <li key={i}>
-            <span>
+            <span className="chat-order-name">
               {line.title}
-              <span className="chat-order-qty"> × {line.quantity}</span>
+              {line.size ? (
+                <span className="chat-order-qty">
+                  {" "}
+                  · {t(uiLang, "sizeLabel", { size: line.size })}
+                </span>
+              ) : null}
+              {sent || !editable ? (
+                <span className="chat-order-qty"> × {line.quantity}</span>
+              ) : (
+                <span className="chat-order-stepper">
+                  <button
+                    type="button"
+                    className="chat-order-step"
+                    aria-label={t(uiLang, "lessOf", { title: line.title })}
+                    disabled={order.confirming || line.quantity <= 1}
+                    onClick={() => changeLines(i, line.quantity - 1)}
+                  >
+                    −
+                  </button>
+                  <span aria-live="polite">{line.quantity}</span>
+                  <button
+                    type="button"
+                    className="chat-order-step"
+                    aria-label={t(uiLang, "moreOf", { title: line.title })}
+                    disabled={order.confirming || line.quantity >= 99}
+                    onClick={() => changeLines(i, line.quantity + 1)}
+                  >
+                    +
+                  </button>
+                  {order.items.length > 1 ? (
+                    <button
+                      type="button"
+                      className="chat-order-step chat-order-remove"
+                      aria-label={t(uiLang, "removeItem", { title: line.title })}
+                      disabled={order.confirming}
+                      onClick={() => changeLines(i, 0)}
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </span>
+              )}
             </span>
             <span>{formatMoney(line.lineTotal, line.currency || order.currency)}</span>
           </li>
@@ -117,6 +176,14 @@ function OrderSummary({
         </p>
       ) : (
         <div className="chat-order-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm chat-order-add"
+            disabled={order.confirming}
+            onClick={onAddMore}
+          >
+            {t(uiLang, "addAnother")}
+          </button>
           {order.nextStep ? <p className="chat-order-hint">{order.nextStep}</p> : null}
           <label className="chat-order-phone">
             <span>{t(uiLang, "fieldName")}</span>
@@ -158,16 +225,28 @@ function OrderSummary({
             ))}
           </div>
           {fulfillment === "delivery" ? (
-            <label className="chat-order-phone">
-              <span>{t(uiLang, "fieldAddress")}</span>
-              <textarea
-                rows={2}
-                maxLength={500}
-                autoComplete="street-address"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-              />
-            </label>
+            <>
+              <label className="chat-order-phone">
+                <span>{t(uiLang, "fieldCity")}</span>
+                <input
+                  type="text"
+                  autoComplete="address-level2"
+                  maxLength={100}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                />
+              </label>
+              <label className="chat-order-phone">
+                <span>{t(uiLang, "fieldAddress")}</span>
+                <textarea
+                  rows={2}
+                  maxLength={500}
+                  autoComplete="street-address"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                />
+              </label>
+            </>
           ) : null}
           {!valid ? <p className="chat-order-hint">{t(uiLang, "fillRequired")}</p> : null}
           {order.error ? (
@@ -379,7 +458,9 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
               name: details.name.trim(),
               phone: details.phone.trim(),
               fulfillment: details.fulfillment,
-              ...(details.fulfillment === "delivery" ? { address: details.address.trim() } : {}),
+              ...(details.fulfillment === "delivery"
+                ? { address: details.address.trim(), city: details.city.trim() }
+                : {}),
             }),
           },
         );
@@ -393,6 +474,36 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
         }
         const view = toOrderView(await res.json());
         if (view) dispatch({ type: "confirm_succeeded", order: view });
+        else dispatch({ type: "confirm_failed", orderId, message: genericError });
+      } catch {
+        dispatch({ type: "confirm_failed", orderId, message: networkError });
+      }
+    },
+    [slug, genericError, networkError],
+  );
+
+  const changeItems = useCallback(
+    async (orderId: string, items: LineChange[]) => {
+      dispatch({ type: "confirm_started", orderId });
+      try {
+        const res = await fetch(
+          `/api/s/${encodeURIComponent(slug)}/orders/${encodeURIComponent(orderId)}/items`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ items }),
+          },
+        );
+        if (!res.ok) {
+          dispatch({
+            type: "confirm_failed",
+            orderId,
+            message: await errorMessage(res, genericError),
+          });
+          return;
+        }
+        const view = toOrderView(await res.json());
+        if (view) dispatch({ type: "order_updated", order: view });
         else dispatch({ type: "confirm_failed", orderId, message: genericError });
       } catch {
         dispatch({ type: "confirm_failed", orderId, message: networkError });
@@ -477,6 +588,8 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
                 lang={lang}
                 uiLang={uiLang}
                 onConfirm={confirm}
+                onItems={changeItems}
+                onAddMore={() => sendText(t(lang, "addAnotherMessage"))}
               />
             );
           }

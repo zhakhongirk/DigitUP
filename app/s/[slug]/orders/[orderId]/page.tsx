@@ -85,6 +85,16 @@ export default async function OrderStatusPage({ params }: Props) {
           </p>
         ) : null}
         <p className="os-meta">{t(lang, "orderQuestions")}</p>
+        {view.whatsappHref ? (
+          <a
+            className="btn btn-secondary btn-sm os-wa"
+            href={view.whatsappHref}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t(lang, "writeWhatsapp")}
+          </a>
+        ) : null}
         <p className="os-meta">
           {t(lang, "lastUpdated")}{" "}
           <time dateTime={view.updatedAt.toISOString()}>{formatDateTime(view.updatedAt)}</time>
@@ -98,6 +108,7 @@ export default async function OrderStatusPage({ params }: Props) {
             <li key={i}>
               <span>
                 {line.title}
+                {line.sizeLabel ? <span className="os-qty"> · {line.sizeLabel}</span> : null}
                 <span className="os-qty">
                   {t(lang, "qtyAt", { quantity: line.quantity, price: line.unitPriceLabel })}
                 </span>

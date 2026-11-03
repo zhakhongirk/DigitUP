@@ -356,7 +356,7 @@ describe("decide", () => {
         name: "create_order",
         arguments: {
           idempotency_key: "key-1234567",
-          items: [{ offer_id: runner.offer_id, quantity: 2 }],
+          items: [{ offer_id: runner.offer_id, quantity: 2, size: "42" }],
           submit: false,
           contact: { note: "Size: 42" },
         },
@@ -377,11 +377,15 @@ describe("decide", () => {
         ...toolTurn(
           "create_order",
           {},
-          { status: "draft", items: [{ title: "Runner", quantity: 1 }], total_label: "100 KZT" },
+          {
+            status: "draft",
+            items: [{ title: "Runner", quantity: 1, size: "42" }],
+            total_label: "100 KZT",
+          },
         ),
       ];
       const text = reply(decide(draft, "x"));
-      expect(text).toContain("Размер: 42.");
+      expect(text).toContain("Runner (размер 42) x 1");
       expect(text).toContain("«Подтвердить заказ»");
     });
 
@@ -404,10 +408,14 @@ describe("decide", () => {
       ...toolTurn(
         "create_order",
         {},
-        { status: "draft", items: [{ title: "Runner", quantity: 1 }], total_label: "100 KZT" },
+        {
+          status: "draft",
+          items: [{ title: "Runner", quantity: 1, size: "42" }],
+          total_label: "100 KZT",
+        },
       ),
     ];
-    expect(reply(decide(draft, "x"))).toContain("Размер: 42.");
+    expect(reply(decide(draft, "x"))).toContain("Runner (размер 42) x 1");
   });
 
   describe("order details conversation", () => {
@@ -485,27 +493,46 @@ describe("decide", () => {
 
     it("sends a delivery order with the address", () => {
       const history = talk(order(), "yes", "Aidar Nurlanuly", phone, "delivery");
-      expect(argsOf([...history, user("Abay 10, apartment 5")])).toEqual({
+      expect(reply(decide([...history, user("Abay 10, apartment 5")], "k"))).toBe(
+        "What city is the delivery to?",
+      );
+      const addressed = talk(history, "Abay 10, apartment 5");
+      expect(argsOf([...addressed, user("Almaty")])).toEqual({
         idempotency_key: "key-1234567",
         items: [{ offer_id: runner.offer_id, quantity: 1 }],
         submit: true,
         contact: { name: "Aidar Nurlanuly", phone },
         fulfillment: "delivery",
         delivery_address: "Abay 10, apartment 5",
+        city: "Almaty",
       });
+    });
+
+    it("takes the city from the address message and asks for it only on delivery", () => {
+      const history = talk(order(), "yes", "Aidar", phone, "delivery");
+      expect(argsOf([...history, user("Abay 10, city Almaty")])).toMatchObject({
+        submit: true,
+        delivery_address: "Abay 10",
+        city: "Almaty",
+      });
+      const pickup = talk(order(), "yes", "Aidar", phone);
+      const sent = argsOf([...pickup, user("pickup")]);
+      expect(sent).toMatchObject({ submit: true, fulfillment: "pickup" });
+      expect(sent).not.toHaveProperty("city");
     });
 
     it("takes all details given in one message and skips the questions", () => {
       expect(
         argsOf([
           ...order(),
-          user("my name is Aidar Nurlanuly, +7 701 000 11 22, delivery to Abay 10"),
+          user("my name is Aidar Nurlanuly, +7 701 000 11 22, delivery to Abay 10, city Almaty"),
         ]),
       ).toMatchObject({
         submit: true,
         contact: { name: "Aidar Nurlanuly", phone },
         fulfillment: "delivery",
         delivery_address: "Abay 10",
+        city: "Almaty",
       });
       expect(
         argsOf([...order(), user("I am Dana, +7 701 000 11 22, I will pick up")]),
@@ -567,13 +594,25 @@ describe("decide", () => {
       const chosen = talk(history, "да", "Айдар", `номер ${phone}`);
       expect(reply(decide([...chosen, user("доставка")], "k"))).toBe("Какой адрес доставки?");
       const addressed = talk(history, "да", "Айдар", `номер ${phone}`, "доставка");
-      expect(argsOf([...addressed, user("ул. Абая 10, кв. 5")])).toEqual({
+      expect(reply(decide([...addressed, user("ул. Абая 10, кв. 5")], "k"))).toBe(
+        "В какой город доставить?",
+      );
+      const cityAsked = talk(
+        history,
+        "да",
+        "Айдар",
+        `номер ${phone}`,
+        "доставка",
+        "ул. Абая 10, кв. 5",
+      );
+      expect(argsOf([...cityAsked, user("Алматы")])).toEqual({
         idempotency_key: "key-1234567",
         items: [{ offer_id: runner.offer_id, quantity: 1 }],
         submit: true,
         contact: { name: "Айдар", phone },
         fulfillment: "delivery",
         delivery_address: "ул. Абая 10, кв. 5",
+        city: "Алматы",
       });
       expect(argsOf([...chosen, user("самовывоз")])).toMatchObject({
         fulfillment: "pickup",
@@ -730,13 +769,16 @@ describe("storefront chat without a model", () => {
     expect(messageOf(await say("+7 701 000 11 22"))).toContain("pickup or delivery");
     expect(messageOf(await say("delivery"))).toContain("delivery address");
     expect(await services.orders.listOrders(ctx)).toMatchObject([{ status: "draft" }]);
-    expect(messageOf(await say("Abay 10"))).toContain("sent to the store");
+    expect(messageOf(await say("Abay 10"))).toContain("city");
+    expect(await services.orders.listOrders(ctx)).toMatchObject([{ status: "draft" }]);
+    expect(messageOf(await say("Almaty"))).toContain("sent to the store");
     expect(await services.orders.listOrders(ctx)).toMatchObject([
       {
         status: "submitted",
         contact: { name: "Aidar", phone: "+7 701 000 11 22" },
         fulfillment: "delivery",
         deliveryAddress: "Abay 10",
+        city: "Almaty",
       },
     ]);
 
@@ -752,7 +794,7 @@ describe("storefront chat without a model", () => {
 
     const [conversation] = await services.conversations.list(ctx, { channel: "storefront" });
     const rows = await services.conversations.listMessages(ctx, conversation!.id);
-    expect(rows.filter((r) => r.role === "user")).toHaveLength(10);
-    expect(rows.filter((r) => r.role === "assistant" && r.content)).toHaveLength(10);
+    expect(rows.filter((r) => r.role === "user")).toHaveLength(11);
+    expect(rows.filter((r) => r.role === "assistant" && r.content)).toHaveLength(11);
   });
 });

@@ -382,7 +382,7 @@ describe("createOrder contact merge", () => {
     expect(again.order.deliveryAddress).toBeNull();
   });
 
-  it("ignores the contact when the items differ", async () => {
+  it("replaces the items of a draft when a repeated call lists different ones", async () => {
     const { orders, ctx, order, input, ids } = await draft();
     const other = await orders.createOrder(ctx, {
       ...input,
@@ -390,7 +390,9 @@ describe("createOrder contact merge", () => {
       contact: { phone: "+7 701 000 11 22" },
     });
     expect(other.order.id).toBe(order.id);
-    expect(other.order.contact).toEqual({});
+    expect(other.created).toBe(false);
+    expect((other.order.items as { quantity: number }[]).map((i) => i.quantity)).toEqual([3]);
+    expect(other.order.contact).toEqual({ phone: "+7 701 000 11 22" });
   });
 
   it("stores fulfillment, address and city given at creation", async () => {
@@ -525,10 +527,15 @@ describe("submitOrder", () => {
       fulfillment: "delivery",
     });
     expect(await rejection(delivery.orders.submitOrder(delivery.ctx, delivery.order.id))).toBe(
-      "Cannot submit the order, missing: delivery address",
+      "Cannot submit the order, missing: delivery address, delivery city",
     );
     await delivery.orders.updateDraftDetails(delivery.ctx, delivery.order.id, {
       deliveryAddress: "Abay 1",
+    });
+    expect(await rejection(delivery.orders.submitOrder(delivery.ctx, delivery.order.id))).toBe(
+      "Cannot submit the order, missing: delivery city",
+    );
+    await delivery.orders.updateDraftDetails(delivery.ctx, delivery.order.id, {
       city: "Almaty",
     });
     const sent = await delivery.orders.submitOrder(delivery.ctx, delivery.order.id);
@@ -556,7 +563,15 @@ describe("submitOrder", () => {
         fulfillment: "delivery",
         deliveryAddress: "  ",
       }),
-    ).toEqual(["address"]);
+    ).toEqual(["address", "city"]);
+    expect(
+      missingOrderFields({
+        contact: { name: "Ann", phone: "+7 701 000 11 22" },
+        fulfillment: "delivery",
+        deliveryAddress: "Abay 1",
+        city: "Almaty",
+      }),
+    ).toEqual([]);
     expect(
       missingOrderFields({
         contact: { name: "Ann", phone: "+7 701 000 11 22" },
