@@ -61,6 +61,7 @@ export async function runProposal(
           }),
           conversations: services.conversations,
           maxSteps: 6,
+          usageSource: { tenantId: agentCtx.tenantId, surface: "onboarding" },
         });
         const draft = await catalog.getLatestDraft(agentCtx);
         if (draft && draft.status === "draft" && draft.createdAt >= run.createdAt) {

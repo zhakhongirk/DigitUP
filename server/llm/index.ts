@@ -1,6 +1,8 @@
+import { getDb } from "@/db/client";
 import { createFireworksClient } from "./client";
 import { readLlmConfig } from "./config";
 import type { LlmClient } from "./types";
+import { createUsageRecorder } from "./usage";
 
 export * from "./types";
 export { createLlmClient, createFireworksClient } from "./client";
@@ -10,7 +12,10 @@ let shared: LlmClient | undefined;
 
 /** Process-wide LLM client configured from the environment. */
 export function getLlmClient(): LlmClient {
-  shared ??= createFireworksClient(readLlmConfig());
+  shared ??= createFireworksClient({
+    ...readLlmConfig(),
+    recordUsage: createUsageRecorder(getDb),
+  });
   return shared;
 }
 

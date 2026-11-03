@@ -15,6 +15,8 @@ export interface CustomerAgentInput {
   /** Storefront session cookie or the external agent's session id. */
   sessionKey: string;
   message: string;
+  /** API key that opened the session, for usage attribution and submission limits. */
+  apiKeyId?: string;
   /** Identifies the client for the limit on submitted orders and inquiries. */
   submissionKey?: string;
   onEvent?: (event: AgentEvent) => void;
@@ -35,7 +37,7 @@ export function createCustomerAgent(deps: {
   const { services } = deps;
   const llm = deps.llm ?? createFallbackLlm();
   return {
-    async reply({ ctx, channel, sessionKey, message, submissionKey, onEvent }) {
+    async reply({ ctx, channel, sessionKey, message, apiKeyId, submissionKey, onEvent }) {
       const agentCtx: TenantContext = { tenantId: ctx.tenantId, actor: "customer_agent" };
 
       const [tenant, conversation] = await Promise.all([
@@ -65,6 +67,11 @@ export function createCustomerAgent(deps: {
         server,
         conversations: services.conversations,
         onEvent,
+        usageSource: {
+          tenantId: ctx.tenantId,
+          apiKeyId: apiKeyId ?? null,
+          surface: channel === "storefront" ? "storefront_chat" : "public_mcp",
+        },
       });
       return { ...result, conversationId: conversation.id };
     },

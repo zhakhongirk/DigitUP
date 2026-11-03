@@ -7,7 +7,13 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
-import { LlmError, type LlmClient, type LlmMessage, type LlmTool } from "@/server/llm";
+import {
+  LlmError,
+  type LlmClient,
+  type LlmMessage,
+  type LlmTool,
+  type LlmUsageSource,
+} from "@/server/llm";
 import type { TenantContext } from "@/server/services/context";
 import type { ConversationsService } from "@/server/services/conversations";
 import { toLlmHistory, toStoredMessage } from "./messages";
@@ -33,6 +39,8 @@ export interface RunAgentInput {
   /** Stored messages loaded as context. */
   historyLimit?: number;
   onEvent?: (event: AgentEvent) => void;
+  /** Attributes the token usage of every model call. */
+  usageSource?: LlmUsageSource;
 }
 
 export interface RunAgentResult {
@@ -111,7 +119,12 @@ export async function runAgent(input: RunAgentInput): Promise<RunAgentResult> {
     for (let step = 1; step <= maxSteps; step++) {
       let response;
       try {
-        response = await llm.chat({ messages, tools, temperature: 0.2 });
+        response = await llm.chat({
+          messages,
+          tools,
+          temperature: 0.2,
+          usageSource: input.usageSource,
+        });
       } catch (error) {
         if (!(error instanceof LlmError)) throw error;
         console.error(`[agent] model call failed (${error.kind}): ${error.message}`);

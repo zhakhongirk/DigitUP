@@ -30,8 +30,24 @@ export interface LlmTool {
   parameters: Record<string, unknown>;
 }
 
+/** Who a model call is made for; used to attribute token usage. */
+export interface LlmUsageSource {
+  tenantId: string;
+  apiKeyId?: string | null;
+  surface: "storefront_chat" | "public_mcp" | "onboarding";
+}
+
+export interface LlmUsageRecord extends LlmUsageSource {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number | null;
+}
+
 export interface LlmChatRequest {
   messages: LlmMessage[];
+  /** When set, token usage of this call is reported to the client's usage recorder. */
+  usageSource?: LlmUsageSource;
   tools?: LlmTool[];
   temperature?: number;
   maxTokens?: number;
@@ -42,6 +58,7 @@ export interface LlmChatRequest {
 export interface LlmUsage {
   promptTokens: number;
   completionTokens: number;
+  cachedTokens?: number;
 }
 
 export interface LlmChatResult {

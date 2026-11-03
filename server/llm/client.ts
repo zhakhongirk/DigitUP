@@ -16,6 +16,7 @@ import {
   type LlmMessage,
   type LlmTool,
   type LlmToolCall,
+  type LlmUsageRecord,
   type ToolCallMode,
 } from "./types";
 
@@ -31,6 +32,8 @@ export interface LlmClientOptions {
   jsonResponseFormat?: boolean;
   completions: ChatCompletionsApi;
   newId?: () => string;
+  /** Receives token usage of every call that names a usage source; failures are ignored. */
+  recordUsage?: (record: LlmUsageRecord) => Promise<void> | void;
 }
 
 export function toOpenAiMessages(messages: LlmMessage[]): ChatCompletionMessageParam[] {
@@ -98,7 +101,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
   const newId = options.newId ?? (() => `call_${randomUUID()}`);
   const jsonResponseFormat = options.jsonResponseFormat ?? true;
 
-  async function complete(params: ChatCompletionCreateParamsNonStreaming) {
+  async function complete(params: ChatCompletionCreateParamsNonStreaming, request: LlmChatRequest) {
     let completion: ChatCompletion;
     try {
       completion = await completions.create(params);
@@ -113,23 +116,40 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
       ? {
           promptTokens: completion.usage.prompt_tokens,
           completionTokens: completion.usage.completion_tokens,
+          cachedTokens: completion.usage.prompt_tokens_details?.cached_tokens,
         }
       : undefined;
+    if (usage && request.usageSource && options.recordUsage) {
+      try {
+        await options.recordUsage({
+          ...request.usageSource,
+          model,
+          inputTokens: usage.promptTokens,
+          outputTokens: usage.completionTokens,
+          cachedTokens: usage.cachedTokens ?? null,
+        });
+      } catch (error) {
+        console.error("[llm] could not record usage", error);
+      }
+    }
     return { choice, usage };
   }
 
   async function chatNative(request: LlmChatRequest): Promise<LlmChatResult> {
     const tools = request.tools ?? [];
-    const { choice, usage } = await complete({
-      model,
-      messages: toOpenAiMessages(request.messages),
-      ...(tools.length > 0 ? { tools: toOpenAiTools(tools) } : {}),
-      ...(request.responseFormat === "json"
-        ? { response_format: { type: "json_object" as const } }
-        : {}),
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
-    });
+    const { choice, usage } = await complete(
+      {
+        model,
+        messages: toOpenAiMessages(request.messages),
+        ...(tools.length > 0 ? { tools: toOpenAiTools(tools) } : {}),
+        ...(request.responseFormat === "json"
+          ? { response_format: { type: "json_object" as const } }
+          : {}),
+        temperature: request.temperature,
+        max_tokens: request.maxTokens,
+      },
+      request,
+    );
 
     const toolCalls: LlmToolCall[] = (choice.message.tool_calls ?? []).flatMap((call) =>
       call.type === "function"
@@ -155,13 +175,16 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
     const tools = request.tools ?? [];
     if (tools.length === 0) return chatNative(request);
 
-    const { choice, usage } = await complete({
-      model,
-      messages: toOpenAiMessages(toJsonModeMessages(request.messages, tools)),
-      ...(jsonResponseFormat ? { response_format: { type: "json_object" as const } } : {}),
-      temperature: request.temperature,
-      max_tokens: request.maxTokens,
-    });
+    const { choice, usage } = await complete(
+      {
+        model,
+        messages: toOpenAiMessages(toJsonModeMessages(request.messages, tools)),
+        ...(jsonResponseFormat ? { response_format: { type: "json_object" as const } } : {}),
+        temperature: request.temperature,
+        max_tokens: request.maxTokens,
+      },
+      request,
+    );
 
     const raw = choice.message.content;
     if (raw === null || raw === undefined || raw.trim() === "") {
@@ -188,6 +211,7 @@ export interface FireworksClientOptions {
   mode: ToolCallMode;
   baseURL: string;
   jsonResponseFormat?: boolean;
+  recordUsage?: LlmClientOptions["recordUsage"];
 }
 
 export function createFireworksClient(options: FireworksClientOptions): LlmClient {
@@ -197,5 +221,6 @@ export function createFireworksClient(options: FireworksClientOptions): LlmClien
     mode: options.mode,
     jsonResponseFormat: options.jsonResponseFormat,
     completions: openai.chat.completions,
+    recordUsage: options.recordUsage,
   });
 }
