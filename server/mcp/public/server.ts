@@ -12,9 +12,16 @@ export interface PublicMcpOptions {
   ctx: TenantContext;
   storeName: string;
   agent: CustomerAgent;
+  /** Identifies the calling client for the limit on submitted orders and inquiries. */
+  clientKey?: string;
 }
 
-export function createPublicMcpServer({ ctx, storeName, agent }: PublicMcpOptions): McpServer {
+export function createPublicMcpServer({
+  ctx,
+  storeName,
+  agent,
+  clientKey,
+}: PublicMcpOptions): McpServer {
   const server = new McpServer(
     { name: "storefront-public", version: "1.0.0" },
     {
@@ -46,6 +53,7 @@ export function createPublicMcpServer({ ctx, storeName, agent }: PublicMcpOption
           channel: "external_agent",
           sessionKey: session_id,
           message,
+          submissionKey: clientKey,
         });
         return jsonResult({ reply: result.reply, session_id });
       } catch (error) {

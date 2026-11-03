@@ -827,3 +827,20 @@ describe("business MCP tenant isolation", () => {
     await ownerB.close();
   });
 });
+
+describe("onlyTools", () => {
+  it("registers just the named tools", async () => {
+    const owner = await setupTenant();
+    const mcp = await connect(
+      createBusinessMcpServer({
+        ctx: { tenantId: owner.tenantId, actor: "business_agent" },
+        services,
+        onlyTools: ["propose_business_model"],
+      }),
+    );
+    expect(await mcp.toolNames()).toEqual(["propose_business_model"]);
+    const refused = await mcp.call("update_prices", { updates: [] });
+    expect(refused.isError).toBe(true);
+    await mcp.close();
+  });
+});

@@ -25,4 +25,12 @@ export default async function setup() {
   }
 
   await runMigrations(url);
+
+  const testDb = new Client({ connectionString: url });
+  await testDb.connect();
+  try {
+    await testDb.query("truncate table rate_limits");
+  } finally {
+    await testDb.end();
+  }
 }

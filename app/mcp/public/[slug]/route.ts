@@ -12,7 +12,7 @@ type Context = { params: Promise<{ slug: string }> };
 const handle = withRequestLog(
   async (request: Request, { params }: Context) => {
     const { slug } = await params;
-    const limited = limitRequest(publicMcpLimiter, `${clientIp(request)}:${slug}`);
+    const limited = await limitRequest(publicMcpLimiter, `${clientIp(request)}:${slug}`, request);
     if (limited) return limited;
     return handlePublicMcp(request, slug, await getServices(), getOptionalLlmClient());
   },

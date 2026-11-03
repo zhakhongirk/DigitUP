@@ -24,7 +24,7 @@ export async function inviteStaff(_prev: SettingsState, form: FormData): Promise
   const raw = form.get("email");
   const email = typeof raw === "string" ? raw.trim() : "";
   if (!email) return { error: t("st.errEmail"), saved: false };
-  if (!staffInviteLimiter.check(`user:${owner.userId}`).ok) {
+  if (!(await staffInviteLimiter.check(`user:${owner.userId}`)).ok) {
     return { error: t("err.tooManyAttempts"), saved: false };
   }
   try {

@@ -21,13 +21,13 @@ export async function signIn(_prev: SignInState, form: FormData): Promise<SignIn
   }
   const ip = clientIp(new Request("http://localhost", { headers: await headers() }));
   const accountKey = `email:${email.toLowerCase()}`;
-  if (!signInLimiter.check(ip).ok || !signInAccountLimiter.peek(accountKey).ok) {
+  if (!(await signInLimiter.check(ip)).ok || !(await signInAccountLimiter.peek(accountKey)).ok) {
     return { error: t("auth.tooMany") };
   }
   const services = await getServices();
   const token = await services.tenancy.signIn({ email, password });
   if (!token) {
-    signInAccountLimiter.hit(accountKey);
+    await signInAccountLimiter.hit(accountKey);
     return { error: t("auth.wrongCredentials") };
   }
   await setSessionCookie(token);

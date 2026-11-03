@@ -2,7 +2,8 @@ import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
 import type { TenantContext } from "@/server/services/context";
-import { createFallbackLlm } from "@/server/storefront/fallback-assistant";
+import { submissionLimiter } from "@/server/http/rate-limit";
+import { createFallbackLlm, isExplicitConfirmation } from "@/server/storefront/fallback-assistant";
 import { runAgent, type AgentEvent, type RunAgentResult } from "../runtime";
 import { customerAgentPrompt } from "./prompt";
 
@@ -14,6 +15,8 @@ export interface CustomerAgentInput {
   /** Storefront session cookie or the external agent's session id. */
   sessionKey: string;
   message: string;
+  /** Identifies the client for the limit on submitted orders and inquiries. */
+  submissionKey?: string;
   onEvent?: (event: AgentEvent) => void;
 }
 
@@ -32,7 +35,7 @@ export function createCustomerAgent(deps: {
   const { services } = deps;
   const llm = deps.llm ?? createFallbackLlm();
   return {
-    async reply({ ctx, channel, sessionKey, message, onEvent }) {
+    async reply({ ctx, channel, sessionKey, message, submissionKey, onEvent }) {
       const agentCtx: TenantContext = { tenantId: ctx.tenantId, actor: "customer_agent" };
 
       const [tenant, conversation] = await Promise.all([
@@ -45,6 +48,12 @@ export function createCustomerAgent(deps: {
         services,
         source: channel,
         conversationId: conversation.id,
+        guards: {
+          ...(deps.llm ? { canSubmit: () => isExplicitConfirmation(message) } : {}),
+          ...(submissionKey
+            ? { allowSubmission: () => submissionLimiter.check(submissionKey) }
+            : {}),
+        },
       });
 
       const result = await runAgent({

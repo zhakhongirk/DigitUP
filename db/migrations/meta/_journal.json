@@ -71,6 +71,13 @@
       "when": 1793719839760,
       "tag": "0009_staff_and_password_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793739669775,
+      "tag": "0010_rate_limits_llm_usage",
+      "breakpoints": true
     }
   ]
 }

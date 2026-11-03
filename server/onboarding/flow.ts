@@ -198,7 +198,7 @@ export async function handleOnboardingAnalyze(
 ): Promise<Response> {
   const ctx = await ownerFromRequest(request, services);
   if (!ctx) return Response.json({ error: "unauthorized" }, { status: 401 });
-  const limited = limitRequest(analyzeLimiter, ctx.tenantId);
+  const limited = await limitRequest(analyzeLimiter, ctx.tenantId, request);
   if (limited) return limited;
   try {
     await services.ingestion.startRun(ctx);

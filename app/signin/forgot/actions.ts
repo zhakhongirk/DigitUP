@@ -27,9 +27,10 @@ export async function requestPasswordReset(
   if (!email) return { error: t("auth.enterEmail"), sent: false };
 
   const ip = clientIp(new Request("http://localhost", { headers: await headers() }));
-  if (!passwordResetLimiter.check(ip).ok) return { error: t("auth.tooMany"), sent: false };
+  if (!(await passwordResetLimiter.check(ip)).ok) return { error: t("auth.tooMany"), sent: false };
   // The per-address limit never changes the reply, so it cannot reveal which addresses exist.
-  if (!passwordResetAccountLimiter.check(`email:${email}`).ok) return { error: null, sent: true };
+  if (!(await passwordResetAccountLimiter.check(`email:${email}`)).ok)
+    return { error: null, sent: true };
 
   const services = await getServices();
   const issued = await services.tenancy.requestPasswordReset(email);

@@ -10,6 +10,7 @@ import {
   numeric,
   pgEnum,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   uniqueIndex,
@@ -396,4 +397,33 @@ export const notifications = pgTable(
     index("notifications_tenant_idx").on(t.tenantId, t.readAt),
     uniqueIndex("notifications_tenant_kind_ref_uq").on(t.tenantId, t.kind, t.refId),
   ],
+);
+
+export const rateLimits = pgTable(
+  "rate_limits",
+  {
+    key: text("key").notNull(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: integer("count").notNull().default(0),
+  },
+  (t) => [
+    primaryKey({ columns: [t.key, t.windowStart] }),
+    index("rate_limits_window_idx").on(t.windowStart),
+  ],
+);
+
+export const llmUsage = pgTable(
+  "llm_usage",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    apiKeyId: uuid("api_key_id").references(() => apiKeys.id, { onDelete: "set null" }),
+    surface: text("surface").notNull(),
+    model: text("model").notNull(),
+    inputTokens: integer("input_tokens").notNull(),
+    outputTokens: integer("output_tokens").notNull(),
+    cachedTokens: integer("cached_tokens"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("llm_usage_tenant_created_idx").on(t.tenantId, t.createdAt)],
 );

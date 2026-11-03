@@ -5,6 +5,13 @@
  */
 import { createCustomerAgent } from "@/server/agents/customer";
 import type { Services } from "@/server/container";
+import {
+  clientIp,
+  mcpKeyLimiter,
+  submissionLimiter,
+  tooManyRequests,
+  requestLang,
+} from "@/server/http/rate-limit";
 import type { LlmClient } from "@/server/llm";
 import type { TenantContext } from "@/server/services/context";
 import { createBusinessMcpServer } from "./business/server";
@@ -12,7 +19,8 @@ import { createCustomerMcpServer } from "./customer/server";
 import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
 import { createPublicMcpServer } from "./public/server";
 
-type Resolved = { ok: true; ctx: TenantContext } | { ok: false; response: Response };
+type Resolved =
+  { ok: true; ctx: TenantContext; apiKeyId?: string } | { ok: false; response: Response };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -34,7 +42,7 @@ export async function resolveCustomerContext(
   if (fromKey.tenantId !== fromSlug.tenantId) {
     return { ok: false, response: jsonRpcError(403, "This key does not belong to this store") };
   }
-  return { ok: true, ctx: fromSlug };
+  return { ok: true, ctx: fromSlug, apiKeyId: fromKey.apiKeyId };
 }
 
 /**
@@ -63,6 +71,13 @@ export async function resolveBusinessContext(
   return { ok: false, response: jsonRpcError(401, "Sign in or provide an owner API key") };
 }
 
+/** 429 when the API key exceeded its per-minute allowance; sessions and keyless calls pass. */
+async function limitKey(request: Request, apiKeyId: string | undefined): Promise<Response | null> {
+  if (!apiKeyId) return null;
+  const result = await mcpKeyLimiter.check(apiKeyId);
+  return result.ok ? null : tooManyRequests(result.retryAfterSeconds, requestLang(request));
+}
+
 export async function handleCustomerMcp(
   request: Request,
   slug: string,
@@ -70,6 +85,8 @@ export async function handleCustomerMcp(
 ): Promise<Response> {
   const resolved = await resolveCustomerContext(request, slug, services.tenancy);
   if (!resolved.ok) return resolved.response;
+  const limited = await limitKey(request, resolved.apiKeyId);
+  if (limited) return limited;
 
   const channel = request.headers.get("x-storefront-channel");
   const conversationId = request.headers.get("x-conversation-id") ?? undefined;
@@ -83,6 +100,9 @@ export async function handleCustomerMcp(
     source: channel === "external_agent" ? "external_agent" : "storefront",
     conversationId,
     webhooks: services.webhooks,
+    guards: resolved.apiKeyId
+      ? { allowSubmission: () => submissionLimiter.check(`key:${resolved.apiKeyId}`) }
+      : undefined,
   });
   return serveMcp(request, server);
 }
@@ -101,6 +121,7 @@ export async function handlePublicMcp(
     ctx,
     storeName: tenant.name,
     agent: createCustomerAgent({ services, llm }),
+    clientKey: `${clientIp(request)}:${slug}`,
   });
   return serveMcp(request, server);
 }
@@ -108,5 +129,7 @@ export async function handlePublicMcp(
 export async function handleBusinessMcp(request: Request, services: Services): Promise<Response> {
   const resolved = await resolveBusinessContext(request, services.tenancy);
   if (!resolved.ok) return resolved.response;
+  const limited = await limitKey(request, resolved.ctx.apiKeyId);
+  if (limited) return limited;
   return serveMcp(request, createBusinessMcpServer({ ctx: resolved.ctx, services }));
 }

@@ -10,7 +10,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const limited = limitRequest(signUpLimiter, clientIp(request));
+  const limited = await limitRequest(signUpLimiter, clientIp(request), request);
   if (limited) return limited;
   return handleOnboardingUpload(request, await getServices());
 }

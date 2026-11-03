@@ -299,7 +299,11 @@ describe("API keys", () => {
     const created = await tenancy.createApiKey(owner, "owner");
     expect(created.key.startsWith("sk_own_")).toBe(true);
     const ctx = await tenancy.contextFromApiKey(created.key, "owner", "business_agent");
-    expect(ctx).toEqual({ tenantId: owner.tenantId, actor: "business_agent" });
+    expect(ctx).toEqual({
+      tenantId: owner.tenantId,
+      actor: "business_agent",
+      apiKeyId: created.id,
+    });
   });
 
   it("returns null for the wrong kind or an unknown key", async () => {
@@ -317,7 +321,11 @@ describe("API keys", () => {
     const tenancy = testTenancy();
     const created = await tenancy.createApiKey(agent, "customer_agent");
     const ctx = await tenancy.contextFromApiKey(created.key, "customer_agent", "customer_agent");
-    expect(ctx).toEqual({ tenantId: agent.tenantId, actor: "customer_agent" });
+    expect(ctx).toEqual({
+      tenantId: agent.tenantId,
+      actor: "customer_agent",
+      apiKeyId: created.id,
+    });
   });
 
   it("returns null once revoked", async () => {
@@ -353,6 +361,7 @@ describe("API keys", () => {
     expect(await tenancy.contextFromApiKey(created.key, "owner", "owner")).toEqual({
       tenantId: a.tenantId,
       actor: "owner",
+      apiKeyId: created.id,
     });
   });
 

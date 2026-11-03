@@ -12,6 +12,8 @@ export interface TenantContext {
   readonly userId?: string;
   /** Role of the signed-in user; unset for API key and storefront contexts. */
   readonly role?: "owner" | "staff";
+  /** Set when the call is authenticated with an API key. */
+  readonly apiKeyId?: string;
 }
 
 export type ServiceErrorCode = "not_found" | "forbidden" | "unauthorized" | "invalid" | "conflict";

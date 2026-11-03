@@ -379,7 +379,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
 
     async contextFromApiKey(key, kind, actor) {
       const [row] = await db
-        .select({ tenantId: apiKeys.tenantId })
+        .select({ id: apiKeys.id, tenantId: apiKeys.tenantId })
         .from(apiKeys)
         .where(
           and(
@@ -388,7 +388,7 @@ export function createTenancyService(db: Db, options: TenancyOptions): TenancySe
             isNull(apiKeys.revokedAt),
           ),
         );
-      return row ? { tenantId: row.tenantId, actor } : null;
+      return row ? { tenantId: row.tenantId, actor, apiKeyId: row.id } : null;
     },
 
     async contextFromSlug(slug, actor, opts = {}) {

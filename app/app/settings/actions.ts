@@ -106,7 +106,7 @@ export async function changePassword(_prev: SettingsState, form: FormData): Prom
     return { error: t("st.errPasswords"), saved: false };
   }
   if (next !== confirm) return { error: t("st.errMismatch"), saved: false };
-  if (!passwordChangeLimiter.check(`user:${owner.userId}`).ok) {
+  if (!(await passwordChangeLimiter.check(`user:${owner.userId}`)).ok) {
     return { error: t("err.tooManyAttempts"), saved: false };
   }
   try {

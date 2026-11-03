@@ -16,6 +16,8 @@ import { inquiryView, orderView, ownerOffer } from "../views";
 export interface BusinessMcpOptions {
   ctx: TenantContext;
   services: Pick<Services, "catalog" | "orders" | "approvals" | "ingestion" | "conversations">;
+  /** Expose only these tools; everything else is left unregistered. */
+  onlyTools?: readonly string[];
 }
 
 export const BUSINESS_TOOLS = [
@@ -60,7 +62,11 @@ function pendingApproval(changeSetId: string, summary: string) {
   };
 }
 
-export function createBusinessMcpServer({ ctx, services }: BusinessMcpOptions): McpServer {
+export function createBusinessMcpServer({
+  ctx,
+  services,
+  onlyTools,
+}: BusinessMcpOptions): McpServer {
   const { catalog, orders, approvals, ingestion, conversations } = services;
 
   const server = new McpServer(
@@ -71,6 +77,18 @@ export function createBusinessMcpServer({ ctx, services }: BusinessMcpOptions): 
         "that wait for the owner's approval; tell the owner when that happens.",
     },
   );
+
+  if (onlyTools) {
+    const allowed = new Set<string>(onlyTools);
+    const register = server.registerTool.bind(server) as (
+      ...args: unknown[]
+    ) => ReturnType<typeof server.registerTool>;
+    (server as { registerTool: unknown }).registerTool = (name: string, ...rest: unknown[]) => {
+      const tool = register(name, ...rest);
+      if (!allowed.has(name)) tool.remove();
+      return tool;
+    };
+  }
 
   server.registerTool(
     "get_business_model",

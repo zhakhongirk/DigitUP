@@ -117,7 +117,7 @@ describe("onboardingMaterial", () => {
       { filename: "small.txt", text: "c".repeat(300) },
     ];
     const material = onboardingMaterial(sources, 20_000);
-    for (const s of sources) expect(material).toContain(`### ${s.filename}`);
+    for (const s of sources) expect(material).toContain(`=== BEGIN FILE: ${s.filename} ===`);
     expect(material).toContain("[truncated]");
     expect(material).toContain("c".repeat(300));
     expect(material.length).toBeLessThan(20_000 + 500);
@@ -128,6 +128,6 @@ describe("onboardingMaterial", () => {
       { filename: "a.txt", text: " hello " },
       { filename: "empty.txt", text: "  " },
     ]);
-    expect(material).toBe("### a.txt\nhello");
+    expect(material).toBe("=== BEGIN FILE: a.txt ===\nhello\n=== END FILE: a.txt ===");
   });
 });

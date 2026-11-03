@@ -7,6 +7,13 @@ import { createCustomerAgent } from "@/server/agents/customer";
 import type { AgentEvent } from "@/server/agents/runtime";
 import type { Services } from "@/server/container";
 import type { LlmClient } from "@/server/llm";
+import { BodyTooLargeError, readBoundedJson } from "@/server/http/bounded-form";
+import {
+  clientIp,
+  requestLang,
+  submissionLimiter,
+  tooManyRequests,
+} from "@/server/http/rate-limit";
 import { ServiceError } from "@/server/services/context";
 import { z } from "zod";
 import {
@@ -31,6 +38,7 @@ export function storefrontOrderView(order: Order) {
 export const CHAT_COOKIE = "sf_session";
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{16,64}$/;
 const MAX_MESSAGE_CHARS = 2000;
+export const MAX_CHAT_BODY_BYTES = 16 * 1024;
 
 export function readChatSession(request: Request): string | null {
   const cookies = request.headers.get("cookie") ?? "";
@@ -70,8 +78,11 @@ export async function handleChatMessage(
 
   let body: unknown;
   try {
-    body = await request.json();
-  } catch {
+    body = await readBoundedJson(request, MAX_CHAT_BODY_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) {
+      return Response.json({ error: "payload_too_large" }, { status: 413 });
+    }
     return Response.json({ error: "invalid_json" }, { status: 400 });
   }
   const message = (body as { message?: unknown })?.message;
@@ -94,6 +105,7 @@ export async function handleChatMessage(
           channel: "storefront",
           sessionKey: session,
           message: message.trim(),
+          submissionKey: `${clientIp(request)}:${slug}`,
           onEvent: send,
         });
         send({ type: "done", conversationId: result.conversationId, stoppedBy: result.stoppedBy });
@@ -185,7 +197,9 @@ export async function handleOrderItems(
     return Response.json({ error: "conflict", message: "Order is already sent." }, { status: 409 });
   }
 
-  const body = ((await request.json().catch(() => null)) ?? {}) as { items?: unknown };
+  const body = ((await readBoundedJson(request, MAX_CHAT_BODY_BYTES).catch(() => null)) ?? {}) as {
+    items?: unknown;
+  };
   const parsed = z.array(orderItemInputSchema).min(1).max(50).safeParse(body.items);
   const current = order.items as OrderItem[];
   const allowed = parsed.success
@@ -237,7 +251,8 @@ export async function handleOrderConfirm(
     return Response.json({ error: "not_found" }, { status: 404 });
   }
 
-  const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+  const body = ((await readBoundedJson(request, MAX_CHAT_BODY_BYTES).catch(() => null)) ??
+    {}) as Record<string, unknown>;
   const text = (value: unknown) =>
     typeof value === "string" && value.trim() !== "" ? value : undefined;
   const parsed = draftDetailsSchema.safeParse({
@@ -252,6 +267,11 @@ export async function handleOrderConfirm(
       { error: "invalid_details", message: "Check your name, phone and delivery details." },
       { status: 400 },
     );
+  }
+
+  if (order.status === "draft") {
+    const limit = await submissionLimiter.check(`${clientIp(request)}:${slug}`);
+    if (!limit.ok) return tooManyRequests(limit.retryAfterSeconds, requestLang(request));
   }
 
   try {

@@ -20,7 +20,7 @@ export async function lookupOrder(
 ): Promise<LookupState> {
   const lang = await storefrontLang();
   const ip = clientIp(new Request("http://local", { headers: await headers() }));
-  const limited = orderLookupLimiter.check(`${ip}:${slug}`);
+  const limited = await orderLookupLimiter.check(`${ip}:${slug}`);
   if (!limited.ok) return { error: t(lang, "lookupRateLimited") };
 
   const number = String(form.get("number") ?? "");

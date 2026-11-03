@@ -52,7 +52,7 @@ describe("requestPasswordReset", () => {
 
   it("does not change its reply when the per-address limit is reached", async () => {
     const email = `${uniqueSlug("l")}@example.com`;
-    for (let i = 0; i < 3; i++) passwordResetAccountLimiter.hit(`email:${email}`);
+    for (let i = 0; i < 3; i++) await passwordResetAccountLimiter.hit(`email:${email}`);
     expect(await requestPasswordReset(forgotPrev, form({ email }))).toEqual({
       error: null,
       sent: true,
@@ -64,7 +64,7 @@ describe("requestPasswordReset", () => {
     expect((await requestPasswordReset(forgotPrev, form({ email: "  " }))).error).toBe(
       "Enter your email.",
     );
-    const check = vi.spyOn(passwordResetLimiter, "check").mockReturnValue({
+    const check = vi.spyOn(passwordResetLimiter, "check").mockResolvedValue({
       ok: false,
       retryAfterSeconds: 60,
     });

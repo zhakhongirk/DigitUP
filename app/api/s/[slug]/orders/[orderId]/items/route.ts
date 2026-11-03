@@ -10,7 +10,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string; orderId: string }> },
 ) {
   const { slug, orderId } = await params;
-  const limited = limitRequest(orderConfirmLimiter, clientIp(request));
+  const limited = await limitRequest(orderConfirmLimiter, clientIp(request), request);
   if (limited) return limited;
   return handleOrderItems(request, slug, orderId, await getServices());
 }

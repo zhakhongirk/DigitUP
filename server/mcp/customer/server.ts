@@ -17,7 +17,8 @@ import {
 import type { WebhookService } from "@/server/services/webhooks";
 import { WebhookUrlError } from "@/server/services/webhooks/guard";
 import { attributeValueSchema } from "@/shared/business-model";
-import { runTool } from "../tools";
+import type { RateLimitResult } from "@/server/http/rate-limit";
+import { errorResult, runTool } from "../tools";
 import { inquiryView, orderView, policiesWithStates, priceLabel, publicOffer } from "../views";
 
 export interface CustomerMcpOptions {
@@ -29,6 +30,12 @@ export interface CustomerMcpOptions {
   conversationId?: string;
   /** Present only for API-key agents; the storefront chat assistant never manages webhooks. */
   webhooks?: WebhookService;
+  guards?: {
+    /** False means the shopper has not explicitly confirmed, so an order must not be submitted. */
+    canSubmit?: () => boolean | Promise<boolean>;
+    /** Called before an order is submitted or an inquiry is sent; may refuse a flood. */
+    allowSubmission?: () => Promise<RateLimitResult>;
+  };
 }
 
 export const CUSTOMER_TOOLS = [
@@ -63,7 +70,7 @@ function orderDetailsView(order: Order) {
 }
 
 export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer {
-  const { ctx, services, source, conversationId, webhooks } = options;
+  const { ctx, services, source, conversationId, webhooks, guards } = options;
   const { catalog, orders } = services;
 
   const server = new McpServer(
@@ -74,6 +81,31 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
         "When can_order is false, offer the shopper to send an inquiry.",
     },
   );
+
+  async function refuseSubmission({ confirmation }: { confirmation: boolean }) {
+    if (confirmation && guards?.canSubmit && !(await guards.canSubmit())) {
+      return errorResult(
+        JSON.stringify({
+          error: "confirmation_required",
+          message:
+            "The shopper has not confirmed this order. Show the order summary, ask the shopper to confirm it, " +
+            "and call create_order with submit=true only after the shopper replies with an explicit yes.",
+        }),
+      );
+    }
+    const limit = await guards?.allowSubmission?.();
+    if (limit && !limit.ok) {
+      return errorResult(
+        JSON.stringify({
+          error: "rate_limited",
+          retry_after_seconds: limit.retryAfterSeconds,
+          message:
+            "Too many orders and inquiries were sent recently. Tell the shopper to try again later.",
+        }),
+      );
+    }
+    return null;
+  }
 
   server.registerTool(
     "search_offers",
@@ -274,8 +306,12 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           .describe("true only after the shopper explicitly confirmed this exact order"),
       },
     },
-    (args) =>
-      runTool("create_order", async () => {
+    async (args) => {
+      if (args.submit) {
+        const refused = await refuseSubmission({ confirmation: true });
+        if (refused) return refused;
+      }
+      return runTool("create_order", async () => {
         const { order, created } = await orders.createOrder(ctx, {
           idempotencyKey: args.idempotency_key,
           items: args.items.map((item) => ({
@@ -302,7 +338,8 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
               ? "Ask the shopper for any missing_fields, then show this summary and ask for explicit confirmation before submitting."
               : "The order was sent to the store. The owner will contact the shopper.",
         };
-      }),
+      });
+    },
   );
 
   server.registerTool(
@@ -318,8 +355,10 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
         offer_ids: z.array(z.uuid()).max(20).default([]),
       },
     },
-    (args) =>
-      runTool("submit_inquiry", async () => {
+    async (args) => {
+      const refused = await refuseSubmission({ confirmation: false });
+      if (refused) return refused;
+      return runTool("submit_inquiry", async () => {
         const inquiry = await orders.createInquiry(ctx, {
           subject: args.subject,
           details: args.details,
@@ -331,7 +370,8 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           ...inquiryView(inquiry),
           next_step: "The inquiry was sent to the store. The owner will reply to the shopper.",
         };
-      }),
+      });
+    },
   );
 
   server.registerTool(

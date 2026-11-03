@@ -148,7 +148,7 @@ describe("changePassword", () => {
       );
     for (let i = 0; i < 5; i++) expect((await attempt()).error).toBe("Current password is wrong");
     expect((await attempt()).error).toBe("Too many attempts. Try again in a few minutes.");
-    expect(passwordChangeLimiter.check(`user:${ctx.userId}`).ok).toBe(false);
+    expect((await passwordChangeLimiter.check(`user:${ctx.userId}`)).ok).toBe(false);
   });
 });
 

@@ -34,3 +34,11 @@ export async function boundedFormData(request: Request, maxBytes: number): Promi
   const contentType = request.headers.get("content-type") ?? "";
   return new Response(bytes as BodyInit, { headers: { "content-type": contentType } }).formData();
 }
+
+/** Parses a JSON body of at most `maxBytes`; throws BodyTooLargeError or a SyntaxError. */
+export async function readBoundedJson(request: Request, maxBytes: number): Promise<unknown> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) throw new BodyTooLargeError();
+  const bytes = await readBoundedBody(request, maxBytes);
+  return JSON.parse(new TextDecoder().decode(bytes));
+}

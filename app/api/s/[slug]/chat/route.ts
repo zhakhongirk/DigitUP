@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: Params) {
 
 export async function POST(request: Request, { params }: Params) {
   const { slug } = await params;
-  const limited = limitRequest(chatLimiter, `${clientIp(request)}:${slug}`);
+  const limited = await limitRequest(chatLimiter, `${clientIp(request)}:${slug}`, request);
   if (limited) return limited;
   return handleChatMessage(request, slug, await getServices(), getOptionalLlmClient());
 }

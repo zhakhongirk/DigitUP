@@ -10,7 +10,11 @@ vi.mock("@/server/container", async () => (await import("./harness")).containerM
 
 vi.mock("@/server/http/rate-limit", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/server/http/rate-limit")>()),
-  signInLimiter: { check: () => ({ ok: true }), peek: () => ({ ok: true }), hit: () => {} },
+  signInLimiter: {
+    check: async () => ({ ok: true }),
+    peek: async () => ({ ok: true }),
+    hit: async () => {},
+  },
 }));
 
 const prev = { error: null };
@@ -33,7 +37,7 @@ describe("signIn account limit", () => {
     for (let i = 0; i < 12; i++) {
       await expectRedirect(signIn(prev, form({ email, password: "correct-horse" })), "/app");
     }
-    expect(signInAccountLimiter.peek(`email:${email}`).ok).toBe(true);
+    expect((await signInAccountLimiter.peek(`email:${email}`)).ok).toBe(true);
   });
 
   it("blocks after ten failures, even with the right password", async () => {

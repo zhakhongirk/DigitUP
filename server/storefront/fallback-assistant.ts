@@ -369,6 +369,11 @@ function extractContact(text: string): { contact: ShopperContact; rest: string }
   return { contact, rest };
 }
 
+/** True when the shopper's message is a plain yes to the order they were shown. */
+export function isExplicitConfirmation(message: string): boolean {
+  return parseIntent(message).kind === "yes";
+}
+
 export function parseIntent(input: string): Intent {
   const text = input.trim();
   const lang = detectLang(text);
