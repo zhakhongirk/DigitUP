@@ -10,6 +10,7 @@ import { runProposal } from "./agents/business/onboarding";
 import { createServices } from "./container";
 import { log } from "./log";
 import { getOptionalLlmClient } from "./llm";
+import { readLlmModel } from "./llm/config";
 import { createProvisioningService } from "./services/provisioning";
 
 async function main() {
@@ -31,7 +32,7 @@ async function main() {
     provisioning: createProvisioningService({
       db: database.db,
       events,
-      defaultModel: process.env.FIREWORKS_MODEL || "unconfigured",
+      defaultModel: readLlmModel() || "unconfigured",
     }),
     ingestion: services.ingestion,
     telegram: services.telegram,
