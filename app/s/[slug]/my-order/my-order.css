@@ -1,0 +1,53 @@
+.mo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mo-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 520px;
+  padding: 22px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.mo-panel h1 {
+  font-size: 28px;
+}
+
+.mo-lead {
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+.mo-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mo-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.mo-field .field {
+  width: 100%;
+  font-size: 16px;
+}
+
+.mo-error {
+  color: #b3261e;
+  font-size: 14px;
+}
+
+@media (max-width: 480px) {
+  .mo-panel {
+    padding: 18px;
+  }
+}
