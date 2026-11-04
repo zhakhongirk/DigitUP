@@ -237,6 +237,7 @@ export type ChatState = {
   activity: string | null;
   sending: boolean;
   error: ChatError | null;
+  historyFailed: boolean;
   pendingOffers: OfferChip[];
   nextId: number;
 };
@@ -248,6 +249,7 @@ export const initialChatState: ChatState = {
   activity: null,
   sending: false,
   error: null,
+  historyFailed: false,
   pendingOffers: [],
   nextId: 1,
 };
@@ -470,7 +472,13 @@ function applyStreamEvent(state: ChatState, event: StreamEvent): ChatState {
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "history_loaded": {
-      let next: ChatState = { ...state, loaded: true, available: action.available, items: [] };
+      let next: ChatState = {
+        ...state,
+        loaded: true,
+        available: action.available,
+        items: [],
+        historyFailed: false,
+      };
       for (const m of action.messages) {
         next = appendItem(next, (id) => ({
           kind: "message",
@@ -484,7 +492,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "history_polled":
       return state.sending ? state : mergeHistory(state, action.messages);
     case "history_failed":
-      return { ...state, loaded: true };
+      return { ...state, loaded: true, historyFailed: true };
     case "user_sent":
       return {
         ...appendItem(state, (id) => ({

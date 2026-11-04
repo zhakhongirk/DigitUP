@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, it, vi } from "vitest";
 import { openNotification } from "@/app/app/notifications/actions";
 import { expectRedirect, form, resetSession, session, signUpOwner } from "./harness";
 

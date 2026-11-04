@@ -73,6 +73,7 @@ const en = {
     "The store assistant is not available yet. You can browse the catalog and contact the store directly.",
   networkError: "Could not reach the store assistant. Check your connection and try again.",
   genericError: "Something went wrong. Please try again.",
+  historyError: "Could not load the earlier messages.",
   chatWith: "Chat with {store}",
   you: "You: ",
   assistant: "Assistant: ",
@@ -203,6 +204,7 @@ const ru: Record<StringKey, string> = {
   unavailableNotice:
     "Ассистент магазина пока недоступен. Вы можете смотреть каталог и связаться с магазином напрямую.",
   networkError: "Не удалось связаться с ассистентом. Проверьте соединение и повторите.",
+  historyError: "Не удалось загрузить предыдущие сообщения.",
   genericError: "Что-то пошло не так. Попробуйте ещё раз.",
   chatWith: "Чат с магазином {store}",
   you: "Вы: ",
@@ -331,6 +333,7 @@ const kk: Record<StringKey, string> = {
   unavailableNotice:
     "Дүкен көмекшісі әзірге қолжетімсіз. Каталогты қарап, дүкенмен тікелей байланыса аласыз.",
   networkError: "Көмекшімен байланысу мүмкін болмады. Байланысты тексеріп, қайталаңыз.",
+  historyError: "Алдыңғы хабарламалар жүктелмеді.",
   genericError: "Бірдеңе дұрыс болмады. Қайтадан көріңіз.",
   chatWith: "{store} дүкенімен чат",
   you: "Сіз: ",

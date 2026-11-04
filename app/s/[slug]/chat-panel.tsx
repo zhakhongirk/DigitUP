@@ -389,6 +389,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);
   const [draft, setDraft] = useState("");
   const [fallback, setFallback] = useState(false);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
   const sendingRef = useRef(false);
   const lastMessageRef = useRef("");
   const endRef = useRef<HTMLDivElement>(null);
@@ -426,7 +427,7 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
       }
     })();
     return () => controller.abort();
-  }, [base]);
+  }, [base, historyAttempt]);
 
   const loaded = state.loaded;
   useEffect(() => {
@@ -723,6 +724,18 @@ export function ChatPanel({ slug, storeName, lang: uiLang }: Props) {
                 {t(uiLang, "tryAgain")}
               </button>
             ) : null}
+          </p>
+        ) : null}
+        {state.historyFailed ? (
+          <p className="chat-error" role="alert">
+            <span>{t(uiLang, "historyError")}</span>
+            <button
+              type="button"
+              className="chat-link"
+              onClick={() => setHistoryAttempt((n) => n + 1)}
+            >
+              {t(uiLang, "tryAgain")}
+            </button>
           </p>
         ) : null}
         <div ref={endRef} />

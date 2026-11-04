@@ -409,3 +409,17 @@ describe("errorMessage", () => {
     expect(await errorMessage(new Response("nope", { status: 500 }), texts)).toBe("generic");
   });
 });
+
+describe("history loading failure", () => {
+  it("marks the history as failed, then clears it on a successful reload", () => {
+    const failed = run([{ type: "history_failed" }]);
+    expect(failed.loaded).toBe(true);
+    expect(failed.historyFailed).toBe(true);
+    const reloaded = run(
+      [{ type: "history_loaded", available: true, messages: [{ role: "user", content: "Hi" }] }],
+      failed,
+    );
+    expect(reloaded.historyFailed).toBe(false);
+    expect(reloaded.items).toHaveLength(1);
+  });
+});
