@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   logging: { browserToTerminal: false },
   images: {
     formats: ["image/avif", "image/webp"],
-    localPatterns: [{ pathname: "/demo/**" }],
+    localPatterns: [{ pathname: "/demo/**" }, { pathname: "/s/*/photo/**" }],
   },
 };
 
