@@ -117,6 +117,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
 
   async function complete(params: ChatCompletionCreateParamsNonStreaming, request: LlmChatRequest) {
     let completion: ChatCompletion;
+    const startedAt = Date.now();
     try {
       completion = await completions.create({ ...params, ...reasoningParams });
     } catch (error) {
@@ -155,6 +156,7 @@ export function createLlmClient(options: LlmClientOptions): LlmClient {
           ...request.usageSource,
           model,
           ...(options.tier ? { tier: options.tier } : {}),
+          ms: Date.now() - startedAt,
           inputTokens: usage.promptTokens,
           outputTokens: usage.completionTokens,
           cachedTokens: usage.cachedTokens ?? null,

@@ -429,6 +429,10 @@ export const llmUsage = pgTable(
     inputTokens: integer("input_tokens").notNull(),
     outputTokens: integer("output_tokens").notNull(),
     cachedTokens: integer("cached_tokens"),
+    /** Wall-clock time of the model call. */
+    ms: integer("ms"),
+    /** How the call was used: loop, fast_path, rewrite or fallback. */
+    path: text("path").notNull().default("loop"),
     createdAt: createdAt(),
   },
   (t) => [index("llm_usage_tenant_created_idx").on(t.tenantId, t.createdAt)],
@@ -452,6 +456,8 @@ export const intentEvents = pgTable(
     verdict: text("verdict"),
     comment: text("comment"),
     afterIntentId: uuid("after_intent_id"),
+    /** The fast model's reading of the phrase, computed after the answer was sent. */
+    rewrite: jsonb("rewrite"),
     createdAt: createdAt(),
   },
   (t) => [

@@ -6,6 +6,7 @@ import { createTokenBudget, type TokenBudget } from "./budget";
 import { createUsageRecorder } from "./usage";
 
 export * from "./types";
+export { createUsageRecorder } from "./usage";
 export { createLlmClient, createOpenAiCompatibleClient } from "./client";
 export {
   isLlmConfigured,

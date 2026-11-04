@@ -118,7 +118,6 @@ export async function findOffersView(
     on_request: onRequest.map((row) => offerRow(row, store)),
     unresolved: result.unresolved,
     ...(result.interpreted.length > 0 ? { interpreted: result.interpreted } : {}),
-    ...(result.interpretedBy ? { interpreted_by: result.interpretedBy } : {}),
     raw_hint: {
       tool: "search_offers",
       arguments: result.search,

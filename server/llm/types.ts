@@ -35,16 +35,22 @@ export type LlmTier = "main" | "fast" | "heavy";
 export type LlmSurface =
   "storefront_chat" | "public_mcp" | "owner_agent" | "intent_rewrite" | "onboarding";
 
+/** How a model call was used: the agent loop, the single-call chat reply, the intent rewrite, or the rule-based fallback. */
+export type LlmPath = "loop" | "fast_path" | "rewrite" | "fallback";
+
 /** Who a model call is made for; used to attribute token usage. */
 export interface LlmUsageSource {
   tenantId: string;
   apiKeyId?: string | null;
   surface: LlmSurface;
+  path?: LlmPath;
 }
 
 export interface LlmUsageRecord extends LlmUsageSource {
   model: string;
   tier?: LlmTier;
+  /** Wall-clock time of the call in milliseconds. */
+  ms?: number;
   inputTokens: number;
   outputTokens: number;
   cachedTokens: number | null;

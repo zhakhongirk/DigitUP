@@ -6,8 +6,9 @@ import type { TextLang } from "@/shared/text-lang";
 import { recordAudit } from "../audit";
 import { buildGroups, type CatalogService, type OfferView } from "../catalog";
 import { ServiceError, type TenantContext } from "../context";
-import { planIntent } from "./plan";
-import { planRewrite, type IntentInterpreter } from "./rewrite";
+import { planIntent, type Plan } from "./plan";
+import { log } from "@/server/log";
+import { planRewrite, type IntentInterpreter, type Rewrite } from "./rewrite";
 import { executePlan, type Execution, type IntentResult, type SearchArguments } from "./resolve";
 import { backfillVocabularies, loadVocabulary, refreshVocabulary } from "./store";
 import { summarize } from "./summary";
@@ -74,6 +75,8 @@ export interface IntentService {
     report: { intentId: string; verdict: Verdict; comment?: string },
   ): Promise<{ intentId: string; verdict: Verdict }>;
   stats(ctx: TenantContext, options?: { days?: number; now?: Date }): Promise<IntentStats>;
+  /** Resolves once the background rewrites started so far have been logged. */
+  settled(): Promise<void>;
 }
 
 /** One id per product: the variant a card for the group would lead with. */
@@ -92,10 +95,63 @@ export function createIntentService({
 }: {
   db: Db;
   catalog: Pick<CatalogService, "searchOffers" | "recordSearchMiss">;
-  /** Tried once when the deterministic plan leaves words unresolved or finds nothing. */
+  /**
+   * Tried once after the answer is sent when the deterministic plan leaves words unresolved or
+   * finds nothing; its reading is logged on the intent event and never delays the answer.
+   */
   interpret?: IntentInterpreter;
 }): IntentService {
+  const background = new Set<Promise<void>>();
+
+  function logRewrite(task: {
+    ctx: TenantContext;
+    intentId: string;
+    text: string;
+    lang?: TextLang;
+    vocabulary: StoreVocabulary;
+    plan: Plan;
+    baseline: Execution;
+    search: (args: SearchArguments) => ReturnType<CatalogService["searchOffers"]>;
+  }): void {
+    if (!interpret) return;
+    const { ctx, intentId, text, lang, vocabulary, plan, baseline, search } = task;
+    const run = (async () => {
+      const startedAt = Date.now();
+      let reading: Rewrite | null = null;
+      let found = 0;
+      try {
+        reading = await interpret(ctx, { text, lang, vocabulary });
+        if (reading) {
+          const second = await executePlan(planRewrite(plan, reading, vocabulary, lang), search);
+          found = second.total + second.onRequestTotal;
+        }
+      } catch (error) {
+        log.warn("intent.rewrite_failed", { error });
+      }
+      const before = baseline.total + baseline.onRequestTotal;
+      await db
+        .update(intentEvents)
+        .set({
+          rewrite: {
+            reading,
+            ms: Date.now() - startedAt,
+            foundBefore: before,
+            foundAfter: found,
+            better: reading !== null && found > before,
+          },
+        })
+        .where(eq(intentEvents.id, intentId));
+    })()
+      .catch((error: unknown) => log.warn("intent.rewrite_log_failed", { error }))
+      .finally(() => background.delete(run));
+    background.add(run);
+  }
+
   return {
+    async settled() {
+      while (background.size > 0) await Promise.all([...background]);
+    },
+
     async resolveIntent(ctx, input) {
       const text = input.text.trim().slice(0, 1000);
       const vocabulary = await loadVocabulary(db, ctx.tenantId);
@@ -111,33 +167,13 @@ export function createIntentService({
           limit: args.limit,
           offset: args.offset,
         });
-      let execution: Execution = await executePlan(plan, search);
-      let interpretedBy: IntentResult["interpretedBy"];
+      const execution: Execution = await executePlan(plan, search);
 
       const found = (e: Execution) => e.total + e.onRequestTotal;
       const needsReading =
         found(execution) === 0 || execution.unresolved.some((u) => u.startsWith("unknown word"));
-      if (interpret && text && needsReading) {
-        const rewrite = await interpret(ctx, { text, lang: input.lang, vocabulary });
-        if (rewrite) {
-          const second = await executePlan(
-            planRewrite(plan, rewrite, vocabulary, input.lang),
-            search,
-          );
-          const better =
-            found(second) > found(execution) ||
-            (found(second) > 0 &&
-              found(second) === found(execution) &&
-              second.unresolved.length < execution.unresolved.length);
-          if (better) {
-            execution = second;
-            interpretedBy = "fast_model";
-          }
-        }
-      }
       const result: IntentResult = {
         ...execution,
-        ...(interpretedBy ? { interpretedBy } : {}),
         intentId: randomUUID(),
         summary: summarize(execution),
       };
@@ -158,6 +194,18 @@ export function createIntentService({
           relaxed: result.relaxed,
           resultIds: leadIds([...result.offers, ...result.onRequest].map((m) => m.offer)),
         });
+        if (interpret && needsReading) {
+          logRewrite({
+            ctx,
+            intentId: result.intentId,
+            text,
+            lang: input.lang,
+            vocabulary,
+            plan,
+            baseline: execution,
+            search,
+          });
+        }
       }
       return result;
     },

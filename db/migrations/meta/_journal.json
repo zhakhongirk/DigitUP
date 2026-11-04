@@ -99,6 +99,13 @@
       "when": 1793790559859,
       "tag": "0013_offer_model",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793793732553,
+      "tag": "0014_usage_path_and_rewrite",
+      "breakpoints": true
     }
   ]
 }

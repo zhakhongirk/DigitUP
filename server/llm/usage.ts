@@ -15,6 +15,8 @@ export function createUsageRecorder(db: () => Db) {
         inputTokens: record.inputTokens,
         outputTokens: record.outputTokens,
         cachedTokens: record.cachedTokens,
+        ms: record.ms ?? null,
+        path: record.path ?? (record.surface === "intent_rewrite" ? "rewrite" : "loop"),
       });
   };
 }

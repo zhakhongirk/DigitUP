@@ -70,6 +70,7 @@ describe("usage reported by the client", () => {
         inputTokens: 120,
         outputTokens: 30,
         cachedTokens: 100,
+        ms: expect.any(Number),
       },
     ]);
   });
@@ -178,6 +179,27 @@ describe("llm_usage table", () => {
     expect(rows.map((r) => [r.surface, r.tier]).sort()).toEqual([
       ["intent_rewrite", "fast"],
       ["storefront_chat", "main"],
+    ]);
+  });
+
+  it("stores the duration and the path, defaulting the path from the surface", async () => {
+    const ctx = await createTestTenant();
+    const record = createUsageRecorder(() => testDb());
+    const base = {
+      tenantId: ctx.tenantId,
+      model: "m",
+      inputTokens: 1,
+      outputTokens: 1,
+      cachedTokens: null,
+    };
+    await record({ ...base, surface: "intent_rewrite", ms: 120 });
+    await record({ ...base, surface: "storefront_chat", path: "fast_path", ms: 800 });
+    await record({ ...base, surface: "storefront_chat" });
+    const rows = await testDb().select().from(llmUsage).where(eq(llmUsage.tenantId, ctx.tenantId));
+    expect(rows.map((r) => [r.surface, r.path, r.ms]).sort()).toEqual([
+      ["intent_rewrite", "rewrite", 120],
+      ["storefront_chat", "fast_path", 800],
+      ["storefront_chat", "loop", null],
     ]);
   });
 
