@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { describeChangeSet, offerIdsOf, parseOps, summarize } from "@/server/owner/changes";
+import {
+  describeChangeSet,
+  offerIdsOf,
+  parseOps,
+  summarize,
+  toUnits,
+} from "@/server/owner/changes";
 import type { ChangeSet, ChangeSetOp } from "@/server/services/approvals";
 
 const T0 = new Date("2026-11-02T09:00:00Z");
@@ -7,7 +13,13 @@ const A = "00000000-0000-4000-8000-000000000001";
 const B = "00000000-0000-4000-8000-000000000002";
 const C = "00000000-0000-4000-8000-000000000003";
 
-type OfferInfo = { title: string; price: number | null; currency: string; status: "active" };
+type OfferInfo = {
+  title: string;
+  price: number | null;
+  currency: string;
+  status: "active";
+  model?: string | null;
+};
 
 function offers(entries: [string, Partial<OfferInfo>][]) {
   return new Map(
@@ -232,5 +244,56 @@ describe("describeChangeSet: resolved and invalid", () => {
       groups: [],
       summary: "Unreadable approval request",
     });
+  });
+});
+
+describe("model rows", () => {
+  const view = () =>
+    describeChangeSet(
+      changeSet(
+        prices(
+          { offerId: A, price: 60000 },
+          { offerId: B, price: 60000 },
+          { offerId: C, price: 20000 },
+        ),
+      ),
+      offers([
+        [A, { title: "Boots 41", model: "Boots" }],
+        [B, { title: "Boots 42", model: "Boots" }],
+        [C, { title: "Cap", price: 10000 }],
+      ]),
+    );
+
+  it("folds the sizes of one model into a single unit", () => {
+    const units = toUnits(view().groups[0]!.rows, "Varies");
+    expect(units).toHaveLength(2);
+    expect(units[0]).toMatchObject({
+      model: "Boots",
+      before: expect.stringContaining("50"),
+      after: expect.stringContaining("60"),
+      delta: expect.stringContaining("+20"),
+      flagged: true,
+    });
+    expect(units[0]!.rows.map((row) => row.key)).toEqual(["0:0", "0:1"]);
+    expect(units[1]).toMatchObject({ model: null, flagged: true });
+  });
+
+  it("marks values that differ between sizes", () => {
+    const rows = describeChangeSet(
+      changeSet(prices({ offerId: A, price: 55000 }, { offerId: B, price: 60000 })),
+      offers([
+        [A, { title: "Boots 41", model: "Boots" }],
+        [B, { title: "Boots 42", model: "Boots" }],
+      ]),
+    ).groups[0]!.rows;
+    expect(toUnits(rows, "Varies")[0]).toMatchObject({ after: "Varies", delta: "Varies" });
+  });
+
+  it("keeps a lone size of a model as a plain row", () => {
+    const rows = describeChangeSet(
+      changeSet(prices({ offerId: A, price: 55000 })),
+      offers([[A, { title: "Boots 41", model: "Boots" }]]),
+    ).groups[0]!.rows;
+    expect(toUnits(rows, "Varies")).toMatchObject([{ model: null }]);
   });
 });

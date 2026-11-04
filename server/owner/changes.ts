@@ -39,6 +39,59 @@ export interface ChangeRow {
   after: string;
   delta: string | null;
   flagged: boolean;
+  model: string | null;
+}
+
+export interface ChangeUnit {
+  /** Set when several rows of one model are shown as a single expandable row. */
+  model: string | null;
+  rows: ChangeRow[];
+  before: string | null;
+  after: string;
+  delta: string | null;
+  flagged: boolean;
+}
+
+function shared(values: (string | null)[], varies: string): string | null {
+  const distinct = [...new Set(values)];
+  return distinct.length === 1 ? distinct[0]! : varies;
+}
+
+/** Folds the rows of one model into a single unit; other rows stay on their own. */
+export function toUnits(rows: ChangeRow[], varies: string): ChangeUnit[] {
+  const byModel = new Map<string, ChangeRow[]>();
+  for (const row of rows) {
+    if (row.model) byModel.set(row.model, [...(byModel.get(row.model) ?? []), row]);
+  }
+  const units: ChangeUnit[] = [];
+  const done = new Set<string>();
+  for (const row of rows) {
+    const family = row.model ? byModel.get(row.model)! : [];
+    if (!row.model || family.length < 2) {
+      units.push({ ...row, model: null, rows: [row] });
+      continue;
+    }
+    if (done.has(row.model)) continue;
+    done.add(row.model);
+    units.push({
+      model: row.model,
+      rows: family,
+      before: shared(
+        family.map((r) => r.before),
+        varies,
+      ),
+      after: shared(
+        family.map((r) => r.after),
+        varies,
+      )!,
+      delta: shared(
+        family.map((r) => r.delta),
+        varies,
+      ),
+      flagged: family.some((r) => r.flagged),
+    });
+  }
+  return units;
 }
 
 export interface ChangeGroup {
@@ -127,7 +180,10 @@ export function summarize(ops: ChangeSetOp[], lang: Lang = "en"): string {
  */
 export function describeChangeSet(
   changeSet: ChangeSet,
-  offers: ReadonlyMap<string, Pick<OfferView, "title" | "price" | "currency" | "status">>,
+  offers: ReadonlyMap<
+    string,
+    Pick<OfferView, "title" | "price" | "currency" | "status"> & { model?: string | null }
+  >,
   lang: Lang = "en",
 ): ChangeSetView {
   const ops = parseOps(changeSet.ops);
@@ -152,6 +208,7 @@ export function describeChangeSet(
           after: priceText(item.price, currency, lang),
           delta: change.text,
           flagged: change.big,
+          model: offer?.model ?? null,
         });
       }
     } else if (op.op === "delete_offers") {
@@ -164,6 +221,7 @@ export function describeChangeSet(
           after: tr(lang, "ap.removed"),
           delta: null,
           flagged: false,
+          model: offer?.model ?? null,
         });
       }
     } else {
@@ -184,6 +242,7 @@ export function describeChangeSet(
           after: priceText(price, item.currency ?? existing?.currency, lang),
           delta: change.text,
           flagged: change.big,
+          model: existing?.model ?? null,
         });
       }
     }
