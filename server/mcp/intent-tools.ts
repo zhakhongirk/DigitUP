@@ -8,6 +8,7 @@ import type {
   MatchedOffer,
 } from "@/server/services/intent";
 import { VERDICTS } from "@/server/services/intent";
+import type { SearchLogger } from "./search-log";
 import { runTool } from "./tools";
 import { listGroup } from "./views";
 import type { CatalogService, OfferGroup } from "@/server/services/catalog";
@@ -20,6 +21,7 @@ export interface IntentToolsOptions {
   /** Who is calling; binds the session when the server, not the model, knows it. */
   track: IntentTracking;
   store?: { slug: string; baseUrl?: string };
+  logSearch?: SearchLogger;
 }
 
 export const INTENT_TOOLS = ["find_offers", "report_answer"] as const;
@@ -129,7 +131,7 @@ export async function findOffersView(
 /** find_offers and report_answer: the intent layer as MCP tools. */
 export function registerIntentTools(
   server: McpServer,
-  { ctx, intent, catalog, track, store }: IntentToolsOptions,
+  { ctx, intent, catalog, track, store, logSearch }: IntentToolsOptions,
 ): void {
   server.registerTool(
     "find_offers",
@@ -166,7 +168,12 @@ export function registerIntentTools(
           sessionKey: track.sessionKey ?? session_id,
           track: { ...track, sessionKey: track.sessionKey ?? session_id },
         });
-        return findOffersView(result, store, catalog, ctx);
+        const view = await findOffersView(result, store, catalog, ctx);
+        await logSearch?.(
+          { query: text, titles: view.offers.map((o) => o.title), total: view.offers.length },
+          session_id,
+        );
+        return view;
       }),
   );
 

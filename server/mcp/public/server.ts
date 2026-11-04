@@ -11,6 +11,7 @@ import type { TenantContext } from "@/server/services/context";
 import type { IntentTracking } from "@/server/services/intent";
 import { registerRawTools } from "../customer/raw-tools";
 import { registerIntentTools } from "../intent-tools";
+import { conversationSearchLogger } from "../search-log";
 import { errorResult, jsonResult } from "../tools";
 
 /** Read-only catalog tools are open on the public endpoint unless PUBLIC_RAW_TOOLS is "0". */
@@ -22,7 +23,7 @@ export interface PublicMcpOptions {
   ctx: TenantContext;
   storeName: string;
   agent: CustomerAgent;
-  services: Pick<Services, "catalog" | "intent">;
+  services: Pick<Services, "catalog" | "intent" | "conversations">;
   store?: { slug: string; baseUrl?: string };
   /** Identifies the calling client for the limit on submitted orders and inquiries. */
   clientKey?: string;
@@ -47,17 +48,22 @@ export function createPublicMcpServer({
   );
 
   const track: IntentTracking = { channel: "external_agent", clientKey };
+  const logSearch = conversationSearchLogger(services.conversations, ctx, {
+    fallbackKey: clientKey,
+  });
   registerIntentTools(server, {
     ctx,
     intent: services.intent,
     catalog: services.catalog,
     track,
     store,
+    logSearch,
   });
   if (publicRawToolsEnabled()) {
     registerRawTools(server, {
       ctx,
       catalog: services.catalog,
+      logSearch,
       track: async (tool, args, resultIds) => {
         await services.intent
           .recordRawCall(ctx, { tool, args, resultIds, track })

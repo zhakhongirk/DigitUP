@@ -4,6 +4,7 @@ import type { CatalogService } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 import type { RawTool } from "@/server/services/intent";
 import { attributeValueSchema } from "@/shared/business-model";
+import type { SearchLogger } from "../search-log";
 import { runTool } from "../tools";
 import { listGroup, priceLabel, publicModel, publicOffer } from "../views";
 
@@ -22,12 +23,13 @@ export interface RawToolsOptions {
   >;
   /** Called after each tool returns; used to measure raw calls that follow find_offers. */
   track?: RawCallTracker;
+  logSearch?: SearchLogger;
 }
 
 /** The read-only catalog tools shared by the keyed customer endpoint and the public endpoint. */
 export function registerRawTools(
   server: McpServer,
-  { ctx, catalog, track }: RawToolsOptions,
+  { ctx, catalog, track, logSearch }: RawToolsOptions,
 ): void {
   server.registerTool(
     "search_offers",
@@ -76,6 +78,13 @@ export function registerRawTools(
           args,
           found.map((o) => o.offer_id),
         );
+        if (args.query?.trim()) {
+          await logSearch?.({
+            query: args.query,
+            titles: found.map((o) => o.title),
+            total: result.total,
+          });
+        }
         return {
           total: result.total,
           offers: found,

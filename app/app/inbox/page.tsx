@@ -6,6 +6,7 @@ import {
   INBOX_FILTERS,
   bucketLabel,
   formatWhen,
+  loadAgentChats,
   loadInbox,
   parseFilter,
   parseCursor,
@@ -210,10 +211,14 @@ export default async function InboxPage({
   if (!owner) redirect("/signin?next=/app/inbox");
   const { t, lang } = tr;
 
+  const chatsMode = params.filter === "chats";
+  const chatsView = chatsMode
+    ? await loadAgentChats(services, owner, { selected: selectedKey })
+    : null;
   const view = await loadInbox(services, owner, {
     lang,
-    filter,
-    selected: selectedKey,
+    filter: chatsMode ? "all" : filter,
+    selected: chatsMode ? undefined : selectedKey,
     page: requestedPage,
     search,
     before,
@@ -230,7 +235,7 @@ export default async function InboxPage({
             <Link
               key={f}
               href={href(f, undefined, null, 1, search)}
-              aria-current={f === filter ? "page" : undefined}
+              aria-current={f === filter && !chatsMode ? "page" : undefined}
             >
               {f === "all" ? t("ib.all") : bucketLabel(lang, f)}
               {f !== "all" && view.counts[f] > 0 ? (
@@ -238,10 +243,62 @@ export default async function InboxPage({
               ) : null}
             </Link>
           ))}
+          <Link href="/app/inbox?filter=chats" aria-current={chatsMode ? "page" : undefined}>
+            {t("ib.agentChats")}
+          </Link>
         </div>
       </div>
 
-      {view.counts.all === 0 ? (
+      {chatsView ? (
+        <div className="ib-grid" data-view={selectedKey ? "detail" : "list"}>
+          <div className="ib-list glass">
+            {chatsView.chats.length === 0 ? (
+              <p className="ib-list-empty">{t("ib.noAgentChats")}</p>
+            ) : (
+              chatsView.chats.map((chat) => (
+                <Link
+                  key={chat.id}
+                  href={`/app/inbox?filter=chats&item=${chat.id}#detail`}
+                  className="ib-item"
+                  aria-current={chat.id === chatsView.selected ? "true" : undefined}
+                >
+                  <span className="ib-item-row">
+                    <b>{t("common.externalAgent")}</b>
+                    <span className="ib-when">{formatWhen(chat.at, now, undefined, lang)}</span>
+                  </span>
+                  <span className="ib-item-row">
+                    <span>{t("ib.agentMessages", { n: chat.messageCount })}</span>
+                  </span>
+                  <span className="ib-preview">{chat.firstLine}</span>
+                </Link>
+              ))
+            )}
+          </div>
+          {chatsView.selected ? (
+            <section id="detail" className="ib-detail glass" aria-label={t("ib.conversation")}>
+              <header className="ib-detail-head">
+                <Link className="btn btn-secondary btn-sm ib-back" href="/app/inbox?filter=chats">
+                  {t("ib.back")}
+                </Link>
+              </header>
+              <div className="ib-detail-body">
+                <div className="ib-conv" aria-label={t("ib.conversation")}>
+                  {chatsView.conversation.map((line) => (
+                    <div key={line.id} className={`ib-msg ib-msg-${line.from}`}>
+                      <span className="ib-msg-who">
+                        {line.from === "customer"
+                          ? t("common.externalAgent")
+                          : t("ib.storeAssistant")}
+                      </span>
+                      <p>{line.text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : view.counts.all === 0 ? (
         <section className="ib-empty glass">
           <h2>{t("ib.emptyTitle")}</h2>
           <p>{t("ib.emptyBody")}</p>

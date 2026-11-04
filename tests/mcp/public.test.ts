@@ -224,4 +224,22 @@ describe("public MCP endpoint", () => {
     }
     expect(await services.orders.listOrders(ctx)).toHaveLength(0);
   });
+
+  it("logs find_offers by session id into an external agent conversation", async () => {
+    const ctx = await liveStore();
+    const res = await publicCall(
+      ctx.slug,
+      callBody("find_offers", { intent: "runner", session_id: SESSION }),
+      null,
+    );
+    expect(failed(await rpc(res))).toBe(false);
+    const chats = await services.conversations.list(ctx, {
+      channel: "external_agent",
+      sessionKey: SESSION,
+    });
+    expect(chats).toHaveLength(1);
+    const messages = await services.conversations.listMessages(ctx, chats[0]!.id);
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(messages[1]?.content).toContain("Runner");
+  });
 });

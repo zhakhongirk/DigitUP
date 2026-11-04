@@ -615,3 +615,54 @@ export async function livePulse(
     }));
   return { inbox, changes, now, items };
 }
+
+export interface AgentChat {
+  id: string;
+  at: Date;
+  firstLine: string;
+  messageCount: number;
+}
+
+export interface AgentChatsView {
+  chats: AgentChat[];
+  selected: string | null;
+  conversation: TranscriptLine[];
+}
+
+const AGENT_CHAT_LIMIT = 50;
+
+/** Conversations of outside AI agents, newest first, with the transcript of the selected one. */
+export async function loadAgentChats(
+  services: Services,
+  ctx: TenantContext,
+  options: { selected?: string } = {},
+): Promise<AgentChatsView> {
+  const found = await services.conversations.list(ctx, {
+    agent: "customer",
+    channel: "external_agent",
+    limit: AGENT_CHAT_LIMIT,
+  });
+  const withMessages = await Promise.all(
+    found.map(async (conversation) => {
+      const messages = await services.conversations
+        .listMessages(ctx, conversation.id, { limit: 100 })
+        .catch(() => []);
+      return { conversation, messages };
+    }),
+  );
+  const chats = withMessages
+    .filter(({ messages }) => transcript(messages).length > 0)
+    .map(({ conversation, messages }): AgentChat => {
+      const lines = transcript(messages);
+      return {
+        id: conversation.id,
+        at: messages[messages.length - 1]?.createdAt ?? conversation.createdAt,
+        firstLine: lines[0]?.text ?? "",
+        messageCount: lines.length,
+      };
+    })
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+  const selected = chats.find((chat) => chat.id === options.selected)?.id ?? chats[0]?.id ?? null;
+  const picked = withMessages.find(({ conversation }) => conversation.id === selected);
+  return { chats, selected, conversation: picked ? transcript(picked.messages) : [] };
+}

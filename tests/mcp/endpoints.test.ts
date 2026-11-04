@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { loadAgentChats } from "@/server/owner/inbox";
 import { handleBusinessMcp, handleCustomerMcp } from "@/server/mcp/endpoints";
 import { CUSTOMER_TOOLS, WEBHOOK_TOOLS } from "@/server/mcp/customer/server";
 import type { BusinessModelInput } from "@/shared/business-model";
@@ -148,10 +149,56 @@ describe("customer MCP endpoint", () => {
     return JSON.parse(text) as { order_id: string; source: string };
   }
 
-  it("stores orders from the storefront channel by default", async () => {
+  it("stores orders from the storefront channel when the header says so", async () => {
+    const store = await newStore();
+    const order = await placeOrder(store, { "x-storefront-channel": "storefront" });
+    expect(order.source).toBe("storefront");
+  });
+
+  it("defaults API key callers to the external_agent source and links the order to a chat", async () => {
     const store = await newStore();
     const order = await placeOrder(store);
-    expect(order.source).toBe("storefront");
+    expect(order.source).toBe("external_agent");
+    const stored = await services.orders.getOrder(
+      { ...store.owner, actor: "owner" },
+      order.order_id,
+    );
+    expect(stored?.conversationId).toBeTruthy();
+    const chat = await services.conversations.get(store.owner, stored!.conversationId!);
+    expect(chat).toMatchObject({ channel: "external_agent", agent: "customer" });
+  });
+
+  it("logs find_offers into the key's conversation", async () => {
+    const store = await newStore();
+    await customer(
+      store.owner.slug,
+      callBody("find_offers", { intent: "runner" }),
+      auth(store.customerKey),
+    );
+    const chats = await services.conversations.list(store.owner, { channel: "external_agent" });
+    expect(chats).toHaveLength(1);
+    const messages = await services.conversations.listMessages(store.owner, chats[0]!.id);
+    expect(messages.map((m) => [m.role, m.content])).toEqual([
+      ["user", "runner"],
+      ["assistant", "Found 1 offer: Runner"],
+    ]);
+    const view = await loadAgentChats(services, store.owner);
+    expect(view.chats).toHaveLength(1);
+    expect(view.chats[0]).toMatchObject({ firstLine: "runner", messageCount: 2 });
+    expect(view.conversation.map((l) => l.from)).toEqual(["customer", "assistant"]);
+  });
+
+  it("does not fail find_offers when logging fails", async () => {
+    const store = await newStore();
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(services.conversations, "appendMessages").mockRejectedValue(new Error("down"));
+    const response = await customer(
+      store.owner.slug,
+      callBody("find_offers", { intent: "runner" }),
+      auth(store.customerKey),
+    );
+    expect((await toolText(response)).isError).toBe(false);
+    vi.restoreAllMocks();
   });
 
   it("stores the external_agent channel as the order source", async () => {

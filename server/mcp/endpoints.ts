@@ -17,6 +17,7 @@ import type { TenantContext } from "@/server/services/context";
 import { createBusinessMcpServer } from "./business/server";
 import { createCustomerMcpServer } from "./customer/server";
 import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
+import { conversationSearchLogger } from "./search-log";
 import { createPublicMcpServer } from "./public/server";
 
 function baseUrlOf(request: Request): string {
@@ -93,20 +94,41 @@ export async function handleCustomerMcp(
   if (limited) return limited;
 
   const channel = request.headers.get("x-storefront-channel");
-  const conversationId = request.headers.get("x-conversation-id") ?? undefined;
-  if (conversationId !== undefined && !UUID.test(conversationId)) {
+  const headerConversation = request.headers.get("x-conversation-id") ?? undefined;
+  if (headerConversation !== undefined && !UUID.test(headerConversation)) {
     return jsonRpcError(400, "Invalid conversation id");
+  }
+  const byKey = resolved.apiKeyId !== undefined;
+  let conversationId = headerConversation;
+  if (byKey && !conversationId) {
+    conversationId = await services.conversations
+      .getOrCreate(resolved.ctx, {
+        agent: "customer",
+        channel: "external_agent",
+        sessionKey: `key:${resolved.apiKeyId}`,
+      })
+      .then((conversation) => conversation.id)
+      .catch((error) => {
+        console.error("[mcp] could not open agent conversation", error);
+        return undefined;
+      });
   }
 
   const server = createCustomerMcpServer({
     ctx: resolved.ctx,
     services,
-    source: channel === "external_agent" ? "external_agent" : "storefront",
+    source:
+      channel === "external_agent" || (byKey && channel !== "storefront")
+        ? "external_agent"
+        : "storefront",
     tracking: {
       channel: "external_agent",
       clientKey: resolved.apiKeyId ? `key:${resolved.apiKeyId}` : clientIp(request),
     },
     trackRaw: true,
+    logSearch: byKey
+      ? conversationSearchLogger(services.conversations, resolved.ctx, { conversationId })
+      : undefined,
     store: { slug, baseUrl: baseUrlOf(request) },
     conversationId,
     webhooks: services.webhooks,

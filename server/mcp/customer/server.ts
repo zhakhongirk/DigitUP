@@ -19,6 +19,7 @@ import { WebhookUrlError } from "@/server/services/webhooks/guard";
 import type { RateLimitResult } from "@/server/http/rate-limit";
 import type { IntentTracking } from "@/server/services/intent";
 import { registerIntentTools } from "../intent-tools";
+import type { SearchLogger } from "../search-log";
 import { errorResult, runTool } from "../tools";
 import { registerRawTools } from "./raw-tools";
 import { inquiryView, orderView, policiesWithStates } from "../views";
@@ -34,6 +35,8 @@ export interface CustomerMcpOptions {
   tracking?: IntentTracking;
   /** Count raw catalog calls that follow find_offers; set for outside callers only. */
   trackRaw?: boolean;
+  /** Records find_offers and search_offers queries into the caller's conversation. */
+  logSearch?: SearchLogger;
   /** Used to build offer links in find_offers results. */
   store?: { slug: string; baseUrl?: string };
   /** Present only for API-key agents; the storefront chat assistant never manages webhooks. */
@@ -124,10 +127,12 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     catalog,
     track: tracking,
     store: options.store,
+    logSearch: options.logSearch,
   });
   registerRawTools(server, {
     ctx,
     catalog,
+    logSearch: options.logSearch,
     track: options.trackRaw
       ? async (tool, args, resultIds) => {
           await services.intent
