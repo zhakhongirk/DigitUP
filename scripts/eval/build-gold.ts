@@ -1,6 +1,7 @@
 /**
- * Resolves the offer titles in queries.jsonl to offer ids of the seeded stores and copies
- * price, currency, price status and availability from the database. Read-only.
+ * Resolves the offer or model names in queries.jsonl to offer ids of the seeded stores (every
+ * size variant of a model) and copies price, currency, price status and availability from the
+ * database. Read-only.
  *
  *   pnpm eval:gold
  *
@@ -21,7 +22,7 @@ async function main() {
   const handle = createDb(url);
   try {
     const catalog: Record<string, Record<string, Fact & { title: string }>> = {};
-    const idByTitle: Record<string, Map<string, string>> = {};
+    const idsByName: Record<string, Map<string, string[]>> = {};
     const queries = readQueries();
     for (const slug of new Set(queries.map((q) => q.store))) {
       const [tenant] = await handle.db
@@ -34,11 +35,15 @@ async function main() {
         .from(offers)
         .where(and(eq(offers.tenantId, tenant.id), eq(offers.status, "active")));
       catalog[slug] = {};
-      idByTitle[slug] = new Map();
+      const names = new Map<string, string[]>();
+      idsByName[slug] = names;
       for (const row of rows) {
-        idByTitle[slug].set(row.title, row.id);
+        for (const name of new Set([row.title, row.model ?? row.title])) {
+          names.set(name, [...(names.get(name) ?? []), row.id]);
+        }
         catalog[slug][row.id] = {
           title: row.title,
+          model: row.model,
           price: row.priceStatus === "confirmed" ? row.price : null,
           currency: row.priceStatus === "confirmed" ? row.currency : null,
           price_status: row.priceStatus,
@@ -48,12 +53,12 @@ async function main() {
     }
 
     const lines = queries.map((spec) => {
-      const titles = idByTitle[spec.store];
+      const names = idsByName[spec.store];
       const toIds = (list: string[]) =>
-        list.map((title) => {
-          const id = titles?.get(title);
-          if (!id) throw new Error(`${spec.id}: no offer titled "${title}" in ${spec.store}`);
-          return id;
+        list.flatMap((name) => {
+          const ids = names?.get(name);
+          if (!ids) throw new Error(`${spec.id}: no offer or model "${name}" in ${spec.store}`);
+          return ids;
         });
       const must = toIds(spec.must);
       const ok = toIds(spec.ok);

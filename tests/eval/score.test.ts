@@ -273,3 +273,49 @@ describe("aggregate and report", () => {
     expect(toHtml(tables, "Eval")).toContain("<td>ru</td>");
   });
 });
+
+describe("size variants", () => {
+  const sized = (price: number, availability: Fact["availability"], model = "M"): Fact => ({
+    ...fact(price, availability),
+    model,
+  });
+  const variantGold: Gold = {
+    ...gold,
+    must_ids: ["m41", "m42"],
+    ok_ids: [],
+    forbidden_ids: ["f41", "f42"],
+    facts: {
+      m41: sized(40000, "out_of_stock"),
+      m42: sized(42000, "in_stock"),
+      f41: sized(90000, "in_stock", "F"),
+      f42: sized(90000, "in_stock", "F"),
+    },
+  };
+  const ctx = { gold: variantGold };
+
+  it("counts any size of an expected model as a hit and any size of a forbidden one as a miss", () => {
+    const hit = scoreRun(
+      record(answer({ offers: [{ offer_id: "m42", price: 42000, availability: "in_stock" }] })),
+      ctx,
+    );
+    expect(hit.topHit).toBe(true);
+    const bad = scoreRun(
+      record(answer({ offers: [{ offer_id: "f41", price: 90000, availability: null }] })),
+      ctx,
+    );
+    expect(bad.noForbidden).toBe(false);
+    expect(bad.topHit).toBe(false);
+  });
+
+  it("accepts the price or availability of a sibling size of the same model", () => {
+    const lead = { offer_id: "m41", price: 42000, availability: "in_stock" as const };
+    expect(findErrors(answer({ offers: [lead], text: "" }), ctx)).toEqual([]);
+    const wrong = { offer_id: "m41", price: 41000, availability: null };
+    expect(findErrors(answer({ offers: [wrong], text: "" }), ctx)).toContain("wrong_price");
+  });
+
+  it("measures recall by model, not by size", () => {
+    expect(recallAt5(variantGold, ["m41", "m42"])).toBe(1);
+    expect(recallAt5(variantGold, ["f41"])).toBe(0);
+  });
+});

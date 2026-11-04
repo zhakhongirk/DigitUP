@@ -4,6 +4,8 @@ export type ConfigName = "A" | "B" | "C";
 
 export interface Fact {
   title?: string;
+  /** Model the offer is a size variant of; offers without one are their own model. */
+  model?: string | null;
   price: number | null;
   currency: string | null;
   price_status: string;
@@ -194,6 +196,20 @@ function factOf(id: string, { gold, catalog }: ScoreContext): Fact | undefined {
   return gold.facts[id] ?? catalog?.[id];
 }
 
+/** Offers are compared by model: any size of an expected model counts as that model. */
+export function groupKey(id: string, context: ScoreContext): string {
+  const model = factOf(id, context)?.model;
+  return model ? `model:${model}` : id;
+}
+
+function variantFacts(id: string, context: ScoreContext): Fact[] {
+  const fact = factOf(id, context);
+  if (!fact) return [];
+  if (!fact.model) return [fact];
+  const all = { ...context.catalog, ...context.gold.facts };
+  return Object.values(all).filter((other) => other.model === fact.model);
+}
+
 export function findErrors(answer: Answer, context: ScoreContext): ErrorKind[] {
   const { gold, catalog } = context;
   const errors = new Set<ErrorKind>();
@@ -203,13 +219,15 @@ export function findErrors(answer: Answer, context: ScoreContext): ErrorKind[] {
       errors.add("unknown_offer");
       continue;
     }
+    const variants = variantFacts(offer.offer_id, context);
     if (offer.price !== null) {
-      if (fact.price_status !== "confirmed" || fact.price === null) errors.add("price_on_request");
-      else if (offer.price !== fact.price) errors.add("wrong_price");
+      const confirmed = variants.filter((v) => v.price_status === "confirmed" && v.price !== null);
+      if (confirmed.length === 0) errors.add("price_on_request");
+      else if (!confirmed.some((v) => v.price === offer.price)) errors.add("wrong_price");
     }
     if (
       (offer.availability === "in_stock" || offer.availability === "out_of_stock") &&
-      offer.availability !== fact.availability
+      !variants.some((v) => v.availability === offer.availability)
     ) {
       errors.add("wrong_availability");
     }
@@ -229,10 +247,15 @@ export function textMatches(gold: Gold, text: string): boolean {
   return gold.text_any.some((needle) => haystack.includes(normalizeText(needle)));
 }
 
-export function recallAt5(gold: Gold, ids: string[]): number | null {
-  const relevant = new Set([...gold.must_ids, ...gold.ok_ids]);
+export function recallAt5(
+  gold: Gold,
+  ids: string[],
+  catalog?: Record<string, Fact>,
+): number | null {
+  const key = (id: string) => groupKey(id, { gold, catalog });
+  const relevant = new Set([...gold.must_ids, ...gold.ok_ids].map(key));
   if (relevant.size === 0) return null;
-  const top = new Set(ids.slice(0, 5));
+  const top = new Set(ids.slice(0, 5).map(key));
   let hit = 0;
   for (const id of relevant) if (top.has(id)) hit++;
   return hit / Math.min(relevant.size, 5);
@@ -249,10 +272,11 @@ export function scoreRun(record: RunRecord, context: ScoreContext): RunScore {
   const answer = record.answer;
   const ids = answer?.offers.map((o) => o.offer_id) ?? [];
   const errors = answer ? findErrors(answer, context) : [];
-  const forbidden = new Set(gold.forbidden_ids);
-  const topHit =
-    gold.must_ids.length === 0 || ids.slice(0, 3).some((id) => gold.must_ids.includes(id));
-  const noForbidden = !ids.some((id) => forbidden.has(id));
+  const key = (id: string) => groupKey(id, context);
+  const forbidden = new Set(gold.forbidden_ids.map(key));
+  const must = new Set(gold.must_ids.map(key));
+  const topHit = must.size === 0 || ids.slice(0, 3).some((id) => must.has(key(id)));
+  const noForbidden = !ids.some((id) => forbidden.has(key(id)));
   const factsOk = errors.every((e) => e === "not_found");
   const actionOk = answer?.action === gold.expected_action;
   const textOk = answer ? textMatches(gold, answer.text) : false;
@@ -278,7 +302,7 @@ export function scoreRun(record: RunRecord, context: ScoreContext): RunScore {
     textOk,
     confidentError,
     errors,
-    recallAt5: answer ? recallAt5(gold, ids) : recallAt5(gold, []),
+    recallAt5: recallAt5(gold, ids, context.catalog),
     expectedAction: gold.expected_action,
     closed,
     handedOver,

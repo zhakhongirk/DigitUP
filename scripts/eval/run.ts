@@ -47,6 +47,7 @@ When you are done, reply with one JSON object and nothing else:
 - action "answer": the tool results are enough to answer the customer.
 - action "inquiry": the customer needs something only the store can confirm (a price on request, unknown availability, a discount or a special request), so a message must be sent to the store.
 - action "clarify": the request is too vague to search and you need to ask the customer a question.
+- Offers with several sizes are grouped by model. Use the offer_id of the size the customer asked for (variant_ids or variants), or the listed offer_id when no size was asked, and quote that offer's price.
 - offers: the best offers first, at most 5. Put a price or availability in an offer only when a tool returned it, otherwise null. Use [] when no offer is relevant.`;
 }
 
