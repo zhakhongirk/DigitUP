@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useT } from "@/app/i18n-provider";
+import { useLiveCounts } from "./live";
 import type { TextKey } from "@/shared/owner-copy";
 import { canAccessPath, type UserRole } from "@/shared/staff-access";
 
@@ -36,16 +37,9 @@ const SECTIONS = [
   }[];
 }[];
 
-export function SideNav({
-  slug,
-  counts,
-  role,
-}: {
-  slug: string;
-  role: UserRole;
-  counts: { inbox: number; changes: number };
-}) {
+export function SideNav({ slug, role }: { slug: string; role: UserRole }) {
   const { t } = useT();
+  const counts = useLiveCounts();
   const path = usePathname();
   const root = useRef<HTMLDivElement>(null);
   useEffect(() => {

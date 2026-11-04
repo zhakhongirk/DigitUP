@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { actionLabel, auditChange } from "@/server/owner/audit";
 import {
   buildInbox,
+  livePulse,
+  nightLabel,
   countBuckets,
   formatWhen,
   bucketCounts,
@@ -350,5 +352,68 @@ describe("inbox paging", () => {
     expect(parsePage("0")).toBe(1);
     expect(parsePage("abc")).toBe(1);
     expect(parsePage(undefined)).toBe(1);
+  });
+});
+
+describe("night label", () => {
+  const zone = "Asia/Almaty";
+
+  it("marks 22:00 to 07:00 in the store time zone", () => {
+    expect(nightLabel(new Date("2026-11-04T22:12:00Z"), "en", zone)).toBe("Night, 03:12");
+    expect(nightLabel(new Date("2026-11-04T17:00:00Z"), "en", zone)).toBe("Night, 22:00");
+    expect(nightLabel(new Date("2026-11-04T01:59:00Z"), "ru", zone)).toBe("Ночью, 06:59");
+    expect(nightLabel(new Date("2026-11-04T02:00:00Z"), "en", zone)).toBeNull();
+    expect(nightLabel(new Date("2026-11-04T16:59:00Z"), "en", zone)).toBeNull();
+  });
+
+  it("follows the zone, not UTC", () => {
+    const at = new Date("2026-11-04T22:12:00Z");
+    expect(nightLabel(at, "en", "UTC")).toBe("Night, 22:12");
+    expect(nightLabel(at, "en", "America/New_York")).toBeNull();
+  });
+
+  it("is set on order and inquiry items", () => {
+    const night = new Date("2026-11-04T22:12:00Z");
+    process.env.APP_TIMEZONE = zone;
+    try {
+      expect(orderItem(order({ submittedAt: night })).night).toBe("Night, 03:12");
+      expect(inquiryItem(inquiry({ createdAt: night }), null, "kk").night).toBe("Түнде, 03:12");
+      expect(orderItem(order()).night).toBeNull();
+    } finally {
+      delete process.env.APP_TIMEZONE;
+    }
+  });
+});
+
+describe("live pulse", () => {
+  const services = (orders: Order[], inquiries: Inquiry[]) =>
+    ({
+      orders: {
+        listOrders: async () => orders,
+        listInquiries: async () => inquiries,
+        countOrdersByStatus: async () => ({ submitted: orders.length }),
+        countInquiriesByStatus: async () => ({ new: inquiries.length }),
+      },
+      approvals: { listChangeSets: async () => [1, 2] },
+    }) as never;
+  const ctx = { tenantId: "t", actor: "owner" } as never;
+  const later = new Date(T0.getTime() + 60_000);
+
+  it("returns counts and only items newer than since", async () => {
+    const svc = services(
+      [order({ submittedAt: later }), order({ id: "a1b2c3d4-0000-4000-8000-000000000002" })],
+      [inquiry({ createdAt: later })],
+    );
+    const pulse = await livePulse(svc, ctx, T0.getTime(), true);
+    expect(pulse).toMatchObject({ inbox: 3, changes: 2 });
+    expect(pulse.items.map((item) => item.kind)).toEqual(["order", "inquiry"]);
+    expect(pulse.items[0]).toMatchObject({ who: "Aidar" });
+  });
+
+  it("reports no items for the first reading and skips changes for staff", async () => {
+    const svc = services([order({ submittedAt: later })], []);
+    const pulse = await livePulse(svc, ctx, 0, false);
+    expect(pulse).toMatchObject({ inbox: 1, changes: 0, items: [] });
+    expect(pulse.now).toBeGreaterThan(0);
   });
 });

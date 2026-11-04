@@ -88,6 +88,7 @@ function Detail({
             <span className="ib-meta">
               {t(item.kind === "order" ? "ib.kindOrder" : "ib.kindQuestion")} · {item.source} ·{" "}
               {formatWhen(item.at, now, undefined, lang)}
+              {item.night ? <span className="ib-night">{item.night}</span> : null}
             </span>
             <h2 id="ib-detail-title">
               {item.label} · {item.who}
@@ -269,6 +270,11 @@ export default async function InboxPage({
                       {bucketLabel(lang, item.bucket)}
                     </span>
                   </span>
+                  {item.night ? (
+                    <span>
+                      <span className="ib-night">{item.night}</span>
+                    </span>
+                  ) : null}
                   <span className="ib-preview">{item.preview}</span>
                 </Link>
               ))

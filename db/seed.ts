@@ -22,6 +22,7 @@ import type { TenantContext } from "@/server/services/context";
 import { createConversationsService } from "@/server/services/conversations";
 import { createOrdersService, type OrderStatus } from "@/server/services/orders";
 import { createTenancyService } from "@/server/services/tenancy";
+import { appTimeZone } from "@/server/time";
 
 export interface SeedResult {
   slug: string;
@@ -63,6 +64,23 @@ const INQUIRY_AGE_HOURS = [260, 140, 50, 5];
 const CONVERSATION_AGE_HOURS = [320, 200, 120, 70, 20, 1];
 const REJECTED_CHANGE_AGE_HOURS = 190;
 const PENDING_CHANGE_AGE_HOURS = 12;
+
+/** Hours back from `now` to the latest past `HH:MM` in the app time zone. */
+export function hoursSince(placedAt: string, now: Date, timeZone: string = appTimeZone()): number {
+  const [h = 0, m = 0] = placedAt.split(":").map(Number);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(now);
+  const part = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? 0);
+  const elapsedMs = (part("hour") * 3600 + part("minute") * 60 + part("second")) * 1000;
+  let diff = elapsedMs - (h * 60 + m) * 60_000;
+  if (diff <= 0) diff += 24 * HOUR_MS;
+  return diff / HOUR_MS;
+}
 
 const cycle = (hours: number[], index: number): number => hours[index % hours.length] ?? 0;
 const earlier = (column: AnyColumn, ms: number): SQL =>
@@ -205,7 +223,9 @@ async function seedActivity(
     return variants.length > 0 ? variants : [offerOf(title)];
   };
 
-  const orderAges = activity.orders.map((_, i) => cycle(ORDER_AGE_HOURS, i));
+  const orderAges = activity.orders.map((spec, i) =>
+    spec.placedAt ? hoursSince(spec.placedAt, new Date()) : cycle(ORDER_AGE_HOURS, i),
+  );
   const inquiryAges = activity.inquiries.map((_, i) => cycle(INQUIRY_AGE_HOURS, i));
   const linkedAges = new Map<string, number>();
   const link = (key: string | undefined, age: number) => {

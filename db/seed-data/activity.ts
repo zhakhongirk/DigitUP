@@ -17,6 +17,8 @@ export interface ActivityOrder {
   items: { title: string; quantity: number; size?: string }[];
   contact: { name: string; phone: string; email?: string; note: string };
   finalStatus: "submitted" | "received" | "processing" | "completed";
+  /** Local "HH:MM" of the most recent past moment the order should look placed at. */
+  placedAt?: string;
 }
 
 export interface ActivityInquiry {
@@ -143,6 +145,17 @@ export const shoeStoreActivity: TenantActivity = {
         note: "Size 29, pickup from the store.",
       },
       finalStatus: "completed",
+    },
+    {
+      channel: "storefront",
+      items: [{ title: "Swiftrun Pulse Running Shoes", quantity: 1, size: "43" }],
+      contact: {
+        name: "Ruslan Abenov",
+        phone: "+7 747 190 22 08",
+        note: "Ordered after a late shift, pickup tomorrow.",
+      },
+      finalStatus: "submitted",
+      placedAt: "03:12",
     },
   ],
   inquiries: [

@@ -1060,3 +1060,53 @@
 .ws-lang {
   margin: 8px 0 0 12px;
 }
+
+.ib-night {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--fill);
+  color: var(--violet);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ws-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+}
+
+.ws-toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+}
+
+.ws-toast a {
+  color: var(--accent-hover);
+  font-weight: 600;
+}
+
+.ws-toast button {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ib-meta .ib-night {
+  margin-left: 8px;
+}

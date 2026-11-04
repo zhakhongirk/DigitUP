@@ -10,6 +10,7 @@ import type {
   OrderItem,
   OrderStatus,
 } from "@/server/services/orders";
+import { pendingChangeCount } from "@/server/owner/changes";
 import { appTimeZone } from "@/server/time";
 import type { Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
@@ -93,6 +94,7 @@ interface InboxItemBase {
   preview: string;
   at: Date;
   conversationId: string | null;
+  night: string | null;
   facts: { label: string; value: string }[];
 }
 
@@ -126,6 +128,26 @@ export function inquiryBucket(status: InquiryStatus): InboxBucket {
 
 export function orderNumber(id: string): string {
   return id.replace(/-/g, "").slice(0, 6).toUpperCase();
+}
+
+const NIGHT_START_HOUR = 22;
+const NIGHT_END_HOUR = 7;
+
+/** "Night, 03:12" for something created between 22:00 and 07:00 in the store's time zone. */
+export function nightLabel(
+  at: Date,
+  lang: Lang = "en",
+  timeZone: string = appTimeZone(),
+): string | null {
+  const time = at.toLocaleTimeString("en-GB", {
+    timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const hour = Number(time.slice(0, 2));
+  if (hour < NIGHT_START_HOUR && hour >= NIGHT_END_HOUR) return null;
+  return tr(lang, "ib.night", { time });
 }
 
 function contactOf(raw: unknown): OrderContact {
@@ -196,6 +218,7 @@ export function orderItem(order: Order, lang: Lang = "en"): OrderInboxItem {
     facts.push({ label: tr(lang, "ib.cancelReason"), value: order.cancelReason });
   }
   const nextOrder = ORDER_NEXT[order.status];
+  const at = order.submittedAt ?? order.createdAt;
 
   return {
     kind: "order",
@@ -208,7 +231,8 @@ export function orderItem(order: Order, lang: Lang = "en"): OrderInboxItem {
     status: order.status,
     statusLabel: orderStatusLabel(lang, order.status),
     preview: total ? `${summary} · ${total}` : summary,
-    at: order.submittedAt ?? order.createdAt,
+    at,
+    night: nightLabel(at, lang),
     conversationId: order.conversationId,
     facts,
     next: nextOrder
@@ -252,6 +276,7 @@ export function inquiryItem(
     statusLabel: bucketLabel(lang, bucket),
     preview: inquiry.subject,
     at: inquiry.createdAt,
+    night: nightLabel(inquiry.createdAt, lang),
     conversationId: inquiry.conversationId,
     facts,
     next:
@@ -534,4 +559,59 @@ export async function newInboxCount(services: Services, ctx: TenantContext): Pro
     services.orders.countInquiriesByStatus(ctx),
   ]);
   return orders.submitted + inquiries.new;
+}
+
+export interface LiveItem {
+  key: string;
+  kind: "order" | "inquiry";
+  who: string;
+  at: number;
+}
+
+export interface LivePulse {
+  inbox: number;
+  changes: number;
+  /** Server clock at the time of the reading; send it back as `since`. */
+  now: number;
+  items: LiveItem[];
+}
+
+const LIVE_ITEM_LIMIT = 5;
+
+/** Counts for the badges and the orders and questions that arrived after `since`. */
+export async function livePulse(
+  services: Services,
+  ctx: TenantContext,
+  since: number,
+  withChanges: boolean,
+  lang: Lang = "en",
+): Promise<LivePulse> {
+  const now = Date.now();
+  const [inbox, changes, orders, inquiries] = await Promise.all([
+    newInboxCount(services, ctx),
+    withChanges ? pendingChangeCount(services, ctx) : 0,
+    services.orders.listOrders(ctx, {
+      status: "submitted",
+      order: "shown",
+      limit: LIVE_ITEM_LIMIT,
+    }),
+    services.orders.listInquiries(ctx, {
+      status: "new",
+      order: "shown",
+      limit: LIVE_ITEM_LIMIT,
+    }),
+  ]);
+  const items = [
+    ...orders.map((order) => orderItem(order, lang)),
+    ...inquiries.map((inquiry) => inquiryItem(inquiry, null, lang)),
+  ]
+    .filter((item) => since > 0 && item.at.getTime() > since)
+    .sort((a, b) => a.at.getTime() - b.at.getTime())
+    .map((item): LiveItem => ({
+      key: item.key,
+      kind: item.kind,
+      who: item.who,
+      at: item.at.getTime(),
+    }));
+  return { inbox, changes, now, items };
 }

@@ -3,12 +3,13 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { messages, tenants } from "@/db/schema";
 import { barbershopModel } from "@/db/seed-data/barbershop";
 import { shoeStoreModel } from "@/db/seed-data/shoe-store";
-import { seedDemoTenants } from "@/db/seed";
+import { hoursSince, seedDemoTenants } from "@/db/seed";
 import { shoeStoreActivity } from "@/db/seed-data/activity";
 import { RecordingEventPublisher } from "@/server/events/types";
 import { createApprovalsService } from "@/server/services/approvals";
 import { createCatalogService } from "@/server/services/catalog";
 import { createConversationsService } from "@/server/services/conversations";
+import { nightLabel, orderItem } from "@/server/owner/inbox";
 import { createOrdersService } from "@/server/services/orders";
 import { businessModelSchema, checkLaunchReadiness } from "@/shared/business-model";
 import { TEST_AUTH_SECRET, testDb, testTenancy } from "../helpers/db";
@@ -159,5 +160,25 @@ describe("seedDemoTenants failure", () => {
     });
     expect(rerun[0]?.status).toBe("created");
     await db.delete(tenants).where(eq(tenants.slug, slug));
+  });
+});
+
+describe("night order", () => {
+  it("counts hours back to the latest past local time", () => {
+    const zone = "Asia/Almaty";
+    const now = new Date("2026-11-04T10:00:00Z");
+    expect(hoursSince("15:00", now, zone)).toBe(24);
+    expect(hoursSince("03:12", now, zone)).toBeCloseTo(11.8, 5);
+    expect(hoursSince("14:00", now, zone)).toBe(1);
+  });
+
+  it("seeds one stride-shoes order placed at night", async () => {
+    const db = testDb();
+    await seedDemoTenants(db, { authSecret: TEST_AUTH_SECRET });
+    const owner = await testTenancy(db).contextFromSlug("stride-shoes", "owner");
+    const orders = createOrdersService({ db, events: new RecordingEventPublisher() });
+    const labels = (await orders.listOrders(owner!)).map((o) => orderItem(o).night);
+    expect(labels.filter(Boolean)).toEqual(["Night, 03:12"]);
+    expect(nightLabel(new Date("2026-11-04T10:00:00Z"), "en", "Asia/Almaty")).toBeNull();
   });
 });
