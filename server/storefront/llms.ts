@@ -62,7 +62,7 @@ export function platformLlmsTxt(baseUrl: string, rawTools = true): string {
     "## For shopper agents",
     "",
     `One MCP endpoint for all stores of the platform (no credentials): ${platformMcpUrl(baseUrl)}`,
-    "It adds list_stores, takes a store slug in each store tool, and find_offers searches every store at once.",
+    "It is a marketplace of many independent stores: start with find_stores to see which stores sell what you need, then use find_offers or a store slug in each store tool.",
     `Each store also has its own public MCP endpoint: ${baseUrl}/mcp/public/<store-slug>`,
     `The store page is ${baseUrl}/s/<store-slug> and its own description is ${baseUrl}/s/<store-slug>/llms.txt`,
     "",

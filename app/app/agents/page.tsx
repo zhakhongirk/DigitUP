@@ -87,7 +87,7 @@ export default async function AgentsPage() {
       text: t("ag.platText"),
       who: t("ag.pubWho"),
       url: platformUrl,
-      tools: ["list_stores", "find_offers", "talk_to_store"],
+      tools: ["find_stores", "find_offers", "talk_to_store"],
     },
     {
       title: t("ag.cusTitle"),

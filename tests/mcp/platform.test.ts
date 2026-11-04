@@ -41,21 +41,28 @@ async function store(title: string, name: string, live = true) {
   return ctx;
 }
 
+async function shop(name: string, titles: string[], description = `${name} sells things`) {
+  const ctx = await createTestTenant({ live: true, name });
+  const model = modelOf(titles[0]!, name);
+  await services.catalog.applyBusinessModel(
+    { ...ctx, actor: "system" },
+    {
+      ...model,
+      profile: { ...model.profile, description },
+      offers: titles.map((title, i) => ({
+        ...model.offers![0]!,
+        title,
+        category: title.split(" ")[1],
+        price: 100 * (i + 1),
+      })),
+    },
+  );
+  return ctx;
+}
+
 /** The real directory narrowed to the stores of one test, so other tests' stores do not interfere. */
 function directory(...slugs: string[]): StoreDirectory {
-  const all = createStoreDirectory(testDb());
-  return {
-    list: async ({ query, city } = {}) => {
-      const found = await Promise.all(slugs.map((slug) => all.find(slug)));
-      return found.flatMap((s) => {
-        const match =
-          (!query || s?.name.toLowerCase().includes(query.toLowerCase())) &&
-          (!city || s?.city?.toLowerCase().includes(city.toLowerCase()));
-        return s && match ? [s] : [];
-      });
-    },
-    find: (slug) => all.find(slug),
-  };
+  return createStoreDirectory(testDb(), { slugs });
 }
 
 function platform(stores: StoreDirectory, llm = new ScriptedLlm([])) {
@@ -80,6 +87,7 @@ describe("platform MCP endpoint", () => {
       "check_availability",
       "compare_offers",
       "find_offers",
+      "find_stores",
       "get_offer_details",
       "list_stores",
       "report_answer",
@@ -218,6 +226,111 @@ describe("platform MCP endpoint", () => {
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { result: { tools: { name: string }[] } };
-    expect(body.result.tools.map((t) => t.name)).toContain("list_stores");
+    expect(body.result.tools.map((t) => t.name)).toContain("find_stores");
+  });
+});
+
+describe("platform marketplace discovery", () => {
+  type Entry = {
+    slug: string;
+    name: string;
+    url: string;
+    offer_count: number;
+    matched_offers: number;
+    top_categories: string[];
+    price_range: { min: number; max: number; currency: string } | null;
+    delivery: string | null;
+  };
+  const stores = (r: { data: unknown }) => (r.data as { stores: Entry[] }).stores;
+
+  it("tells agents it is a marketplace of many stores", async () => {
+    const a = await store("Zorbo Runner", "Zorbo Shop");
+    const mcp = await platform(directory(a.slug));
+    expect(mcp.client.getInstructions()).toMatch(
+      /^This is a marketplace of independent local stores/,
+    );
+    const { tools } = await mcp.client.listTools();
+    for (const t of tools) expect(t.description).toMatch(/[Mm]arketplace|Same as find_stores/);
+    expect(tools.find((t) => t.name === "find_stores")!.description).toMatch(/^Start here/);
+    expect(tools.find((t) => t.name === "find_offers")!.description).toMatch(/^Start here/);
+  });
+
+  it("finds a store by a product word that is not in its name, in Russian and English", async () => {
+    const a = await shop("Alpha Outlet", ["Nimbus Sneakers black", "Nimbus Sneakers white"]);
+    const b = await shop("Beta Studio", ["Quillon Sofa", "Quillon Table"]);
+    const mcp = await platform(directory(a.slug, b.slug));
+
+    for (const query of ["кроссовки", "sneakers", "кросовки"]) {
+      const found = stores(await mcp.call("find_stores", { query }));
+      expect(found.map((s) => s.slug)).toEqual([a.slug]);
+    }
+    expect(
+      stores(await mcp.call("find_stores", { query: "диван sofa" })).map((s) => s.slug),
+    ).toContain(b.slug);
+    expect(stores(await mcp.call("find_stores", { query: "ракета" }))).toEqual([]);
+  });
+
+  it("returns compact store entries with catalog facts and match counts", async () => {
+    const a = await shop("Alpha Outlet", [
+      "Nimbus Sneakers black",
+      "Nimbus Sneakers white",
+      "Quillon Sofa",
+    ]);
+    const mcp = await platform(directory(a.slug));
+
+    const [entry] = stores(await mcp.call("find_stores", { query: "sneakers" }));
+    expect(entry).toMatchObject({
+      slug: a.slug,
+      name: "Alpha Outlet",
+      url: `https://shop.example.com/s/${a.slug}`,
+      offer_count: 3,
+      matched_offers: 2,
+      price_range: { min: 100, max: 300, currency: "KZT" },
+    });
+    expect(entry!.top_categories.length).toBeGreaterThan(0);
+    expect(entry).toHaveProperty("delivery");
+  });
+
+  it("ranks stores by catalog relevance, then size, and keeps list_stores as an alias", async () => {
+    const few = await shop("Aaa Few", [
+      "Nimbus Sneakers",
+      "Quillon Sofa",
+      "Quillon Table",
+      "Quillon Lamp",
+    ]);
+    const many = await shop("Zzz Many", [
+      "Nimbus Sneakers red",
+      "Nimbus Sneakers green",
+      "Nimbus Sneakers blue",
+    ]);
+    const mcp = await platform(directory(few.slug, many.slug));
+
+    const ranked = stores(await mcp.call("find_stores", { query: "sneakers" }));
+    expect(ranked.map((s) => [s.slug, s.matched_offers])).toEqual([
+      [many.slug, 3],
+      [few.slug, 1],
+    ]);
+
+    const all = stores(await mcp.call("find_stores", { limit: 1 }));
+    expect(all.map((s) => s.slug)).toEqual([few.slug]);
+
+    const alias = stores(await mcp.call("list_stores", { query: "sneakers" }));
+    expect(alias.map((s) => s.slug)).toEqual(ranked.map((s) => s.slug));
+  });
+
+  it("searches the stores that match the intent, not the oldest ones", async () => {
+    const irrelevant = [];
+    for (let i = 0; i < 22; i++)
+      irrelevant.push(await shop(`Old Sofa ${i}`, [`Quillon Sofa ${i}`]));
+    const relevant = await shop("Newest Outlet", ["Nimbus Sneakers black"]);
+    const mcp = await platform(directory(...irrelevant.map((c) => c.slug), relevant.slug));
+
+    const result = await mcp.call("find_offers", { intent: "кроссовки", session_id: SESSION });
+    const data = result.data as {
+      offers: { store: { slug: string } }[];
+      stores: { slug: string; name: string; hits: number }[];
+    };
+    expect(data.offers.map((o) => o.store.slug)).toEqual([relevant.slug]);
+    expect(data.stores).toMatchObject([{ slug: relevant.slug, name: "Newest Outlet", hits: 1 }]);
   });
 });
