@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import { passwordChangeLimiter } from "@/server/http/rate-limit";
+import { coverLimiter, passwordChangeLimiter } from "@/server/http/rate-limit";
+import { defaultCoverService, isImageGenerationConfigured } from "@/server/media/cover";
+import { log } from "@/server/log";
 import { ownerT } from "@/server/owner/lang";
 import { hasInvalidWhatsapp, parsePoliciesForm, parseProfileForm } from "@/server/owner/settings";
 import { ownerOnly } from "@/server/owner/access";
@@ -127,4 +129,38 @@ export async function signOutEverywhere(): Promise<void> {
   await services.tenancy.revokeSessions(owner);
   await clearSessionCookie();
   redirect("/signin");
+}
+
+export async function generateCover(): Promise<SettingsState> {
+  const services = await getServices();
+  const { t } = await ownerT();
+  const owner = await currentOwner(services);
+  if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
+
+  if (!isImageGenerationConfigured()) return { error: t("st.coverUnavailable"), saved: false };
+  const limit = await coverLimiter.check(owner.tenantId);
+  if (!limit.ok) return { error: t("st.coverLimit"), saved: false };
+  const model = await services.catalog.getBusinessModel(owner);
+  try {
+    await defaultCoverService().generate(owner.tenantId, model.profile);
+  } catch (error) {
+    log.warn("cover generation failed", { error: String(error) });
+    return { error: t("st.coverFailed"), saved: false };
+  }
+  revalidatePath("/app/settings");
+  revalidatePath("/s", "layout");
+  return { error: null, saved: true, stamp: Date.now() };
+}
+
+export async function removeCover(): Promise<SettingsState> {
+  const services = await getServices();
+  const owner = await currentOwner(services);
+  if (!owner) redirect("/signin?next=/app/settings");
+  ownerOnly(owner);
+
+  await defaultCoverService().remove(owner.tenantId);
+  revalidatePath("/app/settings");
+  revalidatePath("/s", "layout");
+  return { error: null, saved: true, stamp: Date.now() };
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /** Where uploaded files live; a relative STORAGE_DIR resolves against the working directory. */
@@ -11,6 +11,8 @@ export interface FileStorage {
   /** Saves bytes under the tenant's folder and returns the storage path. */
   save(tenantId: string, filename: string, bytes: Uint8Array): Promise<string>;
   read(storagePath: string): Promise<Uint8Array>;
+  /** Deletes a stored file; a missing file is not an error. */
+  remove(storagePath: string): Promise<void>;
 }
 
 export function createFileStorage(root: string = storageRoot()): FileStorage {
@@ -33,6 +35,9 @@ export function createFileStorage(root: string = storageRoot()): FileStorage {
     },
     async read(storagePath) {
       return new Uint8Array(await readFile(/*turbopackIgnore: true*/ resolve(storagePath)));
+    },
+    async remove(storagePath) {
+      await rm(/*turbopackIgnore: true*/ resolve(storagePath), { force: true });
     },
   };
 }

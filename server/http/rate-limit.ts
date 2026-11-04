@@ -199,6 +199,13 @@ export const orderLookupLimiter = createRateLimiter({
 });
 export const analyzeLimiter = createRateLimiter({ name: "analyze", limit: 5, windowMs: 600_000 });
 
+/** Cover image generations per store. */
+export const coverLimiter = createRateLimiter({
+  name: "cover",
+  limit: 10,
+  windowMs: 86_400_000,
+});
+
 /** Per API key on the keyed MCP endpoints. */
 export const mcpKeyLimiter = createRateLimiter({ name: "mcpKey", limit: 60, windowMs: 60_000 });
 /** Submitted orders and new inquiries per client and store. */

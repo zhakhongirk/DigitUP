@@ -35,6 +35,7 @@ The inbox and the audit log are paginated without a cap on the number of pages.
 - Anything the assistant cannot handle becomes a question (inquiry) for the owner, visible in the inbox.
 - After an order is confirmed, the chat links to the buyer order status page at `/s/:slug/orders/:orderId`. The link itself is the credential, so keep it private.
 - Offer images on the storefront are served through `next/image`.
+- The owner can generate a storefront cover in Settings (Muse Image through the same API key and base URL; `LLM_IMAGE_MODEL` overrides the model, default `muse-image-1.0`). It is stored under `STORAGE_DIR`, limited to 10 generations per store per day, and shown behind the store name on `/s/:slug`. Nothing is generated automatically.
 - Storefront pages carry metadata, Open Graph tags and JSON-LD, and the app serves `/sitemap.xml` and `/robots.txt`. `APP_URL` sets the public base URL used for them (for example `https://shop.example.com`; defaults to the request host or `http://localhost:3000` locally).
 
 ### Agent side (MCP)
@@ -65,16 +66,16 @@ The LLM is any OpenAI-compatible API. The app uses three Meta models, one per ti
 
 Variables read by `server/llm` (see `.env.example`):
 
-| Variable                                                                     | Required | Notes                                                                                       |
-| ---------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`                                   | yes      | main tier; base URL defaults to `https://api.meta.ai/v1`                                    |
-| `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`                                    | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1`                          |
-| `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`                                   | no       | heavy tier                                                                                  |
-| `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS`                           | no       | per tier, falls back to the main value                                                      |
-| `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`                                 | no       | `native` (default) or `json`                                                                |
-| `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_*_TIMEOUT_MS`, `LLM_*_MAX_RETRIES` | no       | request timeout (25000 ms; heavy tier 90000) and retries (1)                                |
+| Variable                                                                     | Required | Notes                                                                                        |
+| ---------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`                                   | yes      | main tier; base URL defaults to `https://api.meta.ai/v1`                                     |
+| `LLM_FAST_API_KEY`, `_MODEL`, `_BASE_URL`                                    | no       | fast tier; `LLM_FAST_BASE_URL=https://integrate.api.nvidia.com/v1`                           |
+| `LLM_HEAVY_API_KEY`, `_MODEL`, `_BASE_URL`                                   | no       | heavy tier                                                                                   |
+| `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS`                           | no       | per tier, falls back to the main value                                                       |
+| `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`                                 | no       | `native` (default) or `json`                                                                 |
+| `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_*_TIMEOUT_MS`, `LLM_*_MAX_RETRIES` | no       | request timeout (25000 ms; heavy tier 90000) and retries (1)                                 |
 | `LLM_DAILY_TOKEN_BUDGET`                                                     | no       | tokens per store and UTC day for shopper chat and `talk_to_store` (2000000; `0` = unlimited) |
-| `LLM_JSON_RESPONSE_FORMAT`                                                   | no       | `true` (default) or `false`                                                                 |
+| `LLM_JSON_RESPONSE_FORMAT`                                                   | no       | `true` (default) or `false`                                                                  |
 
 A tier without settings of its own uses the main one. The main API key is sent only to the main base URL, never to the host of another tier. Token usage of every call is stored in `llm_usage` with the tier.
 

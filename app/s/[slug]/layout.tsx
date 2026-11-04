@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { getServices } from "@/server/container";
+import { defaultCoverService } from "@/server/media/cover";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { loadStore } from "@/server/storefront/data";
 import { t } from "@/server/storefront/i18n";
@@ -69,6 +70,7 @@ export default async function StoreLayout({ children, params }: Props) {
   const { slug } = await params;
   const lang = await storefrontLang();
   const store = await loadStore(await getServices(), slug);
+  const cover = store ? await defaultCoverService().get(store.ctx.tenantId) : null;
   // Unknown store: render the child (which calls notFound) without store chrome.
   if (!store) {
     return (
@@ -119,7 +121,16 @@ export default async function StoreLayout({ children, params }: Props) {
 
   return (
     <div className="sf-root" lang={lang}>
-      <header className="sf-header glass">
+      <header className={cover ? "sf-header sf-header-cover glass" : "sf-header glass"}>
+        {cover ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            className="sf-cover"
+            src={`/s/${slug}/cover?v=${cover.version}`}
+            alt=""
+            aria-hidden="true"
+          />
+        ) : null}
         <Link
           href={`/s/${slug}`}
           className="sf-mark"

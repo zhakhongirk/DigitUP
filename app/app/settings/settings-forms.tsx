@@ -10,6 +10,8 @@ import type { TelegramStatus } from "@/server/services/telegram";
 import {
   changePassword,
   connectTelegram,
+  generateCover,
+  removeCover,
   disconnectTelegram,
   refreshTelegram,
   sendTelegramTest,
@@ -87,6 +89,61 @@ export function ProfileForm({ profile }: { profile: BusinessModel["profile"] }) 
         <Feedback state={state} />
       </div>
     </form>
+  );
+}
+
+export function CoverPanel({
+  available,
+  coverUrl,
+}: {
+  available: boolean;
+  coverUrl: string | null;
+}) {
+  const { t } = useT();
+  const [state, setState] = useActionState(
+    async (_prev: SettingsState, run: () => Promise<SettingsState>) => run(),
+    INITIAL,
+  );
+  const [pending, startTransition] = useTransition();
+  const run = (action: () => Promise<SettingsState>) => startTransition(() => setState(action));
+  return (
+    <section className="st-panel glass" aria-labelledby="st-cover">
+      <h2 id="st-cover">{t("st.cover")}</h2>
+      <p>{t("st.coverBody")}</p>
+      {coverUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={coverUrl} alt="" className="st-cover-preview" />
+      ) : null}
+      {available ? (
+        <div className="st-actions">
+          <button
+            type="button"
+            className="btn"
+            disabled={pending}
+            onClick={() => run(generateCover)}
+          >
+            {pending
+              ? t("st.coverWorking")
+              : coverUrl
+                ? t("st.coverRegenerate")
+                : t("st.coverGenerate")}
+          </button>
+          {coverUrl ? (
+            <button
+              type="button"
+              className="btn btn-secondary"
+              disabled={pending}
+              onClick={() => run(removeCover)}
+            >
+              {t("st.coverRemove")}
+            </button>
+          ) : null}
+          <Feedback state={state} done={t("common.done")} />
+        </div>
+      ) : (
+        <p>{t("st.coverUnavailable")}</p>
+      )}
+    </section>
   );
 }
 
