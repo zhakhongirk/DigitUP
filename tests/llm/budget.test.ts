@@ -20,10 +20,10 @@ const LIMIT = { LLM_DAILY_TOKEN_BUDGET: "500" };
 
 describe("daily token budget", () => {
   it("reads the limit with a default and zero as unlimited", () => {
-    expect(readDailyTokenBudget({})).toBe(300_000);
+    expect(readDailyTokenBudget({})).toBe(2_000_000);
     expect(readDailyTokenBudget({ LLM_DAILY_TOKEN_BUDGET: "1000" })).toBe(1000);
     expect(readDailyTokenBudget({ LLM_DAILY_TOKEN_BUDGET: "0" })).toBe(0);
-    expect(readDailyTokenBudget({ LLM_DAILY_TOKEN_BUDGET: "lots" })).toBe(300_000);
+    expect(readDailyTokenBudget({ LLM_DAILY_TOKEN_BUDGET: "lots" })).toBe(2_000_000);
   });
 
   it("is exceeded once today's shopper usage reaches the limit", async () => {

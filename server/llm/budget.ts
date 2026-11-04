@@ -3,7 +3,7 @@ import type { Db } from "@/db/client";
 import { llmUsage } from "@/db/schema";
 import { log } from "@/server/log";
 
-export const DEFAULT_DAILY_TOKEN_BUDGET = 300_000;
+export const DEFAULT_DAILY_TOKEN_BUDGET = 2_000_000;
 const CACHE_MS = 30_000;
 /** Surfaces that spend a store's budget; the owner agent and onboarding are not limited. */
 const SHOPPER_SURFACES = ["storefront_chat", "public_mcp"];

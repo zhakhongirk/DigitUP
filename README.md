@@ -73,7 +73,7 @@ Variables read by `server/llm` (see `.env.example`):
 | `LLM_*_REASONING_EFFORT`, `LLM_*_REASONING_TOKENS`                           | no       | per tier, falls back to the main value                                                      |
 | `LLM_TOOL_CALL_MODE`, `LLM_*_TOOL_CALL_MODE`                                 | no       | `native` (default) or `json`                                                                |
 | `LLM_TIMEOUT_MS`, `LLM_MAX_RETRIES`, `LLM_*_TIMEOUT_MS`, `LLM_*_MAX_RETRIES` | no       | request timeout (25000 ms; heavy tier 90000) and retries (1)                                |
-| `LLM_DAILY_TOKEN_BUDGET`                                                     | no       | tokens per store and UTC day for shopper chat and `talk_to_store` (300000; `0` = unlimited) |
+| `LLM_DAILY_TOKEN_BUDGET`                                                     | no       | tokens per store and UTC day for shopper chat and `talk_to_store` (2000000; `0` = unlimited) |
 | `LLM_JSON_RESPONSE_FORMAT`                                                   | no       | `true` (default) or `false`                                                                 |
 
 A tier without settings of its own uses the main one. The main API key is sent only to the main base URL, never to the host of another tier. Token usage of every call is stored in `llm_usage` with the tier.
