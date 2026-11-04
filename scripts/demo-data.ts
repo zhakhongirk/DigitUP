@@ -12,9 +12,22 @@ import { shoeStoreModel } from "@/db/seed-data/shoe-store";
 
 const OUT = path.resolve("demo-data");
 
-function sizeRange(sizes: unknown): string {
-  const list = Array.isArray(sizes) ? sizes.map(Number) : [];
+function sizeRange(sizes: unknown[]): string {
+  const list = sizes.map(Number).filter(Number.isFinite);
   return list.length > 0 ? `${Math.min(...list)}-${Math.max(...list)}` : "";
+}
+
+type SeedOffer = NonNullable<typeof shoeStoreModel.offers>[number];
+
+function byModel(offers: SeedOffer[]): { offer: SeedOffer; sizes: unknown[] }[] {
+  const models = new Map<string, { offer: SeedOffer; sizes: unknown[] }>();
+  for (const offer of offers) {
+    const key = offer.model ?? offer.title;
+    const entry = models.get(key) ?? { offer: { ...offer, title: key }, sizes: [] };
+    if (offer.attributes?.size !== undefined) entry.sizes.push(offer.attributes.size);
+    models.set(key, entry);
+  }
+  return [...models.values()];
 }
 
 const STOCK = { in_stock: [4, 9, 6, 12, 3, 7], out_of_stock: [0], unknown: [] } as const;
@@ -35,7 +48,7 @@ async function shoeCatalog() {
     "Price, ₸",
     "Stock",
   ]);
-  (shoeStoreModel.offers ?? []).forEach((offer, i) => {
+  byModel(shoeStoreModel.offers ?? []).forEach(({ offer, sizes }, i) => {
     const a = offer.attributes ?? {};
     const stock = STOCK[offer.availability ?? "unknown"];
     sheet.addRow([
@@ -44,7 +57,7 @@ async function shoeCatalog() {
       a.brand,
       a.gender,
       a.color,
-      sizeRange(a.sizes),
+      sizeRange(sizes),
       a.material,
       offer.price ?? "on request",
       stock.length > 0 ? stock[i % stock.length] : "",

@@ -35,9 +35,23 @@ interface Row {
   availability: Avail;
 }
 
-function offer(row: Row): Offer {
-  return {
-    title: row.title,
+const SOLD_OUT_SIZES: Record<string, string[]> = {
+  "Nordix Air Street Sneakers": ["38", "45"],
+  "Velor Retro Court Sneakers": ["44"],
+  "Swiftrun Pulse Running Shoes": ["40", "41"],
+  "Trailhawk Trail Runners": ["45", "46"],
+  "Altai Winter Leather Boots": ["43", "46"],
+  "Altai Women's Winter Boots": ["36"],
+  "Steppe Chelsea Boots": ["40", "41", "45"],
+  "Mokko Leather Loafers": ["39"],
+  "Sunway Strap Sandals": ["35"],
+};
+
+function variants(row: Row): Offer[] {
+  const soldOut = SOLD_OUT_SIZES[row.title] ?? [];
+  return row.sizes.map((size) => ({
+    title: `${row.title} ${size}`,
+    model: row.title,
     description: row.description,
     category: row.category,
     offer_type: "shoes",
@@ -45,17 +59,18 @@ function offer(row: Row): Offer {
       brand: row.brand,
       gender: row.gender,
       color: row.color,
-      sizes: row.sizes,
+      size,
       material: row.material,
       season: row.season,
     },
     price: row.price,
     currency: row.price === null ? null : "KZT",
     price_status: row.price === null ? "on_request" : "confirmed",
-    availability: row.availability,
+    availability:
+      row.availability === "in_stock" && soldOut.includes(size) ? "out_of_stock" : row.availability,
     status: "active",
     image_url: photoFor(row),
-  };
+  }));
 }
 
 const rows: Row[] = [
@@ -426,7 +441,7 @@ export const shoeStoreModel: BusinessModelInput = {
           required: true,
         },
         { key: "color", label: "Color", type: "text", required: false },
-        { key: "sizes", label: "Sizes", type: "list", options: ALL_SIZES, required: true },
+        { key: "size", label: "Size", type: "text", required: true },
         { key: "material", label: "Material", type: "text", required: false },
         {
           key: "season",
@@ -438,7 +453,7 @@ export const shoeStoreModel: BusinessModelInput = {
       ],
     },
   ],
-  offers: rows.map(offer),
+  offers: rows.flatMap(variants),
   policies: {
     delivery:
       "Free courier delivery in Almaty for orders over 50,000 KZT, otherwise 1,500 KZT. Delivery to other cities in Kazakhstan takes 3-5 days.",

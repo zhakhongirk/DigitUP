@@ -383,10 +383,12 @@ async function main() {
 
   await check("catalog edit form photo and sizes", async () => {
     await op.goto("/app/catalog");
+    const toggle = op.locator(".ct-model-toggle").first();
+    if (await toggle.count()) await toggle.click();
     await op.locator("table a").first().click();
     await op.waitForURL(/offer=/);
     await op.locator('input[name="imageUrl"]').waitFor();
-    await op.locator('input[name="sizes"]').waitFor();
+    await op.locator('input[name="model"]').waitFor();
   });
 
   await check("audit actor chips", async () => {

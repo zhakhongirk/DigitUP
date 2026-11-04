@@ -21,7 +21,8 @@ export interface ImportSources {
   tables: ExtractedTable[];
 }
 
-type Role = "title" | "price" | "currency" | "category" | "description" | "availability" | "image";
+type Role =
+  "title" | "price" | "currency" | "category" | "description" | "availability" | "image" | "size";
 
 const ROLE_PATTERNS: [Role, RegExp][] = [
   [
@@ -40,6 +41,7 @@ const ROLE_PATTERNS: [Role, RegExp][] = [
     /(stock|availability|available|qty|quantity|наличие|остаток|количество|қалдық|саны|қоймада)/i,
   ],
   ["image", /^(image|photo|picture|image_url|фото|сурет)(?![\p{L}\d_])/iu],
+  ["size", /^(sizes?|размер\p{L}*|өлшем\p{L}*)(?![\p{L}\d_])/iu],
 ];
 
 const CURRENCY_HINTS: [RegExp, string][] = [
@@ -111,6 +113,55 @@ function parseAvailability(raw: string): "in_stock" | "out_of_stock" | "unknown"
   if (/(out of stock|sold out|unavailable|no\b|нет|закончил)/.test(text)) return "out_of_stock";
   if (/(in stock|available|yes|есть|в наличии)/.test(text)) return "in_stock";
   return "unknown";
+}
+
+const LETTER_SIZES = ["xxs", "xs", "s", "m", "l", "xl", "xxl", "xxxl"];
+const MAX_VARIANTS = 30;
+
+interface ListedSize {
+  size: string;
+  availability: "in_stock" | "out_of_stock" | "unknown" | null;
+}
+
+/**
+ * Reads a size cell: a range ("40-46", "S-XL"), a list ("40, 41, 42") or a list
+ * with stock per size ("40:2, 41:0"). Returns no sizes for anything else.
+ */
+export function parseSizes(raw: string): ListedSize[] {
+  const text = clean(raw);
+  if (text === "") return [];
+  const range = text.match(/^(\d{2}(?:[.,]5)?)\s*[-\u2013\u2014]\s*(\d{2}(?:[.,]5)?)$/);
+  if (range) {
+    const from = Number(range[1]!.replace(",", "."));
+    const to = Number(range[2]!.replace(",", "."));
+    if (to < from || to - from > MAX_VARIANTS - 1) return [];
+    const sizes: ListedSize[] = [];
+    for (let n = from; n <= to; n += 1) sizes.push({ size: String(n), availability: null });
+    return sizes;
+  }
+  const letters = text.match(/^([xsml]{1,4})\s*[-\u2013\u2014]\s*([xsml]{1,4})$/i);
+  if (letters) {
+    const a = LETTER_SIZES.indexOf(letters[1]!.toLowerCase());
+    const b = LETTER_SIZES.indexOf(letters[2]!.toLowerCase());
+    if (a < 0 || b < a) return [];
+    return LETTER_SIZES.slice(a, b + 1).map((size) => ({
+      size: size.toUpperCase(),
+      availability: null,
+    }));
+  }
+  const parts = text.split(/[,;]\s*|\s+/).filter(Boolean);
+  if (parts.length === 0 || parts.length > MAX_VARIANTS) return [];
+  const sizes: ListedSize[] = [];
+  for (const part of parts) {
+    const match = part.match(/^(\d{2}(?:[.,]5)?|[xsml]{1,4})(?::(\d+))?$/i);
+    if (!match) return [];
+    sizes.push({
+      size: match[1]!.replace(",", ".").toUpperCase(),
+      availability:
+        match[2] === undefined ? null : Number(match[2]) > 0 ? "in_stock" : "out_of_stock",
+    });
+  }
+  return new Set(sizes.map((x) => x.size)).size === sizes.length ? sizes : [];
 }
 
 function toKey(label: string, used: Set<string>, index: number): string {
@@ -287,6 +338,7 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
     const descriptionCol = col("description");
     const availabilityCol = col("availability");
     const imageCol = col("image");
+    const sizeCol = col("size");
     const attrs = attributeDefinitions(catalog);
     const headerText = catalog.header.join(" ");
     const kind: OfferKind = SERVICE_HINT.test(headerText) ? "service" : "product";
@@ -302,13 +354,23 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
         key: kind === "service" ? "service" : "product",
         name: kind === "service" ? "Services" : "Products",
         kind,
-        attributes: attrs.map((a) => a.def),
+        attributes: [
+          ...attrs.map((a) => a.def),
+          ...(sizeCol === undefined
+            ? []
+            : [{ key: "size", label: "Size", type: "text" as const, required: false }]),
+        ],
       },
     ];
 
     let unpriced = 0;
     let noCurrency = 0;
-    offers = catalog.rows.map((row) => {
+    const nameCounts = new Map<string, number>();
+    for (const row of catalog.rows) {
+      const name = clean(row[titleCol]);
+      nameCounts.set(name, (nameCounts.get(name) ?? 0) + 1);
+    }
+    offers = catalog.rows.flatMap((row) => {
       const cell = (i: number | undefined) => (i === undefined ? "" : clean(row[i]));
       const price = priceCol === undefined ? null : parsePrice(cell(priceCol));
       const currency =
@@ -325,19 +387,38 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
         if (value !== null) attributes[def.key] = value;
       }
       const image = cell(imageCol);
-      return {
-        title: cell(titleCol).slice(0, 200),
+      const name = cell(titleCol).slice(0, 200);
+      const rowAvailability =
+        availabilityCol === undefined ? "unknown" : parseAvailability(cell(availabilityCol));
+      const base = {
         description: cell(descriptionCol),
         category: cell(categoryCol) || null,
         offer_type: offerTypes[0]!.key,
-        attributes,
         price: priced ? price : null,
         currency: priced ? currency : null,
-        price_status: priced ? "confirmed" : "on_request",
-        availability:
-          availabilityCol === undefined ? "unknown" : parseAvailability(cell(availabilityCol)),
+        price_status: priced ? ("confirmed" as const) : ("on_request" as const),
         image_url: /^https:\/\/\S+$/.test(image) ? image : null,
       };
+      const sizes = sizeCol === undefined ? [] : parseSizes(cell(sizeCol));
+      const sharedName = (nameCounts.get(name) ?? 0) > 1;
+      if (sizes.length === 0 || (sizes.length === 1 && !sharedName)) {
+        const raw = sizeCol === undefined ? "" : cell(sizeCol);
+        return [
+          {
+            ...base,
+            title: name,
+            attributes: raw ? { ...attributes, size: raw } : attributes,
+            availability: rowAvailability,
+          },
+        ];
+      }
+      return sizes.map(({ size, availability }) => ({
+        ...base,
+        title: `${name} ${size}`.slice(0, 200),
+        model: name,
+        attributes: { ...attributes, size },
+        availability: availability ?? rowAvailability,
+      }));
     });
 
     if (noCurrency > 0) {

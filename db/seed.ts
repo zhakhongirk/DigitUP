@@ -17,7 +17,7 @@ import { shoeStoreModel } from "./seed-data/shoe-store";
 import type { BusinessModelInput } from "@/shared/business-model";
 import { RecordingEventPublisher } from "@/server/events/types";
 import { createApprovalsService } from "@/server/services/approvals";
-import { createCatalogService } from "@/server/services/catalog";
+import { createCatalogService, sizeOf, type OfferView } from "@/server/services/catalog";
 import type { TenantContext } from "@/server/services/context";
 import { createConversationsService } from "@/server/services/conversations";
 import { createOrdersService, type OrderStatus } from "@/server/services/orders";
@@ -183,12 +183,26 @@ async function seedActivity(
   const business: TenantContext = { tenantId, actor: "business_agent" };
   const owner: TenantContext = { tenantId, actor: "owner" };
 
-  const { items } = await catalog.searchOffers(customer, { limit: 100 });
-  const offerByTitle = new Map(items.map((o) => [o.title, o]));
-  const offerOf = (title: string) => {
-    const found = offerByTitle.get(title);
+  const items: OfferView[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const page = await catalog.searchOffers(customer, { limit: 100, offset });
+    items.push(...page.items);
+    if (page.items.length < 100) break;
+  }
+  const offerOf = (title: string, size?: string) => {
+    const variants = items.filter((o) => o.model === title);
+    const found =
+      variants.length > 0
+        ? ((size ? variants.find((o) => sizeOf(o) === size) : undefined) ??
+          variants.find((o) => o.availability === "in_stock") ??
+          variants[0])
+        : items.find((o) => o.title === title);
     if (!found) throw new Error(`${slug}: seed offer not found: ${title}`);
     return found;
+  };
+  const variantsOf = (title: string) => {
+    const variants = items.filter((o) => o.model === title);
+    return variants.length > 0 ? variants : [offerOf(title)];
   };
 
   const orderAges = activity.orders.map((_, i) => cycle(ORDER_AGE_HOURS, i));
@@ -227,7 +241,11 @@ async function seedActivity(
       idempotencyKey: `seed-${slug}-order-${index + 1}`,
       source: spec.channel,
       conversationId: spec.conversation ? conversationIds.get(spec.conversation) : undefined,
-      items: spec.items.map((i) => ({ offerId: offerOf(i.title).id, quantity: i.quantity })),
+      items: spec.items.map((i) => ({
+        offerId: offerOf(i.title, i.size).id,
+        quantity: i.quantity,
+        ...(i.size ? { size: i.size } : {}),
+      })),
       contact: spec.contact,
       ...(index % 2 === 0
         ? { fulfillment: "pickup" as const }
@@ -259,11 +277,12 @@ async function seedActivity(
   const priceOps = (changes: { title: string; factor: number }[]) => [
     {
       op: "update_prices" as const,
-      items: changes.map(({ title, factor }) => {
-        const offer = offerOf(title);
-        if (offer.price === null) throw new Error(`${slug}: offer has no price: ${title}`);
-        return { offerId: offer.id, price: Math.round((offer.price * factor) / 100) * 100 };
-      }),
+      items: changes.flatMap(({ title, factor }) =>
+        variantsOf(title).map((offer) => {
+          if (offer.price === null) throw new Error(`${slug}: offer has no price: ${title}`);
+          return { offerId: offer.id, price: Math.round((offer.price * factor) / 100) * 100 };
+        }),
+      ),
     },
   ];
   const rejected = await approvals.createChangeSet(business, {

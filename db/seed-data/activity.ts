@@ -14,7 +14,7 @@ export interface ActivityConversation {
 export interface ActivityOrder {
   channel: ActivityChannel;
   conversation?: string;
-  items: { title: string; quantity: number }[];
+  items: { title: string; quantity: number; size?: string }[];
   contact: { name: string; phone: string; email?: string; note: string };
   finalStatus: "submitted" | "received" | "processing" | "completed";
 }
@@ -112,7 +112,7 @@ export const shoeStoreActivity: TenantActivity = {
     {
       channel: "storefront",
       conversation: "air-street",
-      items: [{ title: "Nordix Air Street Sneakers", quantity: 1 }],
+      items: [{ title: "Nordix Air Street Sneakers", quantity: 1, size: "42" }],
       contact: {
         name: "Aigerim Sadykova",
         phone: "+7 701 555 12 34",
@@ -124,7 +124,7 @@ export const shoeStoreActivity: TenantActivity = {
     {
       channel: "external_agent",
       conversation: "winter-boots",
-      items: [{ title: "Altai Winter Leather Boots", quantity: 1 }],
+      items: [{ title: "Altai Winter Leather Boots", quantity: 1, size: "44" }],
       contact: {
         name: "Daniyar Omarov",
         phone: "+7 705 321 45 67",

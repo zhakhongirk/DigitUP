@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { importBusinessModel, parsePrice } from "@/server/services/onboarding/import";
+import { importBusinessModel, parsePrice, parseSizes } from "@/server/services/onboarding/import";
 import { businessModelSchema } from "@/shared/business-model";
 
 function build(input: Parameters<typeof importBusinessModel>[0]) {
@@ -42,7 +42,7 @@ describe("importBusinessModel", () => {
     expect(model.offer_types).toHaveLength(1);
     expect(model.offer_types?.[0]).toMatchObject({ key: "product", kind: "product" });
     const keys = model.offer_types?.[0]?.attributes?.map((a) => a.key);
-    expect(keys).toEqual(["brand", "sizes"]);
+    expect(keys).toEqual(["brand", "size"]);
     expect(model.offers).toHaveLength(3);
     expect(model.offers?.[0]).toMatchObject({
       title: "Runner",
@@ -51,7 +51,7 @@ describe("importBusinessModel", () => {
       currency: "KZT",
       price_status: "confirmed",
       availability: "in_stock",
-      attributes: { brand: "Nike", sizes: 40 },
+      attributes: { brand: "Nike", size: "40" },
     });
   });
 
@@ -203,5 +203,68 @@ describe("importBusinessModel", () => {
       ]),
     });
     expect(model.offers?.map((o) => o.image_url)).toEqual(["https://example.com/a.jpg", null]);
+  });
+});
+
+describe("size expansion", () => {
+  const header = ["Name", "Category", "Sizes", "Price", "Stock"];
+
+  it("turns a size range into one offer per size with the row stock", () => {
+    const model = build({
+      businessName: "Stride",
+      texts: [],
+      tables: table([header, ["Altai Boots", "Boots", "40-43", "89 000 ₸", "5"]]),
+    });
+    expect(model.offers?.map((o) => o.title)).toEqual([
+      "Altai Boots 40",
+      "Altai Boots 41",
+      "Altai Boots 42",
+      "Altai Boots 43",
+    ]);
+    expect(model.offers?.every((o) => o.model === "Altai Boots")).toBe(true);
+    expect(model.offers?.[1]).toMatchObject({
+      attributes: { size: "41" },
+      availability: "in_stock",
+      price: 89000,
+    });
+  });
+
+  it("leaves stock unknown when the row has none", () => {
+    const model = build({
+      businessName: "Stride",
+      texts: [],
+      tables: table([header.slice(0, 4), ["Altai Boots", "Boots", "40, 41", "89 000 ₸"]]),
+    });
+    expect(model.offers?.map((o) => o.availability)).toEqual(["unknown", "unknown"]);
+  });
+
+  it("reads stock written per size", () => {
+    const model = build({
+      businessName: "Stride",
+      texts: [],
+      tables: table([header, ["Altai Boots", "Boots", "40:3, 41:0", "89 000 ₸", ""]]),
+    });
+    expect(model.offers?.map((o) => o.availability)).toEqual(["in_stock", "out_of_stock"]);
+  });
+
+  it("groups rows that repeat a name with one size each", () => {
+    const model = build({
+      businessName: "Stride",
+      texts: [],
+      tables: table([
+        header,
+        ["Altai Boots", "Boots", "40", "89 000 ₸", "2"],
+        ["Altai Boots", "Boots", "41", "89 000 ₸", "0"],
+      ]),
+    });
+    expect(model.offers?.map((o) => [o.title, o.model, o.availability])).toEqual([
+      ["Altai Boots 40", "Altai Boots", "in_stock"],
+      ["Altai Boots 41", "Altai Boots", "out_of_stock"],
+    ]);
+  });
+
+  it("parses letter ranges and rejects other text", () => {
+    expect(parseSizes("S-L").map((s) => s.size)).toEqual(["S", "M", "L"]);
+    expect(parseSizes("one size")).toEqual([]);
   });
 });

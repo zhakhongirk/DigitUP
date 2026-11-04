@@ -24,7 +24,10 @@ describe("seed data", () => {
 
   it("shoe store has the expected mix of offers", () => {
     const { offers } = businessModelSchema.parse(shoeStoreModel);
-    expect(offers).toHaveLength(25);
+    expect(new Set(offers.map((o) => o.model)).size).toBe(25);
+    expect(
+      offers.every((o) => o.model !== null && o.title === `${o.model} ${o.attributes.size}`),
+    ).toBe(true);
     const onRequest = offers.filter((o) => o.price_status === "on_request" && o.price === null);
     expect(onRequest.length).toBeGreaterThanOrEqual(4);
     expect(offers.filter((o) => o.availability === "unknown").length).toBeGreaterThanOrEqual(4);
@@ -59,8 +62,10 @@ describe("seedDemoTenants", () => {
     const shoes = await tenancy.contextFromSlug("stride-shoes", "customer_agent");
     expect(shoes).not.toBeNull();
     const shoeResult = await catalog.searchOffers(shoes!, { limit: 100 });
-    expect(shoeResult.total).toBe(25);
-    expect(shoeResult.items).toHaveLength(25);
+    expect(shoeResult.total).toBeGreaterThan(100);
+    const shoeGroups = await catalog.searchGroups(shoes!, { limit: 100 });
+    expect(shoeGroups.total).toBe(25);
+    expect(shoeGroups.groups).toHaveLength(25);
 
     const barber = await tenancy.contextFromSlug("fade-factory", "customer_agent");
     expect(barber).not.toBeNull();
