@@ -1,6 +1,13 @@
 import type { Services } from "@/server/container";
 import { policiesWithStates, publicOffer } from "@/server/mcp/views";
-import type { OfferView } from "@/server/services/catalog";
+import {
+  groupAvailability,
+  groupPrice,
+  groupSizes,
+  sizeOf,
+  type OfferGroup,
+  type OfferView,
+} from "@/server/services/catalog";
 import type { TenantContext } from "@/server/services/context";
 import type {
   AttributeDefinition,
@@ -56,6 +63,10 @@ export interface OfferCardData {
   availability: "in_stock" | "out_of_stock" | "unknown";
   availabilityLabel: string;
   canOrder: boolean;
+  /** Product name when the card stands for several per-size offers. */
+  model: string | null;
+  /** Per-size offers of the model; empty for a standalone offer. */
+  sizes: { id: string; size: string; available: boolean }[];
 }
 
 export type OfferDetailData = OfferCardData;
@@ -186,6 +197,50 @@ function toCard(offer: OfferView, defs: TypeDefs, limit?: number): OfferCardData
     availability: pub.availability,
     availabilityLabel: pub.availability_label,
     canOrder: pub.can_order,
+    model: null,
+    sizes: [],
+  };
+}
+
+function toGroupCard(group: OfferGroup, defs: TypeDefs, limit?: number): OfferCardData {
+  const card = toCard(group.lead, defs, limit);
+  if (group.model === null) return card;
+  const price = groupPrice(group);
+  const availability = groupAvailability(group);
+  const image =
+    card.imageUrl ?? safeImageUrl(group.variants.find((v) => v.imageUrl)?.imageUrl ?? null);
+  const label = price
+    ? price.min === price.max
+      ? formatPrice(price.min, price.currency)
+      : `${formatPrice(price.min, price.currency)} – ${formatPrice(price.max, price.currency)}`
+    : "Price on request";
+  const { available } = groupSizes(group);
+  return {
+    ...card,
+    title: group.model,
+    tileLabel: group.model,
+    attributes: card.attributes.filter((line) => line.key !== "size"),
+    summary: card.summary.filter((phrase) => phrase !== sizeOf(group.lead)),
+    imageUrl: image,
+    price: price?.min ?? null,
+    currency: price?.currency ?? null,
+    hasPrice: price !== null,
+    priceLabel: label,
+    availability,
+    availabilityLabel:
+      availability === "in_stock"
+        ? "In stock"
+        : availability === "out_of_stock"
+          ? "Out of stock"
+          : "Availability to be confirmed",
+    canOrder: group.variants.some(
+      (v) => v.priceStatus === "confirmed" && v.availability === "in_stock",
+    ),
+    model: group.model,
+    sizes: group.variants.flatMap((v) => {
+      const size = sizeOf(v);
+      return size === null ? [] : [{ id: v.id, size, available: available.includes(size) }];
+    }),
   };
 }
 
@@ -226,7 +281,7 @@ export async function searchCatalog(
   const category = params.category?.trim() || null;
   const page = params.page ?? 1;
   const [result, defs] = await Promise.all([
-    services.catalog.searchOffers(ctx, {
+    services.catalog.searchGroups(ctx, {
       query: query || undefined,
       category: category ?? undefined,
       limit: PAGE_SIZE,
@@ -237,7 +292,7 @@ export async function searchCatalog(
   if (result.total === 0 && query && page === 1)
     await services.catalog.recordSearchMiss(ctx, query);
   return {
-    items: result.items.map((offer) => toCard(offer, defs, 3)),
+    items: result.groups.map((group) => toGroupCard(group, defs, 3)),
     total: result.total,
     page,
     pageCount: Math.max(1, Math.ceil(result.total / PAGE_SIZE)),
@@ -256,5 +311,6 @@ export async function loadOffer(
   const offer = await services.catalog.getOffer(ctx, offerId);
   if (!offer || offer.status !== "active") return null;
   const defs = await loadTypeDefs(services, ctx);
-  return toCard(offer, defs);
+  const [group] = await services.catalog.groupOffers(ctx, [offer]);
+  return group ? toGroupCard(group, defs) : toCard(offer, defs);
 }

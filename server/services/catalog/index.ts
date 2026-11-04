@@ -32,6 +32,7 @@ import {
   type BusinessModelInput,
   type Policies,
 } from "@/shared/business-model";
+import { buildGroups, type OfferGroup } from "./groups";
 import { recordAudit } from "../audit";
 import { assertOwner, ServiceError, type TenantContext } from "../context";
 import {
@@ -48,6 +49,7 @@ import {
 } from "./ops";
 
 export * from "./ops";
+export * from "./groups";
 
 export type OfferStatus = OfferRecord["status"];
 
@@ -106,6 +108,19 @@ export interface CatalogService {
   catalogStats(ctx: TenantContext): Promise<CatalogStats>;
   getOffer(ctx: TenantContext, offerId: string): Promise<OfferView | null>;
   getOffers(ctx: TenantContext, offerIds: string[]): Promise<OfferView[]>;
+  /** Active offers of the given models, for listing every size of a product. */
+  listVariants(
+    ctx: TenantContext,
+    models: string[],
+    statuses?: OfferStatus[],
+  ): Promise<OfferView[]>;
+  /** Groups matches by model and attaches the sibling variants of each model. */
+  groupOffers(ctx: TenantContext, matches: OfferView[]): Promise<OfferGroup[]>;
+  /** Like searchOffers, but pages over products: variants of one model count once. */
+  searchGroups(
+    ctx: TenantContext,
+    search?: OfferSearch,
+  ): Promise<{ groups: OfferGroup[]; total: number }>;
 
   upsertOffers(ctx: TenantContext, input: unknown[]): Promise<OfferRecord[]>;
   updatePrices(ctx: TenantContext, input: unknown[]): Promise<OfferRecord[]>;
@@ -157,6 +172,7 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
           ilike(offers.title, pattern),
           ilike(offers.description, pattern),
           ilike(offers.category, pattern),
+          ilike(offers.model, pattern),
           sql`${offers.attributes}::text ilike ${pattern}`,
         )!,
       );
@@ -227,6 +243,7 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
           title: offer.title,
           description: offer.description,
           category: offer.category,
+          model: offer.model,
           offer_type: offerTypeKey,
           attributes: offer.attributes as Record<string, AttributeValue>,
           price: offer.price,
@@ -325,6 +342,83 @@ export function createCatalogService({ db, events }: CatalogDeps): CatalogServic
         .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
         .where(and(eq(offers.tenantId, ctx.tenantId), inArray(offers.id, offerIds)));
       return rows.map(toView);
+    },
+
+    async listVariants(ctx, models, statuses = ["active"]) {
+      if (models.length === 0) return [];
+      const rows = await db
+        .select(offerColumns)
+        .from(offers)
+        .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
+        .where(
+          and(
+            eq(offers.tenantId, ctx.tenantId),
+            inArray(offers.status, statuses),
+            inArray(offers.model, models),
+          ),
+        );
+      return rows.map(toView);
+    },
+
+    async groupOffers(ctx, matches) {
+      const models = [...new Set(matches.flatMap((o) => (o.model === null ? [] : [o.model])))];
+      return buildGroups(matches, await this.listVariants(ctx, models));
+    },
+
+    async searchGroups(ctx, search = {}) {
+      const where = and(...searchConditions(ctx, search));
+      const limit = Math.min(Math.max(search.limit ?? 20, 1), MAX_LIMIT);
+      const offset = Math.max(search.offset ?? 0, 0);
+      const groupKey = sql<string>`coalesce(${offers.model}, ${offers.id}::text)`;
+      const [keys, [total]] = await Promise.all([
+        db
+          .select({ key: groupKey, title: sql<string>`min(${offers.title})` })
+          .from(offers)
+          .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
+          .where(where)
+          .groupBy(groupKey)
+          .orderBy(sql`min(${offers.title})`, groupKey)
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ value: sql<number>`count(distinct ${groupKey})::int` })
+          .from(offers)
+          .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
+          .where(where),
+      ]);
+      if (keys.length === 0) return { groups: [], total: total?.value ?? 0 };
+      const names = keys.map((k) => k.key);
+      const inKeys = or(
+        inArray(offers.model, names),
+        and(isNull(offers.model), inArray(sql`${offers.id}::text`, names)),
+      )!;
+      const [matchRows, siblingRows] = await Promise.all([
+        db
+          .select(offerColumns)
+          .from(offers)
+          .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
+          .where(and(where, inKeys)),
+        db
+          .select(offerColumns)
+          .from(offers)
+          .innerJoin(offerTypes, eq(offerTypes.id, offers.offerTypeId))
+          .where(
+            and(
+              eq(offers.tenantId, ctx.tenantId),
+              inArray(offers.status, search.statuses ?? ["active"]),
+              inKeys,
+            ),
+          ),
+      ]);
+      const order = new Map(names.map((name, i) => [name, i]));
+      const ranked = matchRows
+        .map(toView)
+        .sort(
+          (a, b) =>
+            (order.get(a.model ?? a.id) ?? 0) - (order.get(b.model ?? b.id) ?? 0) ||
+            a.title.localeCompare(b.title),
+        );
+      return { groups: buildGroups(ranked, siblingRows.map(toView)), total: total?.value ?? 0 };
     },
 
     upsertOffers: (ctx, input) => inTransaction((tx) => upsertOffersTx(tx, ctx, input)),

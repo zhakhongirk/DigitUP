@@ -59,6 +59,8 @@ function itemXml(offer: OfferView, baseUrl: string, slug: string): string | null
   const brand = text(attrs.brand);
   const color = text(attrs.color);
   const gender = text(attrs.gender);
+  const rawSize = attrs.size;
+  const size = typeof rawSize === "number" ? String(rawSize) : text(rawSize);
   const lines = [
     tag("g:id", offer.id),
     tag("title", clip(offer.title, TITLE_LIMIT)),
@@ -76,7 +78,8 @@ function itemXml(offer: OfferView, baseUrl: string, slug: string): string | null
     ...(gender && GENDER[gender] ? [tag("g:gender", GENDER[gender])] : []),
     ...(gender === "kids" ? [tag("g:age_group", "kids")] : []),
     ...(offer.category ? [tag("g:product_type", offer.category)] : []),
-    tag("g:item_group_id", offer.id),
+    ...(size ? [tag("g:size", size)] : []),
+    tag("g:item_group_id", offer.model ?? offer.id),
   ];
   return `    <item>\n${lines.map((line) => `      ${line}`).join("\n")}\n    </item>`;
 }

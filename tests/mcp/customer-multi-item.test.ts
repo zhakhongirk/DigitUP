@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { shoeStoreModel } from "@/db/seed-data/shoe-store";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
-import type { OfferView } from "@/server/services/catalog";
+import { sizeOf, type OfferView } from "@/server/services/catalog";
 import { createTestTenant } from "../helpers/db";
 import { connect, testServices } from "../helpers/mcp";
 
@@ -31,7 +31,7 @@ async function start(source: "storefront" | "external_agent" = "storefront") {
   const { items } = await services.catalog.searchOffers(ctx, { limit: 200 });
   const client = await connect(createCustomerMcpServer({ ctx, services, source }));
   open.push(client);
-  const [a, b] = items.filter(orderable);
+  const [a, b] = items.filter((o) => orderable(o) && sizeOf(o) === "42");
   return { ctx, client, a: a!, b: b! };
 }
 
@@ -62,7 +62,7 @@ describe("create_order with several items", () => {
     expect(res.isError).toBe(false);
     const view = res.data as View;
     expect(view.items).toHaveLength(1);
-    expect(view.items[0]).not.toHaveProperty("size");
+    expect(view.items[0]).toMatchObject({ offerId: a.id, size: "42" });
   });
 
   it("adds items with merge and replaces them without it for an external agent", async () => {

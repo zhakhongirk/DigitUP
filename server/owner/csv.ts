@@ -1,5 +1,5 @@
 import type { Services } from "@/server/container";
-import type { OfferStatus, OfferView } from "@/server/services/catalog";
+import { sizeOf, type OfferStatus, type OfferView } from "@/server/services/catalog";
 import type { Order, OrderItem, OrderStatus } from "@/server/services/orders";
 import type { TenantContext } from "@/server/services/context";
 import { appTimeZone } from "@/server/time";
@@ -93,6 +93,8 @@ export function ordersCsv(orders: Order[]): string {
 const CATALOG_HEADER = [
   "ID",
   "Title",
+  "Model",
+  "Size",
   "Category",
   "Price",
   "Currency",
@@ -108,6 +110,8 @@ export function catalogCsv(offers: OfferView[]): string {
     ...offers.map((o) => [
       o.id,
       o.title,
+      o.model,
+      sizeOf(o),
       o.category,
       o.price,
       o.currency,

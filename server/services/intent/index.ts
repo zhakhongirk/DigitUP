@@ -4,7 +4,7 @@ import type { Db } from "@/db/client";
 import { intentEvents } from "@/db/schema";
 import type { TextLang } from "@/shared/text-lang";
 import { recordAudit } from "../audit";
-import type { CatalogService } from "../catalog";
+import { buildGroups, type CatalogService, type OfferView } from "../catalog";
 import { ServiceError, type TenantContext } from "../context";
 import { planIntent } from "./plan";
 import { planRewrite, type IntentInterpreter } from "./rewrite";
@@ -74,6 +74,11 @@ export interface IntentService {
     report: { intentId: string; verdict: Verdict; comment?: string },
   ): Promise<{ intentId: string; verdict: Verdict }>;
   stats(ctx: TenantContext, options?: { days?: number; now?: Date }): Promise<IntentStats>;
+}
+
+/** One id per product: the variant a card for the group would lead with. */
+function leadIds(offers: OfferView[]): string[] {
+  return buildGroups(offers).map((group) => group.lead.id);
 }
 
 const TEXT_LIMIT = 500;
@@ -151,7 +156,7 @@ export function createIntentService({
           text: text.slice(0, TEXT_LIMIT),
           applied: result.applied,
           relaxed: result.relaxed,
-          resultIds: [...result.offers, ...result.onRequest].map((m) => m.offer.id),
+          resultIds: leadIds([...result.offers, ...result.onRequest].map((m) => m.offer)),
         });
       }
       return result;

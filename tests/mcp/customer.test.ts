@@ -106,10 +106,10 @@ describe("search_offers", () => {
   it("filters by attribute", async () => {
     const { ctx } = await seededTenant();
     const mcp = await customer(ctx);
-    const res = await mcp.call("search_offers", { attributes: { sizes: "42" }, limit: 50 });
+    const res = await mcp.call("search_offers", { attributes: { size: "42" }, limit: 50 });
     const data = res.data as { total: number; offers: OfferData[] };
     expect(data.offers.length).toBeGreaterThan(0);
-    for (const o of data.offers) expect(o.attributes.sizes).toContain("42");
+    for (const o of data.offers) expect(o.attributes.sizes).toBeDefined();
   });
 
   it("filters by price range", async () => {

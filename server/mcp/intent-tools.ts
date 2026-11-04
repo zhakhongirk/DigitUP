@@ -9,11 +9,14 @@ import type {
 } from "@/server/services/intent";
 import { VERDICTS } from "@/server/services/intent";
 import { runTool } from "./tools";
-import { publicOffer } from "./views";
+import { listGroup } from "./views";
+import type { CatalogService, OfferGroup } from "@/server/services/catalog";
+import { buildGroups } from "@/server/services/catalog";
 
 export interface IntentToolsOptions {
   ctx: TenantContext;
   intent: IntentService;
+  catalog: Pick<CatalogService, "listVariants">;
   /** Who is calling; binds the session when the server, not the model, knows it. */
   track: IntentTracking;
   store?: { slug: string; baseUrl?: string };
@@ -28,25 +31,56 @@ function offerUrl(store: IntentToolsOptions["store"], offerId: string): string |
   return `${store.baseUrl ?? ""}/s/${store.slug}/offers/${offerId}`;
 }
 
-function sizesOf(attributes: unknown): string[] {
-  const value = (attributes as Record<string, unknown> | null)?.sizes;
-  if (Array.isArray(value)) return value.map(String);
-  return typeof value === "string" ? [value] : [];
+function mergeMatched(items: MatchedOffer[]): MatchedOffer["matched"] {
+  const merge = (pick: (m: MatchedOffer["matched"]) => boolean | null) => {
+    const values = items.map((i) => pick(i.matched));
+    if (values.includes(true)) return true;
+    return values.includes(false) ? false : null;
+  };
+  return {
+    size: merge((m) => m.size),
+    color: merge((m) => m.color),
+    budget: merge((m) => m.budget),
+  };
 }
 
-function offerRow(item: MatchedOffer, store: IntentToolsOptions["store"]) {
-  const view = publicOffer(item.offer);
+type Row = { group: OfferGroup; matched: MatchedOffer["matched"] };
+
+async function rowsOf(
+  catalog: IntentToolsOptions["catalog"],
+  ctx: TenantContext,
+  found: MatchedOffer[],
+): Promise<Row[]> {
+  const models = [...new Set(found.flatMap((m) => (m.offer.model ? [m.offer.model] : [])))];
+  const siblings = await catalog.listVariants(ctx, models);
+  const groups = buildGroups(
+    found.map((m) => m.offer),
+    siblings,
+  );
+  return groups.map((group) => {
+    const own = found.filter((m) => (m.offer.model ?? m.offer.id) === group.key);
+    return { group, matched: mergeMatched(own) };
+  });
+}
+
+function offerRow({ group, matched }: Row, store: IntentToolsOptions["store"]) {
+  const view = listGroup(group);
   return {
     offer_id: view.offer_id,
     title: view.title,
+    model: view.model,
     price: view.price,
+    price_max: "price_max" in view ? view.price_max : null,
     currency: view.currency,
     price_status: view.price_status,
     availability: view.availability,
     can_order: view.can_order,
-    sizes: sizesOf(item.offer.attributes),
-    matched: item.matched,
-    url: offerUrl(store, item.offer.id),
+    sizes: "sizes" in view ? view.sizes : sizesOf(view.attributes),
+    ...("unavailable_sizes" in view
+      ? { unavailable_sizes: view.unavailable_sizes, variant_ids: view.variant_ids }
+      : {}),
+    matched,
+    url: offerUrl(store, group.lead.id),
     price_label: view.price_label,
     availability_label: view.availability_label,
     category: view.category,
@@ -55,14 +89,29 @@ function offerRow(item: MatchedOffer, store: IntentToolsOptions["store"]) {
   };
 }
 
-export function findOffersView(result: IntentResult, store: IntentToolsOptions["store"]) {
+function sizesOf(attributes: unknown): string[] {
+  const value = (attributes as Record<string, unknown> | null)?.sizes;
+  if (Array.isArray(value)) return value.map(String);
+  return typeof value === "string" ? [value] : [];
+}
+
+export async function findOffersView(
+  result: IntentResult,
+  store: IntentToolsOptions["store"],
+  catalog: IntentToolsOptions["catalog"],
+  ctx: TenantContext,
+) {
+  const [offers, onRequest] = await Promise.all([
+    rowsOf(catalog, ctx, result.offers),
+    rowsOf(catalog, ctx, result.onRequest),
+  ]);
   return {
     intent_id: result.intentId,
     summary: result.summary,
-    offers: result.offers.map((item) => offerRow(item, store)),
+    offers: offers.map((row) => offerRow(row, store)),
     applied: result.applied,
     relaxed: result.relaxed,
-    on_request: result.onRequest.map((item) => offerRow(item, store)),
+    on_request: onRequest.map((row) => offerRow(row, store)),
     unresolved: result.unresolved,
     ...(result.interpreted.length > 0 ? { interpreted: result.interpreted } : {}),
     ...(result.interpretedBy ? { interpreted_by: result.interpretedBy } : {}),
@@ -77,7 +126,7 @@ export function findOffersView(result: IntentResult, store: IntentToolsOptions["
 /** find_offers and report_answer: the intent layer as MCP tools. */
 export function registerIntentTools(
   server: McpServer,
-  { ctx, intent, track, store }: IntentToolsOptions,
+  { ctx, intent, catalog, track, store }: IntentToolsOptions,
 ): void {
   server.registerTool(
     "find_offers",
@@ -114,7 +163,7 @@ export function registerIntentTools(
           sessionKey: track.sessionKey ?? session_id,
           track: { ...track, sessionKey: track.sessionKey ?? session_id },
         });
-        return findOffersView(result, store);
+        return findOffersView(result, store, catalog, ctx);
       }),
   );
 

@@ -165,7 +165,7 @@ describe("planIntent in three languages", () => {
       lang: "ru",
       category: "Sneakers",
       maxPrice: 75000,
-      size: { values: ["43"], key: "sizes" },
+      size: { values: ["43"], key: "size" },
     });
     expect(plan.facets).toEqual([
       { facet: "color", requested: "black", key: "color", values: ["Black", "Black and red"] },
@@ -255,7 +255,7 @@ describe("store vocabulary", () => {
       sandals: "Sandals",
     });
     expect(shoes.sizes).toEqual({
-      key: "sizes",
+      key: "size",
       system: "eu",
       values: Array.from({ length: 12 }, (_, i) => String(35 + i)),
     });

@@ -18,7 +18,8 @@ async function store(model = shoeStoreModel) {
   return ctx;
 }
 
-const titles = (items: IntentResult["offers"]) => items.map((m) => m.offer.title).sort();
+const titles = (items: IntentResult["offers"]) =>
+  [...new Set(items.map((m) => m.offer.model ?? m.offer.title))].sort();
 
 let shoes: Awaited<ReturnType<typeof store>> | undefined;
 async function shoeStore() {
@@ -40,14 +41,14 @@ describe("resolveIntent on the shoe store", () => {
       category: "Sneakers",
       max_price: 75000,
       size: { requested: "43", values: ["43"] },
-      attributes: { sizes: "43", color: ["Black", "Black and red"] },
+      attributes: { size: "43", color: ["Black", "Black and red"] },
     });
     expect(result.search).toEqual({
       category: "Sneakers",
-      attributes: { sizes: "43" },
+      attributes: { size: "43" },
       attributes_any: { color: ["Black", "Black and red"] },
       max_price: 75000,
-      limit: 20,
+      limit: 100,
       offset: 0,
     });
     expect(result.summary).toContain("Найдено позиций: 1");
@@ -107,7 +108,7 @@ describe("relaxation ladder", () => {
   it("drops the size first and records it", async () => {
     const result = await find("black boots 42");
     expect(result.relaxed).toEqual([{ step: "size", from: "42", to: null }]);
-    const women = result.offers.find((m) => m.offer.title === "Altai Women's Winter Boots");
+    const women = result.offers.find((m) => m.offer.model === "Altai Women's Winter Boots");
     expect(women?.matched).toMatchObject({ size: false, color: true });
     expect(result.applied.size).toBeNull();
     expect(result.search.attributes).toBeUndefined();
@@ -211,10 +212,12 @@ describe("raw_hint", () => {
     const mcp = await connect(createCustomerMcpServer({ ctx, services, source: "storefront" }));
     const raw = await mcp.call("search_offers", { ...result.search });
     await mcp.close();
-    const data = raw.data as { offers: { offer_id: string }[] };
+    const data = raw.data as { offers: { offer_id: string; model: string | null }[] };
     return {
-      found: [...result.offers, ...result.onRequest].map((m) => m.offer.id).sort(),
-      raw: data.offers.map((o) => o.offer_id).sort(),
+      found: [
+        ...new Set([...result.offers, ...result.onRequest].map((m) => m.offer.model ?? m.offer.id)),
+      ].sort(),
+      raw: data.offers.map((o) => o.model ?? o.offer_id).sort(),
     };
   }
 

@@ -22,6 +22,7 @@ interface Row {
   availability: string;
   can_order: boolean;
   sizes: string[];
+  unavailable_sizes?: string[];
   matched: { size: boolean | null; color: boolean | null; budget: boolean | null };
   url: string | null;
 }
@@ -85,7 +86,7 @@ describe("find_offers on the keyed customer endpoint", () => {
       can_order: false,
       matched: { size: true, color: true, budget: true },
     });
-    expect(data.offers[0]?.sizes).toContain("43");
+    expect(data.offers[0]?.unavailable_sizes).toContain("43");
     expect(data.offers[0]?.url).toMatch(
       /^https:\/\/shop\.example\/s\/stride\/offers\/[0-9a-f-]{36}$/,
     );

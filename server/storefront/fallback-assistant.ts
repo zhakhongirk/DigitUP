@@ -317,6 +317,7 @@ const COPY = {
     sizes: (list: string) => `sizes: ${list}`,
     sizeYes: (size: string) => `size ${size} is listed`,
     sizeNo: (size: string) => `size ${size} is not listed`,
+    sizeOut: (size: string) => `size ${size} is out of stock`,
     handoff:
       "Would you like me to pass this to the store owner? Reply yes, or send a phone number or email so they can reach you.",
     inquirySent: "Done, your question was sent to the store owner. They will reply to you.",
@@ -349,7 +350,8 @@ const COPY = {
     askCity: "What city is the delivery to?",
     askAdd: "Which product would you like to add? Tell me the name.",
     removeWhich: (titles: string) => `Which item should I remove? ${titles}`,
-    sizeAsk: (list: string) => `Which size? Available: ${list}.`,
+    sizeAsk: (list: string, out?: string) =>
+      `${out ? `Size ${out} is out of stock. ` : ""}Which size? Available: ${list}.`,
     askName: "What is your name?",
     askPhone: "What phone number can the store reach you at?",
     askFulfillment: "Would you like pickup or delivery?",
@@ -386,6 +388,7 @@ const COPY = {
     sizes: (list: string) => `размеры: ${list}`,
     sizeYes: (size: string) => `размер ${size} есть в списке`,
     sizeNo: (size: string) => `размера ${size} нет в списке`,
+    sizeOut: (size: string) => `размера ${size} нет в наличии`,
     handoff:
       "Передать это владельцу магазина? Ответьте да или отправьте телефон или почту, чтобы с вами связались.",
     inquirySent: "Готово, ваш вопрос отправлен владельцу магазина. Он ответит вам.",
@@ -419,7 +422,8 @@ const COPY = {
     askCity: "В какой город доставить?",
     askAdd: "Какой товар добавить? Напишите название.",
     removeWhich: (titles: string) => `Какой товар убрать? ${titles}`,
-    sizeAsk: (list: string) => `Какой размер? Есть: ${list}.`,
+    sizeAsk: (list: string, out?: string) =>
+      `${out ? `Размера ${out} нет в наличии. ` : ""}Какой размер? Есть: ${list}.`,
     askName: "Как вас зовут?",
     askPhone: "На какой номер телефона магазин может вам позвонить?",
     askFulfillment: "Вам нужен самовывоз или доставка?",
@@ -457,6 +461,7 @@ const COPY = {
     sizes: (list: string) => `өлшемдері: ${list}`,
     sizeYes: (size: string) => `${size} өлшемі тізімде бар`,
     sizeNo: (size: string) => `${size} өлшемі тізімде жоқ`,
+    sizeOut: (size: string) => `${size} өлшемі қолда жоқ`,
     handoff:
       "Мұны дүкен иесіне жіберейін бе? Иә деп жауап беріңіз немесе онымен байланысу үшін телефон не пошта жіберіңіз.",
     inquirySent: "Дайын, сұрағыңыз дүкен иесіне жіберілді. Ол сізге жауап береді.",
@@ -489,7 +494,8 @@ const COPY = {
     askCity: "Қай қалаға жеткізу керек?",
     askAdd: "Қай тауарды қосайын? Атауын жазыңыз.",
     removeWhich: (titles: string) => `Қай тауарды алып тастайын? ${titles}`,
-    sizeAsk: (list: string) => `Қандай өлшем? Бары: ${list}.`,
+    sizeAsk: (list: string, out?: string) =>
+      `${out ? `${out} өлшемі қолда жоқ. ` : ""}Қандай өлшем? Бары: ${list}.`,
     askName: "Атыңыз кім?",
     askPhone: "Дүкен сізге қай телефон нөміріне қоңырау шала алады?",
     askFulfillment: "Өзіңіз алып кетесіз бе, әлде жеткізу керек пе?",
@@ -508,7 +514,7 @@ const COPY = {
 
 type Copy = (typeof COPY)[Lang];
 
-const SIZE_ASK_RE = /^(?:Which size\? Available|Какой размер\? Есть|Қандай өлшем\? Бары): (.+)\.$/u;
+const SIZE_ASK_RE = /(?:Which size\? Available|Какой размер\? Есть|Қандай өлшем\? Бары): (.+)\.$/u;
 
 type AskKind = "name" | "phone" | "fulfillment" | "address" | "city";
 type PromptKey =
@@ -628,6 +634,7 @@ interface ShownOffer {
   availability?: "in_stock" | "out_of_stock" | "unknown";
   can_order?: boolean;
   attributes?: Record<string, unknown>;
+  unavailable_sizes?: string[];
   matched?: { size?: boolean | null };
 }
 
@@ -940,9 +947,13 @@ function availabilityOf(offer: ShownOffer, copy: Copy): string {
 
 function sizeNote(offer: ShownOffer, intent: Intent, copy: Copy): string | null {
   const sizes = offer.attributes?.sizes;
-  if (!Array.isArray(sizes) || sizes.length === 0) return null;
+  const out = offer.unavailable_sizes ?? [];
+  if (!Array.isArray(sizes) || (sizes.length === 0 && out.length === 0)) return null;
   const list = sizes.map(String);
   if (intent.size) {
+    if (offer.availability === "in_stock" && out.includes(intent.size)) {
+      return copy.sizeOut(intent.size);
+    }
     const fits =
       typeof offer.matched?.size === "boolean" ? offer.matched.size : list.includes(intent.size);
     return fits ? copy.sizeYes(intent.size) : copy.sizeNo(intent.size);
@@ -1384,8 +1395,9 @@ function continueDecision(
       const sizes = Array.isArray(offer.attributes?.sizes)
         ? offer.attributes.sizes.map(String)
         : [];
+      const out = size && offer.unavailable_sizes?.includes(size) ? size : undefined;
       if (sizes.length > 0 && (!size || !sizes.includes(size))) {
-        return { reply: copy.sizeAsk(sizes.join(", ")) };
+        return { reply: copy.sizeAsk(sizes.join(", "), out) };
       }
       const line = lineArg(offer, intent.quantity, size);
       const draft = adding ? ctx.draft : null;

@@ -121,6 +121,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
   registerIntentTools(server, {
     ctx,
     intent: services.intent,
+    catalog,
     track: tracking,
     store: options.store,
   });

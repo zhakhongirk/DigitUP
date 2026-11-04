@@ -1,4 +1,11 @@
-import type { OfferView } from "@/server/services/catalog";
+import {
+  groupAvailability,
+  groupPrice,
+  groupSizes,
+  sizeOf,
+  type OfferGroup,
+  type OfferView,
+} from "@/server/services/catalog";
 import type { Inquiry, Order } from "@/server/services/orders";
 import type { Policies } from "@/shared/business-model";
 
@@ -30,6 +37,7 @@ export function publicOffer(offer: OfferView) {
     title: offer.title,
     description: offer.description,
     category: offer.category,
+    model: offer.model,
     type: offer.offerTypeName,
     attributes: offer.attributes,
     image_url: offer.imageUrl,
@@ -90,5 +98,77 @@ export function inquiryView(inquiry: Inquiry) {
     contact: inquiry.contact,
     conversation_id: inquiry.conversationId,
     created_at: inquiry.createdAt.toISOString(),
+  };
+}
+
+/**
+ * A product card for shoppers: one row per model. The row keeps the shape of a
+ * single offer, with `sizes` listing the sizes in stock and `variants` the
+ * concrete per-size offers. Offers without a model are shown as they are.
+ */
+export function publicGroup(group: OfferGroup) {
+  return group.model === null
+    ? publicOffer(group.lead)
+    : publicModel({ ...group, model: group.model });
+}
+
+export function publicModel(group: OfferGroup & { model: string }) {
+  const base = publicOffer(group.lead);
+  const price = groupPrice(group);
+  const availability = groupAvailability(group);
+  const { available, unavailable } = groupSizes(group);
+  const attributes = Object.fromEntries(
+    Object.entries(group.lead.attributes as Record<string, unknown>).filter(
+      ([key]) => key !== "size",
+    ),
+  );
+  const range =
+    price && price.min !== price.max
+      ? `${formatMoney(price.min, price.currency)} - ${formatMoney(price.max, price.currency)}`
+      : price
+        ? formatMoney(price.min, price.currency)
+        : "Price on request";
+  const orderable = group.variants.some(
+    (v) => v.priceStatus === "confirmed" && v.availability === "in_stock",
+  );
+  const withSizes = available.length > 0 || unavailable.length > 0;
+  return {
+    ...base,
+    title: group.model,
+    attributes: withSizes ? { ...attributes, sizes: available } : attributes,
+    price: price?.min ?? null,
+    price_max: price && price.max !== price.min ? price.max : null,
+    currency: price?.currency ?? null,
+    price_status: price ? ("confirmed" as const) : ("on_request" as const),
+    price_on_request: price === null,
+    price_label: range,
+    image_url: group.lead.imageUrl ?? group.variants.find((v) => v.imageUrl)?.imageUrl ?? null,
+    availability,
+    availability_label: AVAILABILITY_LABEL[availability],
+    can_order: orderable,
+    sizes: available,
+    unavailable_sizes: unavailable,
+    variants: group.variants.map((v) => ({
+      offer_id: v.id,
+      title: v.title,
+      size: sizeOf(v),
+      availability: v.availability,
+      availability_label: AVAILABILITY_LABEL[v.availability],
+      price_label: priceLabel(v),
+      can_order:
+        v.priceStatus === "confirmed" && v.availability === "in_stock" && v.status === "active",
+    })),
+  };
+}
+
+/** Compact row for result lists: sizes in stock mapped to the offer id of that size. */
+export function listGroup(group: OfferGroup) {
+  if (group.model === null) return publicOffer(group.lead);
+  const { variants, ...row } = publicModel({ ...group, model: group.model });
+  return {
+    ...row,
+    variant_ids: Object.fromEntries(
+      variants.flatMap((v) => (v.size && v.can_order ? [[v.size, v.offer_id]] : [])),
+    ),
   };
 }

@@ -47,7 +47,13 @@ export function createPublicMcpServer({
   );
 
   const track: IntentTracking = { channel: "external_agent", clientKey };
-  registerIntentTools(server, { ctx, intent: services.intent, track, store });
+  registerIntentTools(server, {
+    ctx,
+    intent: services.intent,
+    catalog: services.catalog,
+    track,
+    store,
+  });
   if (publicRawToolsEnabled()) {
     registerRawTools(server, {
       ctx,

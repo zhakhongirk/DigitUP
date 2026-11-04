@@ -32,7 +32,7 @@ describe("fast model rewrite", () => {
     expect(result.interpretedBy).toBe("fast_model");
     expect(result.offers.length).toBeGreaterThan(0);
     expect(result.applied.category).toBe("Sneakers");
-    expect(findOffersView(result, { slug: "s" } as never)).toMatchObject({
+    expect(await findOffersView(result, { slug: "s" }, services.catalog, ctx)).toMatchObject({
       interpreted_by: "fast_model",
     });
     expect(llm.requests[0]?.usageSource).toEqual({

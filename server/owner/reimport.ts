@@ -21,7 +21,7 @@ export type ExistingOffer = Pick<
   Partial<
     Pick<
       OfferView,
-      "status" | "description" | "category" | "priceStatus" | "availability" | "imageUrl"
+      "status" | "description" | "category" | "model" | "priceStatus" | "availability" | "imageUrl"
     >
   >;
 
@@ -221,6 +221,7 @@ export function buildOps(
         title: offer.title,
         description: offer.description ?? "",
         category: offer.category ?? null,
+        model: offer.model ?? null,
         offer_type: offerTypeKey,
         attributes: keptCodes(offer.attributes, codeKeys),
         status: "active" as const,
@@ -240,6 +241,7 @@ export function buildOps(
         title: offer.title,
         description: offer.description ?? "",
         category: offer.category ?? null,
+        model: offer.model ?? null,
         offer_type: offer.offerTypeKey,
         attributes: (offer.attributes ?? {}) as Attributes,
         status: "active" as const,

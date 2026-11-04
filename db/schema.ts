@@ -198,6 +198,8 @@ export const offers = pgTable(
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
     category: text("category"),
+    /** Groups the per-size offers of one product; null for a standalone offer. */
+    model: text("model"),
     attributes: jsonb("attributes").notNull().default({}),
     price: numeric("price", { precision: 12, scale: 2, mode: "number" }),
     currency: text("currency"),
@@ -212,6 +214,7 @@ export const offers = pgTable(
   (t) => [
     index("offers_tenant_idx").on(t.tenantId),
     index("offers_tenant_status_idx").on(t.tenantId, t.status, t.title),
+    index("offers_tenant_model_idx").on(t.tenantId, t.model),
   ],
 );
 

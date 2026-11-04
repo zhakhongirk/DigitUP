@@ -5,7 +5,7 @@ import { ServiceError, type TenantContext } from "@/server/services/context";
 import type { RawTool } from "@/server/services/intent";
 import { attributeValueSchema } from "@/shared/business-model";
 import { runTool } from "../tools";
-import { priceLabel, publicOffer } from "../views";
+import { listGroup, priceLabel, publicModel, publicOffer } from "../views";
 
 export type RawCallTracker = (tool: RawTool, args: unknown, resultIds: string[]) => Promise<void>;
 
@@ -13,7 +13,12 @@ export interface RawToolsOptions {
   ctx: TenantContext;
   catalog: Pick<
     CatalogService,
-    "searchOffers" | "getOffer" | "getOffers" | "listOfferTypes" | "recordSearchMiss"
+    | "searchGroups"
+    | "getOffer"
+    | "getOffers"
+    | "listOfferTypes"
+    | "recordSearchMiss"
+    | "groupOffers"
   >;
   /** Called after each tool returns; used to measure raw calls that follow find_offers. */
   track?: RawCallTracker;
@@ -45,14 +50,14 @@ export function registerRawTools(
           ),
         min_price: z.number().nonnegative().optional(),
         max_price: z.number().nonnegative().optional(),
-        limit: z.number().int().min(1).max(50).default(10),
+        limit: z.number().int().min(1).max(100).default(10),
         offset: z.number().int().min(0).default(0),
       },
       annotations: { readOnlyHint: true },
     },
     (args) =>
       runTool("search_offers", async () => {
-        const result = await catalog.searchOffers(ctx, {
+        const result = await catalog.searchGroups(ctx, {
           query: args.query,
           category: args.category,
           attributes: args.attributes,
@@ -65,7 +70,7 @@ export function registerRawTools(
         if (result.total === 0 && args.offset === 0 && args.query?.trim()) {
           await catalog.recordSearchMiss(ctx, args.query);
         }
-        const found = result.items.map(publicOffer);
+        const found = result.groups.map(listGroup);
         await track?.(
           "search_offers",
           args,
@@ -93,7 +98,14 @@ export function registerRawTools(
           throw new ServiceError("not_found", "Offer not found");
         }
         await track?.("get_offer_details", { offer_id }, [offer_id]);
-        return publicOffer(offer);
+        if (offer.model === null) return publicOffer(offer);
+        const [group] = await catalog.groupOffers(ctx, [offer]);
+        if (!group || group.model === null) return publicOffer(offer);
+        const { sizes, unavailable_sizes, variants } = publicModel({
+          ...group,
+          model: group.model,
+        });
+        return { ...publicOffer(offer), sizes, unavailable_sizes, variants };
       }),
   );
 

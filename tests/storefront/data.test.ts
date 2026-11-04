@@ -28,7 +28,7 @@ describe("storefront data", () => {
   it("paginates the catalog", async () => {
     const { services, ctx } = await seededStore();
     const first = await searchCatalog(services, ctx, { page: 1 });
-    expect(first.total).toBe(shoeStoreModel.offers?.length);
+    expect(first.total).toBe(new Set(shoeStoreModel.offers?.map((o) => o.model)).size);
     expect(first.items).toHaveLength(Math.min(PAGE_SIZE, first.total));
     expect(first.pageCount).toBe(Math.ceil(first.total / PAGE_SIZE));
     const beyond = await searchCatalog(services, ctx, { page: first.pageCount + 1 });

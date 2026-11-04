@@ -102,7 +102,7 @@ describe("catalog export", () => {
     expect(res.headers.get("Cache-Control")).toBe("no-store");
     const lines = (await body(res)).split("\r\n").filter(Boolean);
     expect(lines[0]).toBe(
-      "ID,Title,Category,Price,Currency,Price status,Availability,Status,Description",
+      "ID,Title,Model,Size,Category,Price,Currency,Price status,Availability,Status,Description",
     );
     expect(lines).toHaveLength(3);
     expect(lines.some((l) => l.includes(ids.Alpha!) && l.includes("active"))).toBe(true);

@@ -68,6 +68,8 @@ export const offerSchema = z
     title: z.string().min(1),
     description: z.string().default(""),
     category: z.string().min(1).nullable().default(null),
+    /** Product name shared by the per-size offers of one product; null for a standalone offer. */
+    model: z.string().trim().min(1).max(200).nullable().default(null),
     /** Key of an offer type defined in the same model. */
     offer_type: keySchema,
     attributes: z.record(z.string(), attributeValueSchema).default({}),

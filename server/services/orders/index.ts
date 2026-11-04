@@ -5,6 +5,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   ne,
   notInArray,
   sql,
@@ -300,6 +301,84 @@ function toLines(items: OrderItem[]): OrderItemInput[] {
   }));
 }
 
+const variantSize = (attributes: unknown): string | null => {
+  const value = (attributes as Record<string, unknown> | null)?.size;
+  if (typeof value === "number") return String(value);
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+};
+
+const sameSize = (a: string, b: string) =>
+  a.trim().toLowerCase().replace(",", ".") === b.trim().toLowerCase().replace(",", ".");
+
+/**
+ * Points each line at the concrete per-size offer. A line that names an offer of
+ * a model plus a size moves to the sibling with that size; a line for a sized
+ * variant carries that variant's size. Offers without a model are left alone.
+ */
+async function resolveLines(
+  db: Db | DbTx,
+  ctx: TenantContext,
+  lines: OrderItemInput[],
+): Promise<OrderItemInput[]> {
+  const ids = [...new Set(lines.map((line) => line.offerId))];
+  const rows = await db
+    .select()
+    .from(offers)
+    .where(and(eq(offers.tenantId, ctx.tenantId), inArray(offers.id, ids)));
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  const models = [...new Set(rows.flatMap((row) => (row.model ? [row.model] : [])))];
+  const siblings =
+    models.length === 0
+      ? []
+      : await db
+          .select()
+          .from(offers)
+          .where(
+            and(
+              eq(offers.tenantId, ctx.tenantId),
+              eq(offers.status, "active"),
+              isNotNull(offers.model),
+              inArray(offers.model, models),
+            ),
+          );
+  const resolved: OrderItemInput[] = [];
+  for (const line of lines) {
+    const offer = byId.get(line.offerId);
+    if (!offer?.model) {
+      resolved.push(line);
+      continue;
+    }
+    const own = variantSize(offer.attributes);
+    if (!line.size || (own !== null && sameSize(own, line.size))) {
+      resolved.push(own === null ? line : { ...line, size: own });
+      continue;
+    }
+    const group = siblings.filter((row) => row.model === offer.model);
+    const match = group.find((row) => {
+      const size = variantSize(row.attributes);
+      return size !== null && sameSize(size, line.size!);
+    });
+    if (match) {
+      resolved.push({ ...line, offerId: match.id, size: variantSize(match.attributes)! });
+      continue;
+    }
+    if (own === null && !group.some((row) => variantSize(row.attributes) !== null)) {
+      resolved.push(line);
+      continue;
+    }
+    const known = group
+      .filter((row) => row.availability === "in_stock")
+      .map((row) => variantSize(row.attributes))
+      .filter((size): size is string => size !== null);
+    throw new ServiceError(
+      "invalid",
+      `"${offer.model}" has no size ${line.size}` +
+        (known.length > 0 ? `; available sizes: ${known.join(", ")}` : ""),
+    );
+  }
+  return resolved;
+}
+
 const asList = <T>(value: T | T[]): T[] => (Array.isArray(value) ? value : [value]);
 
 function assertUuid(id: string, message: string) {
@@ -417,13 +496,34 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     await publishStatusChange(tx, ctx, "inquiry", before.id, status, before.status);
   }
 
+  async function inStockHint(
+    tx: DbTx,
+    ctx: TenantContext,
+    offer: typeof offers.$inferSelect,
+  ): Promise<string> {
+    if (!offer.model) return "";
+    const rows = await tx
+      .select()
+      .from(offers)
+      .where(
+        and(
+          eq(offers.tenantId, ctx.tenantId),
+          eq(offers.status, "active"),
+          eq(offers.model, offer.model),
+          eq(offers.availability, "in_stock"),
+        ),
+      );
+    const sizes = rows.map((row) => variantSize(row.attributes)).filter((size) => size !== null);
+    return sizes.length > 0 ? `; available sizes: ${sizes.join(", ")}` : "";
+  }
+
   /** Validates offers and snapshots them as order items. */
   async function buildItems(
     tx: DbTx,
     ctx: TenantContext,
     requested: OrderItemInput[],
   ): Promise<{ items: OrderItem[]; total: number; currency: string }> {
-    const lines = mergeLines(requested);
+    const lines = mergeLines(await resolveLines(tx, ctx, requested));
     const quantities = new Map<string, number>();
     for (const { offerId, quantity } of lines) {
       quantities.set(offerId, (quantities.get(offerId) ?? 0) + quantity);
@@ -449,7 +549,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
       if (offer.availability !== "in_stock") {
         problems.push(
           offer.availability === "out_of_stock"
-            ? `"${offer.title}" is out of stock`
+            ? `"${offer.title}" is out of stock${await inStockHint(tx, ctx, offer)}`
             : `availability of "${offer.title}" is not confirmed; submit an inquiry instead`,
         );
         continue;
@@ -559,7 +659,8 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
 
   return {
     async createOrder(ctx, rawInput) {
-      const input = parseOrThrow(createOrderSchema, rawInput, "order");
+      const parsed = parseOrThrow(createOrderSchema, rawInput, "order");
+      const input = { ...parsed, items: await resolveLines(db, ctx, parsed.items) };
 
       const existing = await findByKey(ctx, input.idempotencyKey);
       if (existing) return { order: await mergeDraftContact(ctx, existing, input), created: false };
@@ -637,7 +738,11 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
     },
 
     async updateDraftItems(ctx, orderId, rawItems) {
-      const items = parseOrThrow(orderItemsInputSchema, rawItems, "order items");
+      const items = await resolveLines(
+        db,
+        ctx,
+        parseOrThrow(orderItemsInputSchema, rawItems, "order items"),
+      );
       return db.transaction(async (tx) => {
         const order = await loadOrderForUpdate(tx, ctx, orderId);
         if (order.status !== "draft") return order;

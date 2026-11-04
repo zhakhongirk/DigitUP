@@ -4,7 +4,7 @@ import { singular } from "./lexicon";
 import type { Interpretation, Plan } from "./plan";
 import { fold } from "./text";
 
-export const SEARCH_LIMIT = 20;
+export const SEARCH_LIMIT = 100;
 export const BUDGET_RELAX = 1.15;
 
 export interface SearchArguments {
@@ -152,6 +152,25 @@ function appliedOf(plan: Plan, search: SearchArguments): AppliedFilters {
 
 export type Execution = Omit<IntentResult, "intentId" | "summary">;
 
+const groupKey = (item: MatchedOffer) => item.offer.model ?? item.offer.id;
+
+/** Keeps every variant of the first `limit` products, in the given order. */
+function firstGroups(list: MatchedOffer[], limit: number): MatchedOffer[] {
+  const kept = new Set<string>();
+  const out: MatchedOffer[] = [];
+  for (const item of list) {
+    const key = groupKey(item);
+    if (!kept.has(key)) {
+      if (kept.size >= limit) continue;
+      kept.add(key);
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+const countGroups = (list: MatchedOffer[]) => new Set(list.map(groupKey)).size;
+
 export const OFFERS_SHOWN = 10;
 export const ON_REQUEST_SHOWN = 5;
 
@@ -221,10 +240,10 @@ export async function executePlan(plan: Plan, search: SearchFn): Promise<Executi
   return {
     lang: plan.lang,
     text: plan.text,
-    offers: priced.slice(0, OFFERS_SHOWN),
-    onRequest: onRequest.slice(0, ON_REQUEST_SHOWN),
-    total: priced.length,
-    onRequestTotal: onRequest.length,
+    offers: firstGroups(priced, OFFERS_SHOWN),
+    onRequest: firstGroups(onRequest, ON_REQUEST_SHOWN),
+    total: countGroups(priced),
+    onRequestTotal: countGroups(onRequest),
     applied: appliedOf(plan, args),
     relaxed,
     unresolved,
