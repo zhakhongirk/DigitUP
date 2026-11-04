@@ -249,3 +249,31 @@ export async function executePlan(plan: Plan, search: SearchFn): Promise<Executi
     search: args,
   };
 }
+
+const NO_MATCH = /^(?:no matching offers|no match even without)/;
+
+/** Puts the products an owner linked to the phrase ahead of what the search found. */
+export function mergeLinked(execution: Execution, linked: OfferView[]): Execution {
+  if (linked.length === 0) return execution;
+  const shown = new Set([...execution.offers, ...execution.onRequest].map((item) => item.offer.id));
+  const fresh = linked
+    .filter((offer) => !shown.has(offer.id))
+    .map((offer) => ({
+      offer,
+      matched: { size: null, color: null, budget: null },
+    }));
+  const known = new Set([...execution.offers, ...execution.onRequest].map(groupKey));
+  const added = new Set(fresh.filter((i) => !known.has(groupKey(i))).map(groupKey));
+  const priced = fresh.filter((i) => isPriced(i.offer));
+  const open = fresh.filter((i) => !isPriced(i.offer));
+  const addedPriced = new Set(priced.map(groupKey).filter((k) => added.has(k)));
+  const addedOpen = new Set(open.map(groupKey).filter((k) => added.has(k)));
+  return {
+    ...execution,
+    offers: firstGroups([...priced, ...execution.offers], OFFERS_SHOWN),
+    onRequest: firstGroups([...open, ...execution.onRequest], ON_REQUEST_SHOWN),
+    total: execution.total + addedPriced.size,
+    onRequestTotal: execution.onRequestTotal + addedOpen.size,
+    unresolved: execution.unresolved.filter((u) => !NO_MATCH.test(u)),
+  };
+}

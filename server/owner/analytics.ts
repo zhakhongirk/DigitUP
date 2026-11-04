@@ -2,7 +2,12 @@ import type { Services } from "@/server/container";
 import type { MissedQuery } from "@/server/services/catalog/search-misses";
 import type { TenantContext } from "@/server/services/context";
 import type { Conversation, ConversationStats, DayCount } from "@/server/services/conversations";
-import type { IntentStats } from "@/server/services/intent";
+import {
+  termMatches,
+  type IntentStats,
+  type LinkedTerm,
+  type LinkTarget,
+} from "@/server/services/intent";
 import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
 import { appTimeZone } from "@/server/time";
 import type { Lang } from "@/server/storefront/i18n";
@@ -188,14 +193,22 @@ export interface AnalyticsView {
   offers: TopOffer[];
   queries: TopQuery[];
   missedQueries: MissedQuery[];
+  linked: LinkedTerm[];
+  targets: LinkTarget[];
   answers: AgentAnswers;
   days: DayPoint[];
   openQuestions: OpenQuestion[];
 }
 
+/** Empty searches the owner has not tied to products yet. */
+export function unlinkedMisses(misses: MissedQuery[], linked: Pick<LinkedTerm, "term">[]) {
+  return misses.filter((miss) => !linked.some((link) => termMatches(miss.query, link.term)));
+}
+
 const QUERIES_SAMPLE = 200;
 const OPEN_QUESTIONS = 4;
 const MISSED_QUERIES = 8;
+const MISSED_SAMPLE = 60;
 
 export async function loadAnalytics(
   services: Services,
@@ -213,8 +226,10 @@ export async function loadAnalytics(
     dailyConversations,
     daily,
     unresolved,
-    missedQueries,
+    missedSample,
     intentStats,
+    linked,
+    targets,
   ] = await Promise.all([
     services.conversations.stats(ctx, { since }),
     services.orders.stats(ctx, { since }),
@@ -222,8 +237,10 @@ export async function loadAnalytics(
     services.conversations.dailyCounts(ctx, { since, timeZone }),
     services.orders.dailyCounts(ctx, { since, timeZone }),
     services.orders.listInquiries(ctx, { status: "new", limit: OPEN_QUESTIONS }),
-    services.catalog.searchMisses(ctx, { days: 30, limit: MISSED_QUERIES, now }),
+    services.catalog.searchMisses(ctx, { days: 30, limit: MISSED_SAMPLE, now }),
     services.intent.stats(ctx, { days: 30, now }),
+    services.intent.listLinks(ctx),
+    services.intent.linkTargets(ctx),
   ]);
   const placed = Object.entries(orders.byStatus).reduce(
     (sum, [status, n]) => (status === "draft" ? sum : sum + n),
@@ -242,7 +259,9 @@ export async function loadAnalytics(
     outcome: agentOutcome(conversations, orders.inquiries),
     offers: orders.topOffers,
     queries: topQueries(firstMessages.map((m) => m.content)),
-    missedQueries,
+    missedQueries: unlinkedMisses(missedSample, linked).slice(0, MISSED_QUERIES),
+    linked,
+    targets,
     answers: agentAnswers(intentStats),
     days: dailySeries(
       now,

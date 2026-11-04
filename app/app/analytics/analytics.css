@@ -347,3 +347,74 @@
 .an-path-loop {
   background: var(--accent);
 }
+
+.an-miss-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border, rgba(127, 127, 127, 0.2));
+}
+
+.an-miss-main {
+  display: flex;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.an-miss-tools {
+  display: flex;
+  flex: 0 1 360px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  max-width: 100%;
+}
+
+.an-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.an-link-search {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.an-link-options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+
+.an-link-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.an-link-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.an-sub {
+  margin: 18px 0 2px;
+  font-size: 15px;
+  font-weight: 600;
+}

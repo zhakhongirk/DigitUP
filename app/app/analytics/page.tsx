@@ -16,6 +16,7 @@ import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { formatDay } from "@/server/time";
 import { LOCALES, type Lang, type Translator } from "@/shared/owner-copy";
+import { LinkTargets, LinkTerm, Unlink } from "./link-products";
 import "./analytics.css";
 
 export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.analytics");
@@ -130,7 +131,6 @@ export default async function AnalyticsPage({
   ]);
   const { outcome } = view;
   const maxQuery = Math.max(1, ...view.queries.map((q) => q.count));
-  const maxMissed = Math.max(1, ...view.missedQueries.map((q) => q.count));
   const hasActivity = view.days.some((d) => d.conversations + d.orders + d.inquiries > 0);
 
   return (
@@ -255,18 +255,40 @@ export default async function AnalyticsPage({
       <section className="an-card an-wide glass" aria-labelledby="an-missed">
         <h2 id="an-missed">{t("an.missed")}</h2>
         <p className="an-q-meta">{t("an.missedNote")}</p>
-        {view.missedQueries.length === 0 ? (
-          <p className="an-empty">{t("an.noMissed")}</p>
-        ) : (
-          <Bars
-            items={view.missedQueries.map((q) => ({
-              key: q.query,
-              label: q.query,
-              value: String(q.count),
-              share: q.count / maxMissed,
-            }))}
-          />
-        )}
+        <LinkTargets targets={view.targets}>
+          {view.missedQueries.length === 0 ? (
+            <p className="an-empty">{t("an.noMissed")}</p>
+          ) : (
+            view.missedQueries.map((q) => (
+              <div key={q.query} className="an-miss-row">
+                <span className="an-miss-main">
+                  <span className="an-text">{q.query}</span>
+                  <span className="an-q-meta">{q.count}</span>
+                </span>
+                <span className="an-miss-tools">
+                  <LinkTerm term={q.query} />
+                </span>
+              </div>
+            ))
+          )}
+          {view.linked.length > 0 ? (
+            <>
+              <h3 className="an-sub">{t("an.linkedTitle")}</h3>
+              <p className="an-q-meta">{t("an.linkedNote")}</p>
+              {view.linked.map((link) => (
+                <div key={link.term} className="an-miss-row">
+                  <span className="an-miss-main">
+                    <span className="an-text">{link.term}</span>
+                    <span className="an-q-meta">{link.titles.join(", ")}</span>
+                  </span>
+                  <span className="an-miss-tools">
+                    <Unlink term={link.term} />
+                  </span>
+                </div>
+              ))}
+            </>
+          ) : null}
+        </LinkTargets>
       </section>
 
       <section className="an-card an-wide glass" aria-labelledby="an-answers">

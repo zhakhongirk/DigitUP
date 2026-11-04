@@ -9,13 +9,21 @@ import { ServiceError, type TenantContext } from "../context";
 import { planIntent, type Plan } from "./plan";
 import { log } from "@/server/log";
 import { planRewrite, type IntentInterpreter, type Rewrite } from "./rewrite";
-import { executePlan, type Execution, type IntentResult, type SearchArguments } from "./resolve";
+import {
+  executePlan,
+  mergeLinked,
+  type Execution,
+  type IntentResult,
+  type SearchArguments,
+} from "./resolve";
+import { createManualService, linksFor, loadManual, type ManualService } from "./manual";
 import { backfillVocabularies, loadVocabulary, refreshVocabulary } from "./store";
 import { summarize } from "./summary";
 import type { StoreVocabulary } from "./vocabulary";
 
 export * from "./resolve";
 export * from "./sizes";
+export { termMatches, type LinkedTerm, type LinkTarget } from "./manual";
 export type { Plan } from "./plan";
 export { planIntent } from "./plan";
 export {
@@ -61,7 +69,7 @@ export interface IntentStats {
   followedByRaw: number;
 }
 
-export interface IntentService {
+export interface IntentService extends ManualService {
   resolveIntent(ctx: TenantContext, input: ResolveInput): Promise<IntentResult>;
   getVocabulary(ctx: TenantContext): Promise<StoreVocabulary>;
   rebuildVocabulary(ctx: TenantContext): Promise<StoreVocabulary>;
@@ -98,7 +106,7 @@ export function createIntentService({
   interpret,
 }: {
   db: Db;
-  catalog: Pick<CatalogService, "searchOffers" | "recordSearchMiss">;
+  catalog: Pick<CatalogService, "searchOffers" | "recordSearchMiss" | "getOffers" | "listVariants">;
   /**
    * Tried once after the answer is sent when the deterministic plan leaves words unresolved or
    * finds nothing; its reading is logged on the intent event and never delays the answer.
@@ -107,6 +115,23 @@ export function createIntentService({
 }): IntentService {
   const background = new Set<Promise<void>>();
   const deferred = new WeakMap<IntentResult, () => Promise<void>>();
+  const manual = createManualService(db);
+
+  async function linkedOffers(ctx: TenantContext, text: string): Promise<OfferView[]> {
+    const links = linksFor(await loadManual(db, ctx.tenantId), text);
+    if (links.length === 0) return [];
+    const ids = [...new Set(links.flatMap((l) => l.offerIds))];
+    const models = [...new Set(links.flatMap((l) => l.models))];
+    const [byId, byModel] = await Promise.all([
+      ids.length > 0 ? catalog.getOffers(ctx, ids) : [],
+      models.length > 0 ? catalog.listVariants(ctx, models) : [],
+    ]);
+    const unique = new Map<string, OfferView>();
+    for (const offer of [...byId, ...byModel]) {
+      if (offer.status === "active") unique.set(offer.id, offer);
+    }
+    return [...unique.values()];
+  }
 
   function logRewrite(task: {
     ctx: TenantContext;
@@ -153,6 +178,8 @@ export function createIntentService({
   }
 
   return {
+    ...manual,
+
     async settled() {
       while (background.size > 0) await Promise.all([...background]);
     },
@@ -172,11 +199,13 @@ export function createIntentService({
           limit: args.limit,
           offset: args.offset,
         });
-      const execution: Execution = await executePlan(plan, search);
+      const linked = await linkedOffers(ctx, text);
+      const execution: Execution = mergeLinked(await executePlan(plan, search), linked);
 
       const found = (e: Execution) => e.total + e.onRequestTotal;
       const needsReading =
-        found(execution) === 0 || execution.unresolved.some((u) => u.startsWith("unknown word"));
+        found(execution) === 0 ||
+        (linked.length === 0 && execution.unresolved.some((u) => u.startsWith("unknown word")));
       const result: IntentResult = {
         ...execution,
         intentId: randomUUID(),
