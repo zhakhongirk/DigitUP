@@ -2,7 +2,7 @@
 
 import { createContext, useActionState, useContext, useState, type ReactNode } from "react";
 import { useT } from "@/app/i18n-provider";
-import { linkTerm, unlinkTerm, type LinkState } from "./actions";
+import { dismissReport, linkTerm, unlinkTerm, type LinkState } from "./actions";
 
 export interface TargetOption {
   value: string;
@@ -31,7 +31,7 @@ function FormError({ state }: { state: LinkState }) {
   ) : null;
 }
 
-export function LinkTerm({ term }: { term: string }) {
+export function LinkTerm({ term, reviewId }: { term: string; reviewId?: string }) {
   const { t } = useT();
   const targets = useContext(Targets);
   const [open, setOpen] = useState(false);
@@ -50,6 +50,7 @@ export function LinkTerm({ term }: { term: string }) {
   return (
     <form action={action} className="an-link-form">
       <input type="hidden" name="term" value={term} />
+      {reviewId ? <input type="hidden" name="reviewId" value={reviewId} /> : null}
       <input
         type="search"
         className="an-link-search"
@@ -90,6 +91,20 @@ export function Unlink({ term }: { term: string }) {
       <input type="hidden" name="term" value={term} />
       <button type="submit" className="btn btn-sm btn-secondary" disabled={pending}>
         {t("an.unlink")}
+      </button>
+      <FormError state={state} />
+    </form>
+  );
+}
+
+export function Dismiss({ id }: { id: string }) {
+  const { t } = useT();
+  const [state, action, pending] = useActionState(dismissReport, INITIAL);
+  return (
+    <form action={action}>
+      <input type="hidden" name="id" value={id} />
+      <button type="submit" className="btn btn-sm btn-secondary" disabled={pending}>
+        {t("an.dismiss")}
       </button>
       <FormError state={state} />
     </form>

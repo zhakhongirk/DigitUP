@@ -23,7 +23,7 @@ import type { StoreVocabulary } from "./vocabulary";
 
 export * from "./resolve";
 export * from "./sizes";
-export { termMatches, type LinkedTerm, type LinkTarget } from "./manual";
+export { termMatches, type LinkedTerm, type LinkTarget, type WrongReport } from "./manual";
 export type { Plan } from "./plan";
 export { planIntent } from "./plan";
 export {

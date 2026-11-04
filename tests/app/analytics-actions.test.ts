@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { linkTerm, unlinkTerm } from "@/app/app/analytics/actions";
+import { dismissReport, linkTerm, unlinkTerm } from "@/app/app/analytics/actions";
 import {
   expectRedirect,
   form,
@@ -60,5 +60,27 @@ describe("linkTerm", () => {
     const result = await linkTerm(prev, picks("ghost", ["model:Nothing"]));
     expect(result.saved).toBe(false);
     expect(result.error).toBeTruthy();
+  });
+});
+
+describe("dismissReport", () => {
+  it("resolves a wrong report and rejects a bad id", async () => {
+    const { ctx, token } = await signUpOwner();
+    await seedShop(ctx);
+    session.token = token;
+    const { intent } = testServices();
+    const found = await intent.resolveIntent(ctx, {
+      text: "alpha",
+      track: { channel: "storefront", sessionKey: "dismiss-session" },
+    });
+    await intent.reportAnswer(ctx, { intentId: found.intentId, verdict: "wrong" });
+    expect(await intent.listWrongReports(ctx)).toHaveLength(1);
+
+    expect((await dismissReport(prev, form({ id: "nope" }))).error).toBeTruthy();
+    expect(await dismissReport(prev, form({ id: found.intentId }))).toEqual({
+      error: null,
+      saved: true,
+    });
+    expect(await intent.listWrongReports(ctx)).toEqual([]);
   });
 });

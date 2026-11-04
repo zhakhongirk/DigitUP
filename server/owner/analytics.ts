@@ -7,6 +7,7 @@ import {
   type IntentStats,
   type LinkedTerm,
   type LinkTarget,
+  type WrongReport,
 } from "@/server/services/intent";
 import type { DailyOrderCounts, Inquiry, OrderStats } from "@/server/services/orders";
 import { appTimeZone } from "@/server/time";
@@ -194,6 +195,7 @@ export interface AnalyticsView {
   queries: TopQuery[];
   missedQueries: MissedQuery[];
   linked: LinkedTerm[];
+  review: WrongReport[];
   targets: LinkTarget[];
   answers: AgentAnswers;
   days: DayPoint[];
@@ -229,6 +231,7 @@ export async function loadAnalytics(
     missedSample,
     intentStats,
     linked,
+    review,
     targets,
   ] = await Promise.all([
     services.conversations.stats(ctx, { since }),
@@ -240,6 +243,7 @@ export async function loadAnalytics(
     services.catalog.searchMisses(ctx, { days: 30, limit: MISSED_SAMPLE, now }),
     services.intent.stats(ctx, { days: 30, now }),
     services.intent.listLinks(ctx),
+    services.intent.listWrongReports(ctx),
     services.intent.linkTargets(ctx),
   ]);
   const placed = Object.entries(orders.byStatus).reduce(
@@ -261,6 +265,7 @@ export async function loadAnalytics(
     queries: topQueries(firstMessages.map((m) => m.content)),
     missedQueries: unlinkedMisses(missedSample, linked).slice(0, MISSED_QUERIES),
     linked,
+    review,
     targets,
     answers: agentAnswers(intentStats),
     days: dailySeries(

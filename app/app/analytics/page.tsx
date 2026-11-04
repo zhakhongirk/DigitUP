@@ -16,7 +16,7 @@ import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { formatDay } from "@/server/time";
 import { LOCALES, type Lang, type Translator } from "@/shared/owner-copy";
-import { LinkTargets, LinkTerm, Unlink } from "./link-products";
+import { Dismiss, LinkTargets, LinkTerm, Unlink } from "./link-products";
 import "./analytics.css";
 
 export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.analytics");
@@ -320,6 +320,38 @@ export default async function AnalyticsPage({
               <dd>{percent(view.answers.rawShare, t)}</dd>
             </div>
           </dl>
+        )}
+        <h3 className="an-sub">{t("an.review")}</h3>
+        <p className="an-q-meta">{t("an.reviewNote")}</p>
+        {view.review.length === 0 ? (
+          <p className="an-empty">{t("an.reviewNone")}</p>
+        ) : (
+          <LinkTargets targets={view.targets}>
+            {view.review.map((report) => (
+              <div key={report.id} className="an-miss-row">
+                <span className="an-miss-main">
+                  <span className="an-text">{report.query}</span>
+                  <span className="an-q-meta">
+                    {report.returned.length > 0
+                      ? t("an.reviewReturned", { titles: report.returned.join(", ") })
+                      : t("an.reviewNothing")}
+                  </span>
+                  {report.comment ? (
+                    <span className="an-q-meta">
+                      {t("an.reviewComment", { comment: report.comment })}
+                    </span>
+                  ) : null}
+                  <span className="an-q-meta">
+                    {formatWhen(report.createdAt, now, undefined, lang)}
+                  </span>
+                </span>
+                <span className="an-miss-tools">
+                  <LinkTerm term={report.query} reviewId={report.id} />
+                  <Dismiss id={report.id} />
+                </span>
+              </div>
+            ))}
+          </LinkTargets>
         )}
       </section>
 

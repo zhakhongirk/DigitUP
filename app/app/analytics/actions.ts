@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 import { getServices } from "@/server/container";
 import { ownerT } from "@/server/owner/lang";
 import { ownerOnly } from "@/server/owner/access";
@@ -49,10 +50,12 @@ export async function linkTerm(_prev: LinkState, form: FormData): Promise<LinkSt
     const models = picks.filter((p) => p.startsWith("model:")).map((p) => p.slice(6));
     const offerIds = picks.filter((p) => p.startsWith("offer:")).map((p) => p.slice(6));
     if (models.length + offerIds.length === 0) return t("an.linkEmpty");
+    const reviewId = text(form, "reviewId");
     await services.intent.linkTerm(owner, {
       term,
       models,
       offerIds,
+      reviewId: reviewId || undefined,
     });
     return null;
   });
@@ -63,6 +66,16 @@ export async function unlinkTerm(_prev: LinkState, form: FormData): Promise<Link
     const term = text(form, "term");
     if (!term) return t("err.nothingSelected");
     await services.intent.unlinkTerm(owner, term);
+    return null;
+  });
+}
+
+export async function dismissReport(_prev: LinkState, form: FormData): Promise<LinkState> {
+  return guarded(async (owner, services, t) => {
+    const id = text(form, "id");
+    if (!id) return t("err.nothingSelected");
+    if (!z.uuid().safeParse(id).success) return t("err.notFound");
+    await services.intent.dismissReport(owner, id);
     return null;
   });
 }

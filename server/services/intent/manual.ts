@@ -1,6 +1,6 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db, DbExecutor } from "@/db/client";
-import { businessProfiles, offers } from "@/db/schema";
+import { businessProfiles, intentEvents, offers } from "@/db/schema";
 import { recordAudit } from "../audit";
 import { assertOwner, ServiceError, type TenantContext } from "../context";
 import { normalizeMissQuery } from "../catalog/search-misses";
@@ -19,6 +19,8 @@ export interface LinkInput {
   term: string;
   models?: string[];
   offerIds?: string[];
+  /** A wrong report that this link settles. */
+  reviewId?: string;
 }
 
 export interface LinkedTerm extends ManualLink {
@@ -32,6 +34,15 @@ export interface LinkTarget {
   label: string;
 }
 
+export interface WrongReport {
+  id: string;
+  query: string;
+  comment: string | null;
+  createdAt: Date;
+  returned: string[];
+}
+
+export const REVIEW_LIMIT = 20;
 const TARGET_LIMIT = 500;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -75,12 +86,18 @@ export async function loadManual(db: DbExecutor, tenantId: string): Promise<Manu
   return asManual(row?.manual);
 }
 
+function idList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String).filter((id) => UUID.test(id)) : [];
+}
+
 export interface ManualService {
   listLinks(ctx: TenantContext): Promise<LinkedTerm[]>;
   linkTerm(ctx: TenantContext, input: LinkInput): Promise<void>;
   unlinkTerm(ctx: TenantContext, term: string): Promise<void>;
   /** Models and standalone offers the owner can pick from. */
   linkTargets(ctx: TenantContext): Promise<LinkTarget[]>;
+  listWrongReports(ctx: TenantContext): Promise<WrongReport[]>;
+  dismissReport(ctx: TenantContext, intentId: string): Promise<void>;
 }
 
 export function createManualService(db: Db): ManualService {
@@ -147,6 +164,14 @@ export function createManualService(db: Db): ManualService {
             target: businessProfiles.tenantId,
             set: { vocabularyManual: manual },
           });
+        if (input.reviewId && UUID.test(input.reviewId)) {
+          await tx
+            .update(intentEvents)
+            .set({ reviewedAt: new Date(), resolution: "linked" })
+            .where(
+              and(eq(intentEvents.id, input.reviewId), eq(intentEvents.tenantId, ctx.tenantId)),
+            );
+        }
         await recordAudit(tx, ctx, {
           action: "vocabulary.linked",
           entity: "business_profile",
@@ -194,6 +219,63 @@ export function createManualService(db: Db): ManualService {
           ? { value: `model:${row.model}`, label: row.model }
           : { value: `offer:${row.id}`, label: row.title },
       );
+    },
+
+    async listWrongReports(ctx) {
+      assertOwner(ctx);
+      const rows = await db
+        .select({
+          id: intentEvents.id,
+          text: intentEvents.text,
+          comment: intentEvents.comment,
+          createdAt: intentEvents.createdAt,
+          resultIds: intentEvents.resultIds,
+        })
+        .from(intentEvents)
+        .where(
+          and(
+            eq(intentEvents.tenantId, ctx.tenantId),
+            eq(intentEvents.kind, "find_offers"),
+            eq(intentEvents.verdict, "wrong"),
+            isNull(intentEvents.reviewedAt),
+          ),
+        )
+        .orderBy(desc(intentEvents.createdAt))
+        .limit(REVIEW_LIMIT);
+      const ids = [...new Set(rows.flatMap((r) => idList(r.resultIds)))];
+      const names = new Map<string, string>();
+      if (ids.length > 0) {
+        const found = await db
+          .select({ id: offers.id, title: offers.title, model: offers.model })
+          .from(offers)
+          .where(and(eq(offers.tenantId, ctx.tenantId), inArray(offers.id, ids)));
+        for (const o of found) names.set(o.id, o.model ?? o.title);
+      }
+      return rows.map((row) => ({
+        id: row.id,
+        query: row.text,
+        comment: row.comment,
+        createdAt: row.createdAt,
+        returned: [...new Set(idList(row.resultIds).flatMap((id) => names.get(id) ?? []))],
+      }));
+    },
+
+    async dismissReport(ctx, intentId) {
+      assertOwner(ctx);
+      if (!UUID.test(intentId)) throw new ServiceError("not_found", "Report not found");
+      const done = await db
+        .update(intentEvents)
+        .set({ reviewedAt: new Date(), resolution: "dismissed" })
+        .where(
+          and(
+            eq(intentEvents.id, intentId),
+            eq(intentEvents.tenantId, ctx.tenantId),
+            eq(intentEvents.verdict, "wrong"),
+            isNull(intentEvents.reviewedAt),
+          ),
+        )
+        .returning({ id: intentEvents.id });
+      if (done.length === 0) throw new ServiceError("not_found", "Report not found");
     },
   };
 }
