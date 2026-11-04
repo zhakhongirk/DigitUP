@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { EVENTS } from "@/server/events/types";
-import { createApprovalsService } from "@/server/services/approvals";
+import {
+  changeRowIds,
+  changeSetOpSchema,
+  createApprovalsService,
+} from "@/server/services/approvals";
 import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
