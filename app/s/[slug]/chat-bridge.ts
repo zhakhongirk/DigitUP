@@ -9,3 +9,7 @@ export function orderMessage(title: string, verb: "order" | "book"): string {
 export function questionDraft(title: string): string {
   return `Question about ${title}: `;
 }
+
+export function sizeOrderMessage(title: string, size: string): string {
+  return `I'd like to order ${title}, size ${size}`;
+}

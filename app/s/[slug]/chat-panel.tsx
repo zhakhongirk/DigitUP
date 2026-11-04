@@ -322,6 +322,38 @@ function OfferCards({
               </span>
             </span>
           </Link>
+          {o.sizes.length + o.unavailableSizes.length > 0 ? (
+            <span className="chat-offer-sizes" role="group" aria-label={t(lang, "sizesLabel")}>
+              {o.sizes.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className="chat-size"
+                  disabled={disabled}
+                  onClick={() =>
+                    onSend(
+                      t(lang, draftOpen ? "chatSizeAddMessage" : "chatSizeOrderMessage", {
+                        title: o.title,
+                        size,
+                      }),
+                    )
+                  }
+                >
+                  {size}
+                </button>
+              ))}
+              {o.unavailableSizes.map((size) => (
+                <span
+                  key={size}
+                  className="chat-size chat-size-off"
+                  title={t(lang, "sizeOutOfStock", { size })}
+                  aria-label={t(lang, "sizeOutOfStock", { size })}
+                >
+                  {size}
+                </span>
+              ))}
+            </span>
+          ) : null}
           <span className="chat-offer-actions">
             <Link href={`/s/${encodeURIComponent(slug)}/offers/${o.id}`} className="chat-offer-btn">
               {t(lang, "viewOffer")}

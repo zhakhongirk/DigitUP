@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServices } from "@/server/container";
-import type { OfferView } from "@/server/services/catalog";
+import { buildGroups, type OfferView } from "@/server/services/catalog";
 import {
   AVAILABILITIES,
   PAGE_SIZE,
@@ -11,17 +11,19 @@ import {
   availabilityLabel,
   catalogHref,
   matchesFilters,
+  sizeAttributeTypes,
   sizeKinds,
   pageCount,
   parseCatalogParams,
   statusFilterLabel,
   statusesFor,
   toFormValues,
-  toRow,
+  toGroupRows,
 } from "@/server/owner/catalog";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { addOffer } from "./actions";
+import { ModelRows } from "./model-rows";
 import { OfferForm } from "./offer-form";
 import "./catalog.css";
 
@@ -43,8 +45,9 @@ async function searchFiltered(
     matches.push(...batch.items.filter((offer) => matchesFilters(offer, params, sizeTypeKeys)));
     if (batch.items.length < 100) break;
   }
+  const groups = buildGroups(matches, matches);
   const start = (params.page - 1) * PAGE_SIZE;
-  return { items: matches.slice(start, start + PAGE_SIZE), total: matches.length };
+  return { groups: groups.slice(start, start + PAGE_SIZE), total: groups.length };
 }
 
 export default async function CatalogPage({
@@ -69,7 +72,7 @@ export default async function CatalogPage({
   const [result, categories, selected, everything] = await Promise.all([
     needsInfoFilter
       ? searchFiltered(services, owner, base, params, new Set(kinds.keys()))
-      : services.catalog.searchOffers(owner, {
+      : services.catalog.searchGroups(owner, {
           ...base,
           limit: PAGE_SIZE,
           offset: (params.page - 1) * PAGE_SIZE,
@@ -79,7 +82,8 @@ export default async function CatalogPage({
     services.catalog.searchOffers(owner, { statuses: statusesFor("all"), limit: 1 }),
   ]);
 
-  const rows = result.items.map((offer) => toRow(offer, lang));
+  const groupRows = toGroupRows(result.groups, lang, params.offerId);
+  const sizeTypes = sizeAttributeTypes(types);
   const pages = pageCount(result.total);
   const filtered = Boolean(
     params.q || params.category || params.status !== "active" || needsInfoFilter,
@@ -223,7 +227,7 @@ export default async function CatalogPage({
               ))}
             </nav>
 
-            {rows.length === 0 ? (
+            {groupRows.length === 0 ? (
               <div className="ct-none">
                 <h2>{t(filtered ? "ct.noMatch" : "ct.noActive")}</h2>
                 <p>{t(filtered ? "ct.tryOther" : "ct.switchStatus")}</p>
@@ -245,30 +249,45 @@ export default async function CatalogPage({
                       <th className="ct-wide">{t("ct.colStatus")}</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {rows.map((row) => (
-                      <tr key={row.id} aria-selected={row.id === params.offerId}>
-                        <td>
-                          <Link
-                            href={catalogHref({ ...params, offerId: row.id })}
-                            className="ct-title"
-                          >
-                            {row.title}
-                          </Link>
-                        </td>
-                        <td className="ct-muted ct-wide">{row.category || t("ct.noCategory")}</td>
-                        <td className="ct-num">{row.price}</td>
-                        <td>
-                          <span className={`status status-${row.availability}`}>
-                            {row.availabilityLabel}
-                          </span>
-                        </td>
-                        <td className="ct-wide">
-                          <span className={`ct-chip ct-chip-${row.status}`}>{row.statusLabel}</span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+                  {groupRows.map((group) =>
+                    group.model === null ? (
+                      <tbody key={group.key}>
+                        {group.rows.map((row) => (
+                          <tr key={row.id} aria-selected={row.id === params.offerId}>
+                            <td>
+                              <Link
+                                href={catalogHref({ ...params, offerId: row.id })}
+                                className="ct-title"
+                              >
+                                {row.title}
+                              </Link>
+                            </td>
+                            <td className="ct-muted ct-wide">
+                              {row.category || t("ct.noCategory")}
+                            </td>
+                            <td className="ct-num">{row.price}</td>
+                            <td>
+                              <span className={`status status-${row.availability}`}>
+                                {row.availabilityLabel}
+                              </span>
+                            </td>
+                            <td className="ct-wide">
+                              <span className={`ct-chip ct-chip-${row.status}`}>
+                                {row.statusLabel}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    ) : (
+                      <ModelRows
+                        key={group.key}
+                        group={group}
+                        selectedId={params.offerId}
+                        hrefFor={(id) => catalogHref({ ...params, offerId: id })}
+                      />
+                    ),
+                  )}
                 </table>
               </div>
             )}
@@ -318,7 +337,11 @@ export default async function CatalogPage({
                   <OfferForm
                     key={selected.id}
                     id={selected.id}
-                    values={toFormValues(selected, kinds.get(selected.offerTypeKey) ?? null)}
+                    values={toFormValues(
+                      selected,
+                      kinds.get(selected.offerTypeKey) ?? null,
+                      sizeTypes.has(selected.offerTypeKey),
+                    )}
                     archived={selected.status === "archived"}
                     categories={categories}
                   />

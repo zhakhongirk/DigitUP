@@ -117,6 +117,19 @@ function OfferCard({
           </Link>
         </h3>
         {meta ? <p className="sf-card-meta">{meta}</p> : null}
+        {offer.sizes.length > 0 ? (
+          <ul className="sf-sizes" aria-label={t(lang, "sizesLabel")}>
+            {offer.sizes.map((s) => (
+              <li
+                key={s.id}
+                className={s.available ? "sf-size" : "sf-size sf-size-off"}
+                title={s.available ? undefined : t(lang, "sizeOutOfStock", { size: s.size })}
+              >
+                {s.size}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       <div className="sf-card-foot">
         <PriceAndStatus offer={offer} lang={lang} />

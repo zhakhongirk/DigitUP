@@ -68,6 +68,16 @@ export function OfferForm({
           {t("ct.fTitle")}
           <input name="title" defaultValue={values.title} required maxLength={200} />
         </label>
+        <label className="ct-label">
+          {t("ct.fModel")}
+          <input name="model" defaultValue={values.model} maxLength={200} />
+        </label>
+        {values.hasSizeAttribute ? (
+          <label className="ct-label">
+            {t("ct.fSize")}
+            <input name="size" defaultValue={values.size} maxLength={40} />
+          </label>
+        ) : null}
         <label className="ct-label ct-wide">
           {t("ct.fDescription")}
           <textarea name="description" defaultValue={values.description} rows={4} />
@@ -161,6 +171,12 @@ export function OfferForm({
           />
           {t("ct.priceOnRequest")}
         </label>
+        {values.model ? (
+          <label className="ct-check ct-wide">
+            <input type="checkbox" name="applyToModel" />
+            {t("ct.applyToModel")}
+          </label>
+        ) : null}
         <label className="ct-label">
           {t("ct.fAvailability")}
           <select name="availability" defaultValue={values.availability}>

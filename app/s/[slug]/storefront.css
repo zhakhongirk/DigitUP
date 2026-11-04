@@ -738,3 +738,33 @@
     rgba(255, 255, 255, 0.5) 100%
   );
 }
+
+.sf-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sf-size {
+  min-width: 32px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(118, 118, 128, 0.12);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+a.sf-size {
+  text-decoration: none;
+}
+
+.sf-size-off {
+  color: var(--text-3);
+  text-decoration: line-through;
+}

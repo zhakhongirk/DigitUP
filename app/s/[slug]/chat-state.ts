@@ -180,6 +180,8 @@ export type OfferChip = {
   availabilityLabel: string;
   imageUrl: string | null;
   canOrder: boolean;
+  sizes: string[];
+  unavailableSizes: string[];
 };
 
 export const MAX_OFFER_CARDS = 3;
@@ -189,6 +191,10 @@ export function safeChatImage(value: unknown): string | null {
   const url = value.trim();
   if (url.startsWith("/") && !url.startsWith("//")) return url;
   return /^https:\/\/[^\s]+$/i.test(url) ? url : null;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
 export function toOfferChips(data: unknown): OfferChip[] {
@@ -209,6 +215,8 @@ export function toOfferChips(data: unknown): OfferChip[] {
       availabilityLabel: typeof o.availability_label === "string" ? o.availability_label : "",
       imageUrl: safeChatImage(o.image_url),
       canOrder: o.can_order === true,
+      sizes: stringList(o.sizes),
+      unavailableSizes: stringList(o.unavailable_sizes),
     });
   }
   return chips;

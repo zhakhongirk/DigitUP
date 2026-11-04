@@ -12,7 +12,7 @@ import {
   offerPath,
   productJsonLd,
 } from "@/server/storefront/seo";
-import { orderMessage, questionDraft } from "../../chat-bridge";
+import { orderMessage, questionDraft, sizeOrderMessage } from "../../chat-bridge";
 import { storefrontLang } from "../../lang";
 import { availabilityText } from "../../labels";
 import { OfferImage } from "../../offer-image";
@@ -120,6 +120,32 @@ export default async function OfferPage({ params }: Props) {
               {availabilityText(lang, offer.availability)}
             </span>
           </div>
+
+          {offer.sizes.length > 0 ? (
+            <ul className="sf-sizes" aria-label={t(lang, "sizesLabel")}>
+              {offer.sizes.map((s) =>
+                s.available ? (
+                  <li key={s.id}>
+                    <a
+                      href="#store-chat"
+                      className="sf-size"
+                      data-chat-send={sizeOrderMessage(offer.title, s.size)}
+                    >
+                      {s.size}
+                    </a>
+                  </li>
+                ) : (
+                  <li
+                    key={s.id}
+                    className="sf-size sf-size-off"
+                    title={t(lang, "sizeOutOfStock", { size: s.size })}
+                  >
+                    {s.size}
+                  </li>
+                ),
+              )}
+            </ul>
+          ) : null}
 
           {offer.description ? <p className="sf-description">{offer.description}</p> : null}
 

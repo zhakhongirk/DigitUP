@@ -8,7 +8,9 @@ import {
   buildOfferInput,
   catalogHref,
   commonOfferType,
+  applyModelFields,
   newOfferInput,
+  offerUpsertFrom,
   sizeKinds,
   statusesFor,
 } from "@/server/owner/catalog";
@@ -54,12 +56,41 @@ export async function saveOffer(
     );
     if ("error" in result) return { error: result.error, saved: false };
     await services.catalog.upsertOffers(owner, [result.input]);
+    if (form.get("applyToModel") === "on" && current.model) {
+      const siblings = (
+        await services.catalog.listVariants(owner, [current.model], statusesFor("all"))
+      ).filter((variant) => variant.id !== current.id);
+      if (siblings.length > 0) {
+        await services.catalog.upsertOffers(
+          owner,
+          siblings.map((variant) => applyModelFields(variant, result.input)),
+        );
+      }
+    }
   } catch (error) {
     if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
     throw error;
   }
   revalidatePath("/app", "layout");
   return { error: null, saved: true };
+}
+
+export async function setAvailability(form: FormData): Promise<void> {
+  const services = await getServices();
+  const owner = await currentOwner(services);
+  if (!owner) redirect("/signin?next=/app/catalog");
+
+  const id = offerId(form);
+  const value = form.get("availability");
+  if (!id || !isUuid(id) || (value !== "in_stock" && value !== "out_of_stock")) return;
+  try {
+    const current = await services.catalog.getOffer(owner, id);
+    if (!current) return;
+    await services.catalog.upsertOffers(owner, [offerUpsertFrom(current, { availability: value })]);
+  } catch (error) {
+    if (!(error instanceof ServiceError)) throw error;
+  }
+  revalidatePath("/app", "layout");
 }
 
 export async function addOffer(): Promise<void> {

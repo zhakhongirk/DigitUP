@@ -1,4 +1,4 @@
-import type { OfferView } from "@/server/services/catalog";
+import { groupPrice, sizeOf, type OfferGroup, type OfferView } from "@/server/services/catalog";
 import type { Availability, OfferStatus } from "@/shared/business-model";
 import type { Lang } from "@/server/storefront/i18n";
 import { formatPrice } from "@/shared/format";
@@ -194,6 +194,7 @@ export function newOfferInput(offerType: string, lang: Lang = "en"): Record<stri
     title: tr(lang, "ct.newOfferTitle"),
     description: "",
     category: null,
+    model: null,
     offer_type: offerType,
     attributes: {},
     price: null,
@@ -254,11 +255,15 @@ export interface OfferFormValues {
   imageUrl: string;
   sizes: string;
   sizesKind: SizesKind | null;
+  model: string;
+  size: string;
+  hasSizeAttribute: boolean;
 }
 
 export function toFormValues(
   offer: OfferView,
   sizesKind: SizesKind | null = null,
+  hasSizeAttribute = false,
 ): OfferFormValues {
   return {
     title: offer.title,
@@ -272,7 +277,97 @@ export function toFormValues(
     imageUrl: offer.imageUrl ?? "",
     sizes: sizesText(attributesOf(offer.attributes).sizes),
     sizesKind,
+    model: offer.model ?? "",
+    size: sizeOf(offer) ?? "",
+    hasSizeAttribute: hasSizeAttribute || sizeOf(offer) !== null,
   };
+}
+
+/** Offer type keys whose attribute schema defines a per-offer `size` attribute. */
+export function sizeAttributeTypes(
+  types: { key: string; attributeSchema: unknown }[],
+): Set<string> {
+  return new Set(
+    types
+      .filter(
+        (type) =>
+          Array.isArray(type.attributeSchema) &&
+          (type.attributeSchema as { key?: string }[]).some((attr) => attr.key === "size"),
+      )
+      .map((type) => type.key),
+  );
+}
+
+export function offerUpsertFrom(
+  offer: OfferView,
+  patch: Partial<{ availability: Availability }> = {},
+): Record<string, unknown> {
+  return {
+    id: offer.id,
+    title: offer.title,
+    description: offer.description,
+    category: offer.category,
+    model: offer.model,
+    offer_type: offer.offerTypeKey,
+    attributes: attributesOf(offer.attributes),
+    price: offer.price,
+    currency: offer.currency,
+    price_status: offer.priceStatus,
+    availability: patch.availability ?? offer.availability,
+    status: offer.status,
+    image_url: offer.imageUrl,
+  };
+}
+
+/** The shared fields of a model copied onto each of its other variants. */
+export function applyModelFields(
+  variant: OfferView,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...offerUpsertFrom(variant),
+    description: source.description,
+    price: source.price,
+    currency: source.currency,
+    price_status: source.price_status,
+    image_url: source.image_url,
+  };
+}
+
+export interface ModelGroupRow {
+  key: string;
+  model: string | null;
+  rows: (OfferRow & { size: string })[];
+  priceLabel: string;
+  inStock: number;
+  selected: boolean;
+}
+
+export function toGroupRows(
+  groups: OfferGroup[],
+  lang: Lang = "en",
+  selectedId: string | null = null,
+): ModelGroupRow[] {
+  return groups.map((group) => {
+    const rows = group.variants.map((offer) => ({
+      ...toRow(offer, lang),
+      size: sizeOf(offer) ?? "",
+    }));
+    const price = groupPrice(group);
+    const priceLabelText = !price
+      ? tr(lang, "common.onRequest")
+      : price.min === price.max
+        ? formatPrice(price.min, price.currency, lang)
+        : `${formatPrice(price.min, price.currency, lang)} - ${formatPrice(price.max, price.currency, lang)}`;
+    return {
+      key: group.key,
+      model: group.model,
+      rows,
+      priceLabel: priceLabelText,
+      inStock: group.variants.filter((v) => v.availability === "in_stock").length,
+      selected: group.variants.some((v) => v.id === selectedId),
+    };
+  });
 }
 
 type FormLike = { get(name: string): FormDataEntryValue | null };
@@ -333,12 +428,20 @@ export function buildOfferInput(
     else attributes.sizes = sizesKind === "list" ? list : list.join(", ");
   }
 
+  if (form.get("size") !== null) {
+    const size = text(form, "size");
+    if (size) attributes.size = size;
+    else delete attributes.size;
+  }
+  const model = form.get("model") === null ? current.model : text(form, "model") || null;
+
   return {
     input: {
       id: current.id,
       title,
       description: text(form, "description"),
       category: text(form, "category") || null,
+      model,
       offer_type: current.offerTypeKey,
       attributes,
       price,

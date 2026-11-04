@@ -313,3 +313,45 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.ct-model-head td {
+  background: rgba(118, 118, 128, 0.06);
+}
+
+.ct-model-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ct-model-caret {
+  display: inline-block;
+  width: 16px;
+  color: var(--text-3);
+  font-weight: 700;
+  text-align: center;
+}
+
+.ct-model-count {
+  margin-left: 10px;
+}
+
+.ct-variant td:first-child {
+  padding-left: 36px;
+}
+
+.ct-stock {
+  margin: 0;
+}
+
+.ct-stock-btn {
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
