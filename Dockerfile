@@ -22,6 +22,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+# Standalone output does not include public/: copy it so /demo/*.svg and background.jpg are served.
+COPY --from=build /app/public ./public
 EXPOSE 3000
 CMD ["node", "server.js"]
 
@@ -65,6 +67,8 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static
+# Standalone output does not include public/: copy it so /demo/*.svg and background.jpg are served.
+COPY --from=build /app/public ./public
 COPY --from=worker-bundle /app/dist ./dist
 EXPOSE 3000
 CMD ["sh", "-c", "node dist/migrate.js && (node dist/worker.js & exec node server.js)"]
