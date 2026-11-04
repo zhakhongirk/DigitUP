@@ -29,7 +29,8 @@
     "smoke": "tsx scripts/smoke.ts",
     "eval": "tsx scripts/eval/run.ts",
     "eval:gold": "tsx scripts/eval/build-gold.ts",
-    "eval:report": "tsx scripts/eval/report.ts"
+    "eval:report": "tsx scripts/eval/report.ts",
+    "cost:measure": "tsx scripts/measure-cost.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
@@ -44,6 +45,7 @@
     "pg-boss": "^12.38.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "sharp": "^0.35.5",
     "unpdf": "^2.1.0",
     "zod": "^4.6.7"
   },

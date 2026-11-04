@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState } from "react";
 import { useT } from "@/app/i18n-provider";
 import {
   AVAILABILITIES,
@@ -28,6 +28,31 @@ export function OfferForm({
   const [saveState, save, saving] = useActionState(saveOffer, INITIAL);
   const [archiveState, archive, archiving] = useActionState(archiveOffer, INITIAL);
   const [onRequest, setOnRequest] = useState(values.priceOnRequest);
+  const [imageUrl, setImageUrl] = useState(values.imageUrl);
+  const [photoBusy, setPhotoBusy] = useState<"upload" | "clean" | null>(null);
+  const [photoMessage, setPhotoMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  async function sendPhoto(action: "upload" | "clean", file?: File) {
+    const data = new FormData();
+    data.set("id", id);
+    data.set("action", action);
+    if (file) data.set("file", file);
+    setPhotoBusy(action);
+    setPhotoMessage(null);
+    try {
+      const response = await fetch("/app/catalog/photo", { method: "POST", body: data });
+      const body = (await response.json()) as { imageUrl?: string; error?: string };
+      if (response.ok && body.imageUrl) {
+        setImageUrl(body.imageUrl);
+        setPhotoMessage({ text: t("ct.photoDone"), ok: true });
+      } else setPhotoMessage({ text: body.error ?? t("ct.photoFailed"), ok: false });
+    } catch {
+      setPhotoMessage({ text: t("ct.photoFailed"), ok: false });
+    }
+    setPhotoBusy(null);
+    if (fileInput.current) fileInput.current.value = "";
+  }
   const error = saveState.error ?? archiveState.error;
   const confirmation = archiveState.saved
     ? t("ct.offerArchived")
@@ -62,11 +87,45 @@ export function OfferForm({
             name="imageUrl"
             type="text"
             inputMode="url"
-            defaultValue={values.imageUrl}
+            value={imageUrl}
+            onChange={(event) => setImageUrl(event.target.value)}
             maxLength={500}
             placeholder="https://"
           />
         </label>
+        <div className="ct-actions ct-wide">
+          <input
+            ref={fileInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void sendPhoto("upload", file);
+            }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            disabled={photoBusy !== null}
+            onClick={() => fileInput.current?.click()}
+          >
+            {photoBusy === "upload" ? t("ct.photoWorking") : t("ct.fImageUpload")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary"
+            disabled={photoBusy !== null || !imageUrl.startsWith("/s/")}
+            onClick={() => void sendPhoto("clean")}
+          >
+            {photoBusy === "clean" ? t("ct.photoWorking") : t("ct.photoClean")}
+          </button>
+          {photoMessage ? (
+            <span className={photoMessage.ok ? "ct-saved" : "ct-error"} role="status">
+              {photoMessage.text}
+            </span>
+          ) : null}
+        </div>
         {values.sizesKind ? (
           <label className="ct-label ct-wide">
             {t("ct.fSizes")}
