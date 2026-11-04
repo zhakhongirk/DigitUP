@@ -19,6 +19,7 @@ export function withFallback(
   primary: LlmClient,
   fallback: LlmClient,
   context: Record<string, unknown> = {},
+  onSwitch?: () => void,
 ): LlmClient {
   let switched = false;
   return {
@@ -31,6 +32,7 @@ export function withFallback(
       } catch (error) {
         if (!(error instanceof LlmError) || !isFirstStep(request)) throw error;
         switched = true;
+        onSwitch?.();
         log.warn("llm.fallback_used", { kind: error.kind, model: primary.model, ...context });
         return fallback.chat(request);
       }

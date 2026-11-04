@@ -1,9 +1,19 @@
 import type { Services } from "@/server/container";
-import { getTokenBudget, withFallback, type LlmClient, type TokenBudget } from "@/server/llm";
+import { getDb } from "@/db/client";
+import {
+  createUsageRecorder,
+  getTokenBudget,
+  withFallback,
+  type LlmClient,
+  type LlmUsageRecord,
+  type TokenBudget,
+} from "@/server/llm";
+import { log } from "@/server/log";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
 import type { TenantContext } from "@/server/services/context";
 import { submissionLimiter } from "@/server/http/rate-limit";
 import { createFallbackLlm, isExplicitConfirmation } from "@/server/storefront/fallback-assistant";
+import { fastPathEnabled, tryFastPath } from "./fast-path";
 import { runAgent, type AgentEvent, type RunAgentResult } from "../runtime";
 import { customerAgentPrompt } from "./prompt";
 import { stripStoreDataTags, wrapStoreData } from "./store-data";
@@ -36,6 +46,10 @@ export function createCustomerAgent(deps: {
   llm: LlmClient | null;
   /** Daily token budget per store; defaults to the process-wide one when a model is configured. */
   budget?: TokenBudget;
+  /** Receives one row per call; defaults to the usage table when a model is configured. */
+  recordUsage?: (record: LlmUsageRecord) => Promise<void> | void;
+  /** Answer plain product searches with one model call; defaults to the CHAT_FAST_PATH setting. */
+  fastPath?: boolean;
 }): CustomerAgent {
   const { services } = deps;
   const rules = createFallbackLlm();
@@ -54,6 +68,26 @@ export function createCustomerAgent(deps: {
       }),
   };
   const budget = deps.budget ?? (deps.llm ? getTokenBudget() : null);
+  const recordUsage = deps.recordUsage ?? (deps.llm ? createUsageRecorder(getDb) : null);
+  const useFastPath = deps.fastPath ?? fastPathEnabled();
+  const noteFallback =
+    (ctx: TenantContext, channel: CustomerChannel, apiKeyId?: string) =>
+    (ms = 0) => {
+      void Promise.resolve(
+        recordUsage?.({
+          tenantId: ctx.tenantId,
+          apiKeyId: apiKeyId ?? null,
+          surface: channel === "storefront" ? "storefront_chat" : "public_mcp",
+          path: "fallback",
+          model: rules.model,
+          tier: "main",
+          ms,
+          inputTokens: 0,
+          outputTokens: 0,
+          cachedTokens: null,
+        }),
+      ).catch((error: unknown) => log.warn("llm.fallback_usage_failed", { error }));
+    };
   return {
     async reply({ ctx, channel, sessionKey, message, apiKeyId, submissionKey, onEvent }) {
       const agentCtx: TenantContext = { tenantId: ctx.tenantId, actor: "customer_agent" };
@@ -64,10 +98,36 @@ export function createCustomerAgent(deps: {
       ]);
 
       const overBudget = deps.llm && budget ? await budget.exceeded(ctx.tenantId) : false;
+      const fallbackNote = noteFallback(ctx, channel, apiKeyId);
+      if (overBudget) fallbackNote();
       const llm =
         deps.llm && !overBudget
-          ? withFallback(deps.llm, fallbackLlm, { tenantId: ctx.tenantId, channel })
+          ? withFallback(deps.llm, fallbackLlm, { tenantId: ctx.tenantId, channel }, () =>
+              fallbackNote(),
+            )
           : fallbackLlm;
+      const usageSource = {
+        tenantId: ctx.tenantId,
+        apiKeyId: apiKeyId ?? null,
+        surface: channel === "storefront" ? "storefront_chat" : "public_mcp",
+      } as const;
+
+      if (useFastPath && channel === "storefront" && deps.llm && !overBudget) {
+        const quick = await tryFastPath({
+          services,
+          ctx: agentCtx,
+          conversationId: conversation.id,
+          storeName: tenant.name,
+          store: { slug: tenant.slug, baseUrl: process.env.APP_URL?.replace(/\/+$/, "") },
+          sessionKey,
+          message,
+          llm: deps.llm,
+          usageSource,
+          onEvent,
+          onFallback: fallbackNote,
+        });
+        if (quick) return { ...quick, conversationId: conversation.id };
+      }
 
       const server = createCustomerMcpServer({
         ctx: agentCtx,
@@ -94,11 +154,7 @@ export function createCustomerAgent(deps: {
         server,
         conversations: services.conversations,
         onEvent,
-        usageSource: {
-          tenantId: ctx.tenantId,
-          apiKeyId: apiKeyId ?? null,
-          surface: channel === "storefront" ? "storefront_chat" : "public_mcp",
-        },
+        usageSource,
       });
       return { ...result, conversationId: conversation.id };
     },

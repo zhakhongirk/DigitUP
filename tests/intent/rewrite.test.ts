@@ -140,3 +140,19 @@ describe("fast model rewrite", () => {
     expect(withNone.offers.map((o) => o.offer.id)).toEqual(direct.offers.map((o) => o.offer.id));
   });
 });
+
+describe("deferred recording", () => {
+  it("writes nothing until the result is committed", async () => {
+    const ctx = await store();
+    const intent = intentWith(null);
+    const count = async () =>
+      (await testDb().select().from(intentEvents).where(eq(intentEvents.tenantId, ctx.tenantId)))
+        .length;
+    const result = await intent.resolveIntent(ctx, { text: "black sneakers", track, defer: true });
+    expect(await count()).toBe(0);
+    await intent.commitResolved(result);
+    expect(await count()).toBe(1);
+    await intent.commitResolved(result);
+    expect(await count()).toBe(1);
+  });
+});

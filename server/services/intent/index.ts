@@ -49,6 +49,8 @@ export interface ResolveInput {
   lang?: TextLang;
   sessionKey?: string;
   track?: IntentTracking;
+  /** Hold back the miss count, the event row and the rewrite until `commitResolved` is called. */
+  defer?: boolean;
 }
 
 export interface IntentStats {
@@ -75,6 +77,8 @@ export interface IntentService {
     report: { intentId: string; verdict: Verdict; comment?: string },
   ): Promise<{ intentId: string; verdict: Verdict }>;
   stats(ctx: TenantContext, options?: { days?: number; now?: Date }): Promise<IntentStats>;
+  /** Records a result that was resolved with `defer`; does nothing for any other result. */
+  commitResolved(result: IntentResult): Promise<void>;
   /** Resolves once the background rewrites started so far have been logged. */
   settled(): Promise<void>;
 }
@@ -102,6 +106,7 @@ export function createIntentService({
   interpret?: IntentInterpreter;
 }): IntentService {
   const background = new Set<Promise<void>>();
+  const deferred = new WeakMap<IntentResult, () => Promise<void>>();
 
   function logRewrite(task: {
     ctx: TenantContext;
@@ -178,10 +183,11 @@ export function createIntentService({
         summary: summarize(execution),
       };
 
-      if (execution.total + execution.onRequestTotal === 0 && text) {
-        await catalog.recordSearchMiss(ctx, text);
-      }
-      if (input.track) {
+      const record = async () => {
+        if (execution.total + execution.onRequestTotal === 0 && text) {
+          await catalog.recordSearchMiss(ctx, text);
+        }
+        if (!input.track) return;
         await db.insert(intentEvents).values({
           id: result.intentId,
           tenantId: ctx.tenantId,
@@ -206,8 +212,17 @@ export function createIntentService({
             search,
           });
         }
-      }
+      };
+      if (input.defer) deferred.set(result, record);
+      else await record();
       return result;
+    },
+
+    async commitResolved(result) {
+      const record = deferred.get(result);
+      if (!record) return;
+      deferred.delete(result);
+      await record();
     },
 
     getVocabulary: (ctx) => loadVocabulary(db, ctx.tenantId),
