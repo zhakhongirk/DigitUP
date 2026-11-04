@@ -31,6 +31,10 @@ export function smtpConfigFromEnv(env: NodeJS.ProcessEnv = process.env): SmtpCon
   };
 }
 
+export function isMailConfigured(): boolean {
+  return smtpConfigFromEnv() !== null;
+}
+
 /** Sends through SMTP, or logs the link when SMTP_HOST is unset. */
 export async function sendMail(mail: Mail): Promise<void> {
   const config = smtpConfigFromEnv();

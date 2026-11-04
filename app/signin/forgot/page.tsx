@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { isMailConfigured } from "@/server/mail";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { ForgotForm } from "./forgot-form";
 import "../../onboarding/onboarding.css";
@@ -22,6 +23,7 @@ export default async function ForgotPage() {
         <h1>{t("auth.forgotTitle")}</h1>
         <p>{t("auth.forgotSub")}</p>
       </div>
+      {isMailConfigured() ? null : <p className="ob-hint">{t("auth.mailOff")}</p>}
       <ForgotForm />
       <p className="ob-hint">
         <Link href="/signin">{t("auth.backToSignIn")}</Link>

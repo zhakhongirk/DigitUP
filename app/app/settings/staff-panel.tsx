@@ -39,7 +39,13 @@ function RemoveForm({ member }: { member: StaffRow }) {
   );
 }
 
-export function StaffPanel({ staff }: { staff: StaffRow[] }) {
+export function StaffPanel({
+  staff,
+  mailConfigured,
+}: {
+  staff: StaffRow[];
+  mailConfigured: boolean;
+}) {
   const { t } = useT();
   const [state, action] = useActionState(inviteStaff, INITIAL);
   return (
@@ -51,6 +57,7 @@ export function StaffPanel({ staff }: { staff: StaffRow[] }) {
       ) : (
         staff.map((member) => <RemoveForm key={member.id} member={member} />)
       )}
+      {mailConfigured ? null : <p className="st-error">{t("st.mailOff")}</p>}
       <form action={action}>
         <label className="st-label">
           {t("st.staffEmail")}

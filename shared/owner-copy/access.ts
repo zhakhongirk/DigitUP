@@ -4,6 +4,9 @@ export const access = pair(
   {
     "auth.forgot": "Forgot password?",
     "auth.forgotTitle": "Reset your password.",
+    "auth.mailOff":
+      "Email delivery is not set up on this server, so reset links cannot be sent. Ask the site administrator.",
+    "st.mailOff": "Email delivery is not set up on this server, so invitations are not sent.",
     "auth.forgotSub": "Enter your email and we will send you a link to choose a new password.",
     "auth.sendLink": "Send reset link",
     "auth.sendingLink": "Sending…",
@@ -54,6 +57,10 @@ export const access = pair(
   {
     "auth.forgot": "Забыли пароль?",
     "auth.forgotTitle": "Восстановление пароля.",
+    "auth.mailOff":
+      "Отправка почты на этом сервере не настроена, поэтому ссылки для сброса не отправляются. Обратитесь к администратору сайта.",
+    "st.mailOff":
+      "Отправка почты на этом сервере не настроена, поэтому приглашения не отправляются.",
     "auth.forgotSub": "Введите почту, и мы отправим ссылку для выбора нового пароля.",
     "auth.sendLink": "Отправить ссылку",
     "auth.sendingLink": "Отправляем…",
@@ -104,6 +111,9 @@ export const access = pair(
   {
     "auth.forgot": "Құпиясөзді ұмыттыңыз ба?",
     "auth.forgotTitle": "Құпиясөзді қалпына келтіру.",
+    "auth.mailOff":
+      "Бұл серверде пошта жіберу бапталмаған, сондықтан қалпына келтіру сілтемелері жіберілмейді. Сайт әкімшісіне хабарласыңыз.",
+    "st.mailOff": "Бұл серверде пошта жіберу бапталмаған, сондықтан шақырулар жіберілмейді.",
     "auth.forgotSub":
       "Поштаңызды енгізіңіз, біз жаңа құпиясөз таңдауға арналған сілтеме жібереміз.",
     "auth.sendLink": "Сілтеме жіберу",

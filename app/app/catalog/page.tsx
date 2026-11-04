@@ -20,6 +20,7 @@ import {
   toFormValues,
   toGroupRows,
 } from "@/server/owner/catalog";
+import { isSegmentationConfigured } from "@/server/media/photo";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { AddOfferButton } from "./add-offer-button";
@@ -342,6 +343,7 @@ export default async function CatalogPage({
                     )}
                     archived={selected.status === "archived"}
                     categories={categories}
+                    canClean={isSegmentationConfigured()}
                   />
                 </>
               ) : (

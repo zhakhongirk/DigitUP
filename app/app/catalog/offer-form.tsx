@@ -18,11 +18,13 @@ export function OfferForm({
   values,
   archived,
   categories,
+  canClean,
 }: {
   id: string;
   values: OfferFormValues;
   archived: boolean;
   categories: string[];
+  canClean: boolean;
 }) {
   const { t, lang } = useT();
   const [saveState, save, saving] = useActionState(saveOffer, INITIAL);
@@ -122,14 +124,16 @@ export function OfferForm({
           >
             {photoBusy === "upload" ? t("ct.photoWorking") : t("ct.fImageUpload")}
           </button>
-          <button
-            type="button"
-            className="btn btn-sm btn-secondary"
-            disabled={photoBusy !== null || !imageUrl.startsWith("/s/")}
-            onClick={() => void sendPhoto("clean")}
-          >
-            {photoBusy === "clean" ? t("ct.photoWorking") : t("ct.photoClean")}
-          </button>
+          {canClean ? (
+            <button
+              type="button"
+              className="btn btn-sm btn-secondary"
+              disabled={photoBusy !== null || !imageUrl.startsWith("/s/")}
+              onClick={() => void sendPhoto("clean")}
+            >
+              {photoBusy === "clean" ? t("ct.photoWorking") : t("ct.photoClean")}
+            </button>
+          ) : null}
           {photoMessage ? (
             <span className={photoMessage.ok ? "ct-saved" : "ct-error"} role="status">
               {photoMessage.text}
