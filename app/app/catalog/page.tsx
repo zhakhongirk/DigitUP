@@ -283,7 +283,12 @@ export default async function CatalogPage({
                         key={group.key}
                         group={group}
                         selectedId={params.offerId}
-                        hrefFor={(id) => catalogHref({ ...params, offerId: id })}
+                        hrefs={Object.fromEntries(
+                          group.rows.map((row) => [
+                            row.id,
+                            catalogHref({ ...params, offerId: row.id }),
+                          ]),
+                        )}
                       />
                     ),
                   )}

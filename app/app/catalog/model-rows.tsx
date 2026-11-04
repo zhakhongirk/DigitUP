@@ -10,11 +10,11 @@ const INITIAL: CatalogActionState = { error: null, saved: false };
 
 export function ModelRows({
   group,
-  hrefFor,
+  hrefs,
   selectedId,
 }: {
   group: ModelGroupRow;
-  hrefFor: (id: string) => string;
+  hrefs: Record<string, string>;
   selectedId: string | null;
 }) {
   const { t } = useT();
@@ -50,7 +50,7 @@ export function ModelRows({
         ? group.rows.map((row) => (
             <tr key={row.id} className="ct-variant" aria-selected={row.id === selectedId}>
               <td>
-                <Link href={hrefFor(row.id)} className="ct-title">
+                <Link href={hrefs[row.id] ?? "#"} className="ct-title">
                   {row.size || row.title}
                 </Link>
               </td>
