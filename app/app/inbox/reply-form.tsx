@@ -2,11 +2,20 @@
 
 import { useActionState } from "react";
 import { useT } from "@/app/i18n-provider";
+import { VoiceButton } from "../voice-button";
 import { answerInquiry, type ActionState } from "../actions";
 
 const initial: ActionState = { error: null };
 
-export function ReplyForm({ id, answered }: { id: string; answered: boolean }) {
+export function ReplyForm({
+  id,
+  answered,
+  voice,
+}: {
+  id: string;
+  answered: boolean;
+  voice: boolean;
+}) {
   const { t } = useT();
   const [state, action, pending] = useActionState<ActionState, FormData>(answerInquiry, initial);
   const saved = state !== initial && !state.error;
@@ -27,6 +36,7 @@ export function ReplyForm({ id, answered }: { id: string; answered: boolean }) {
           required
           disabled={pending}
         />
+        {voice ? <VoiceButton targetId={`answer-${id}`} disabled={pending} /> : null}
         <button type="submit" className="btn btn-sm ib-reply-submit" disabled={pending}>
           {pending ? t("common.saving") : t("ib.saveAnswer")}
         </button>

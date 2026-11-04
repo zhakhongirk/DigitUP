@@ -206,6 +206,12 @@ export const coverLimiter = createRateLimiter({
   windowMs: 86_400_000,
 });
 
+export const voiceLimiter = createRateLimiter({
+  name: "voice",
+  limit: 60,
+  windowMs: 3_600_000,
+});
+
 export const photoCleanLimiter = createRateLimiter({
   name: "photo-clean",
   limit: 60,

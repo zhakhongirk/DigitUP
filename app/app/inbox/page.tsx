@@ -13,6 +13,7 @@ import {
   type InboxFilter,
   type InboxItem,
 } from "@/server/owner/inbox";
+import { isVoiceConfigured } from "@/server/media/voice";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import type { Translator } from "@/shared/owner-copy";
@@ -180,7 +181,12 @@ function Detail({
         </dl>
       </div>
       {item.kind === "inquiry" ? (
-        <ReplyForm key={item.id} id={item.id} answered={Boolean(item.answer)} />
+        <ReplyForm
+          key={item.id}
+          id={item.id}
+          answered={Boolean(item.answer)}
+          voice={isVoiceConfigured()}
+        />
       ) : null}
     </section>
   );
