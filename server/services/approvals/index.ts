@@ -45,9 +45,9 @@ export function changeRowIds(ops: ChangeSetOp[]): string[] {
   });
 }
 
-function selectRows(ops: ChangeSetOp[], selected: ReadonlySet<string>): ChangeSetOp[] {
+function selectRows(ops: ChangeSetOp[], selected: ReadonlySet<string>, keep = true): ChangeSetOp[] {
   const picked = <T>(items: T[], index: number) =>
-    items.filter((_, n) => selected.has(`${index}:${n}`));
+    items.filter((_, n) => selected.has(`${index}:${n}`) === keep);
   const result: ChangeSetOp[] = [];
   ops.forEach((op, index) => {
     if (op.op === "update_prices") {
@@ -79,8 +79,11 @@ export interface ApprovalsService {
    * With `rowIds` only those rows are applied and the rest are dropped; without it all rows are applied.
    */
   approveChangeSet(ctx: TenantContext, id: string, rowIds?: string[]): Promise<ChangeSet>;
-  /** Owner only. */
-  rejectChangeSet(ctx: TenantContext, id: string): Promise<ChangeSet>;
+  /**
+   * Owner only. With `rowIds` only those rows are rejected and the rest stay pending;
+   * the change set is rejected once no rows are left. Without it all rows are rejected.
+   */
+  rejectChangeSet(ctx: TenantContext, id: string, rowIds?: string[]): Promise<ChangeSet>;
 }
 
 async function applyOp(tx: DbTx, ctx: TenantContext, op: ChangeSetOp): Promise<void> {
@@ -199,14 +202,31 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
       });
     },
 
-    async rejectChangeSet(ctx, id) {
+    async rejectChangeSet(ctx, id, rowIds) {
       assertOwner(ctx);
       assertNotStaff(ctx);
       return db.transaction(async (tx) => {
-        await lockPending(tx, ctx, id);
-        const [rejected] = await tx
+        const changeSet = await lockPending(tx, ctx, id);
+        const ops = parseOrThrow(z.array(changeSetOpSchema), changeSet.ops, "stored change set");
+        const all = changeRowIds(ops);
+        const selected = rowIds === undefined ? all : [...new Set(rowIds)];
+        if (selected.length === 0) {
+          throw new ServiceError("invalid", "Select at least one change to reject");
+        }
+        const known = new Set(all);
+        if (selected.some((rowId) => !known.has(rowId))) {
+          throw new ServiceError("invalid", "Some selected changes do not belong to this request");
+        }
+        const chosen = new Set(selected);
+        const left = all.filter((rowId) => !chosen.has(rowId));
+        const done = left.length === 0;
+        const [updated] = await tx
           .update(changeSets)
-          .set({ status: "rejected", resolvedAt: new Date() })
+          .set(
+            done
+              ? { status: "rejected", resolvedAt: new Date() }
+              : { ops: selectRows(ops, chosen, false) },
+          )
           .where(eq(changeSets.id, id))
           .returning();
         await recordAudit(tx, ctx, {
@@ -214,9 +234,9 @@ export function createApprovalsService(db: Db, events?: EventPublisher): Approva
           entity: "change_set",
           entityId: id,
           before: { status: "pending" },
-          after: { status: "rejected" },
+          after: { status: done ? "rejected" : "pending", rejected: selected, left },
         });
-        return rejected!;
+        return updated!;
       });
     },
   };

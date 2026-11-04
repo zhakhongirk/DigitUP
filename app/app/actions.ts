@@ -96,10 +96,10 @@ export async function decideChangeSet(_prev: ActionState, form: FormData): Promi
   if (typeof id !== "string" || !id) return { error: t("err.nothingSelected") };
   if (!isUuid(id)) return { error: t("err.notFound") };
   try {
-    if (decision === "approve") {
-      const rows = form.getAll("row").filter((value): value is string => typeof value === "string");
-      await services.approvals.approveChangeSet(owner, id, form.has("partial") ? rows : undefined);
-    } else if (decision === "reject") await services.approvals.rejectChangeSet(owner, id);
+    const rows = form.getAll("row").filter((value): value is string => typeof value === "string");
+    const picked = form.has("partial") ? rows : undefined;
+    if (decision === "approve") await services.approvals.approveChangeSet(owner, id, picked);
+    else if (decision === "reject") await services.approvals.rejectChangeSet(owner, id, picked);
     else return { error: t("ib.chooseDecision") };
   } catch (error) {
     if (error instanceof ServiceError) return { error: msg(error.message) };

@@ -67,7 +67,7 @@ export function DecisionButtons({
             <button
               type="button"
               className="btn btn-danger"
-              disabled={pending}
+              disabled={pending || selected.length === 0}
               onClick={() => setConfirming(true)}
             >
               {t("ap.reject")}

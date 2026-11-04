@@ -233,6 +233,41 @@ describe("rejectChangeSet", () => {
     expect(logged.map((e) => e.action)).toContain("change_set.rejected");
   });
 
+  it("rejects only the selected rows and keeps the rest pending", async () => {
+    const { approvals, agent, owner, ids, audit } = await setup();
+    const cs = await approvals.createChangeSet(agent, {
+      ops: [
+        {
+          op: "update_prices",
+          items: [
+            { offerId: ids.Alpha!, price: 5 },
+            { offerId: ids.Beta!, price: 6 },
+          ],
+        },
+      ],
+    });
+    const after = await approvals.rejectChangeSet(owner, cs.id, ["0:0"]);
+    expect(after.status).toBe("pending");
+    expect(changeRowIds(changeSetOpSchema.array().parse(after.ops))).toEqual(["0:0"]);
+    expect(JSON.stringify(after.ops)).toContain(ids.Beta!);
+    expect(JSON.stringify(after.ops)).not.toContain(ids.Alpha!);
+    const logged = await audit.list(owner, { entity: "change_set", entityId: cs.id });
+    const entry = logged.find((e) => e.action === "change_set.rejected");
+    expect(entry?.after).toMatchObject({ status: "pending", rejected: ["0:0"], left: ["0:1"] });
+
+    const last = await approvals.rejectChangeSet(owner, cs.id, ["0:0"]);
+    expect(last.status).toBe("rejected");
+  });
+
+  it("validates the selection when rejecting", async () => {
+    const { approvals, agent, owner, ids } = await setup();
+    const cs = await approvals.createChangeSet(agent, {
+      ops: [{ op: "delete_offers", offerIds: [ids.Alpha!] }],
+    });
+    await expectCode(approvals.rejectChangeSet(owner, cs.id, []), "invalid");
+    await expectCode(approvals.rejectChangeSet(owner, cs.id, ["3:0"]), "invalid");
+  });
+
   it("is forbidden for non-owners", async () => {
     const { approvals, agent, ids } = await setup();
     const cs = await approvals.createChangeSet(agent, {
