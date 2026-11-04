@@ -18,6 +18,9 @@ import { createBusinessMcpServer } from "./business/server";
 import { createCustomerMcpServer } from "./customer/server";
 import { bearerToken, jsonRpcError, serveMcp, sessionCookie } from "./http";
 import { conversationSearchLogger } from "./search-log";
+import { getDb } from "@/db/client";
+import { createPlatformMcpServer } from "./platform/server";
+import { createStoreDirectory, type StoreDirectory } from "./platform/stores";
 import { createPublicMcpServer } from "./public/server";
 
 function baseUrlOf(request: Request): string {
@@ -156,6 +159,23 @@ export async function handlePublicMcp(
     services,
     store: { slug, baseUrl: baseUrlOf(request) },
     clientKey: `${clientIp(request)}:${slug}`,
+  });
+  return serveMcp(request, server);
+}
+
+/** Public endpoint for all live stores: the store is named per tool call. */
+export async function handlePlatformMcp(
+  request: Request,
+  services: Services,
+  llm: LlmClient | null,
+  stores: StoreDirectory = createStoreDirectory(getDb()),
+): Promise<Response> {
+  const server = createPlatformMcpServer({
+    stores,
+    agent: createCustomerAgent({ services, llm }),
+    services,
+    baseUrl: baseUrlOf(request),
+    ip: clientIp(request),
   });
   return serveMcp(request, server);
 }

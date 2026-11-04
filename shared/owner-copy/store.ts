@@ -146,6 +146,9 @@ export const store = pair(
     "ag.pubText":
       "Can chat with your store assistant. It sees no more than shoppers see on your storefront.",
     "ag.pubWho": "Share this address with anyone.",
+    "ag.platTitle": "All stores of the platform",
+    "ag.platText":
+      "One address for every store on the platform. Shoppers can ask once and your store shows up next to others.",
     "ag.cusTitle": "Shopping agents (key)",
     "ag.cusAuth": "Shopping-agent key",
     "ag.cusText":
@@ -326,6 +329,9 @@ export const store = pair(
     "ag.pubText":
       "Может общаться с ассистентом вашего магазина. Видит не больше, чем покупатели на витрине.",
     "ag.pubWho": "Этим адресом можно делиться с кем угодно.",
+    "ag.platTitle": "Все магазины платформы",
+    "ag.platText":
+      "Один адрес для всех магазинов платформы. Покупатель спрашивает один раз, и ваш магазин показывается среди других.",
     "ag.cusTitle": "Агенты покупателей (с ключом)",
     "ag.cusAuth": "Ключ агента покупателя",
     "ag.cusText":
@@ -508,6 +514,9 @@ export const store = pair(
     "ag.pubText":
       "Дүкеніңіздің көмекшісімен сөйлесе алады. Витринадағы сатып алушылардан артық ештеңе көрмейді.",
     "ag.pubWho": "Бұл мекенжаймен кез келген адамға бөлісуге болады.",
+    "ag.platTitle": "Платформаның барлық дүкендері",
+    "ag.platText":
+      "Платформадағы барлық дүкенге арналған бір мекенжай. Сатып алушы бір рет сұрайды, сіздің дүкеніңіз басқаларымен қатар көрсетіледі.",
     "ag.cusTitle": "Сатып алушылардың агенттері (кілтпен)",
     "ag.cusAuth": "Сатып алушы агентінің кілті",
     "ag.cusText":

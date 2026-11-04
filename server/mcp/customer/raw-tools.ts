@@ -29,10 +29,8 @@ export interface RawToolsOptions {
 }
 
 /** The read-only catalog tools shared by the keyed customer endpoint and the public endpoint. */
-export function registerRawTools(
-  server: McpServer,
-  { ctx, catalog, knowledge, track, logSearch }: RawToolsOptions,
-): void {
+export function registerRawTools(server: McpServer, options: RawToolsOptions): void {
+  const { ctx, catalog, track, logSearch } = options;
   server.registerTool(
     "search_offers",
     {
@@ -102,41 +100,7 @@ export function registerRawTools(
       inputSchema: { offer_id: z.uuid() },
       annotations: { readOnlyHint: true },
     },
-    ({ offer_id }) =>
-      runTool("get_offer_details", async () => {
-        const offer = await catalog.getOffer(ctx, offer_id);
-        if (!offer || offer.status !== "active") {
-          throw new ServiceError("not_found", "Offer not found");
-        }
-        await track?.("get_offer_details", { offer_id }, [offer_id]);
-        const group = offer.model === null ? null : (await catalog.groupOffers(ctx, [offer]))[0];
-        const family = group?.variants ?? [offer];
-        const found = await knowledge?.notesForOffers(
-          ctx,
-          family.map((v) => ({ id: v.id, model: v.model })),
-        );
-        const notes = found
-          ? pickNotes(
-              found,
-              family.map((v) => v.id),
-              offer.model,
-            )
-          : [];
-        const owner = notes.length > 0 ? { owner_notes: notes } : {};
-        if (!group || group.model === null) return { ...publicOffer(offer), ...owner };
-        const { sizes, unavailable_sizes, unknown_sizes, variants } = publicModel({
-          ...group,
-          model: group.model,
-        });
-        return {
-          ...publicOffer(offer),
-          sizes,
-          unavailable_sizes,
-          unknown_sizes,
-          variants,
-          ...owner,
-        };
-      }),
+    ({ offer_id }) => runTool("get_offer_details", () => offerDetails(options, offer_id)),
   );
 
   server.registerTool(
@@ -147,27 +111,7 @@ export function registerRawTools(
       inputSchema: { offer_ids: z.array(z.uuid()).min(1).max(20) },
       annotations: { readOnlyHint: true },
     },
-    ({ offer_ids }) =>
-      runTool("check_availability", async () => {
-        const found = await catalog.getOffers(ctx, offer_ids);
-        await track?.("check_availability", { offer_ids }, offer_ids);
-        const byId = new Map(found.filter((o) => o.status === "active").map((o) => [o.id, o]));
-        return offer_ids.map((id) => {
-          const offer = byId.get(id);
-          if (!offer) return { offer_id: id, found: false };
-          const view = publicOffer(offer);
-          return {
-            offer_id: id,
-            found: true,
-            title: view.title,
-            availability: view.availability,
-            availability_label: view.availability_label,
-            price_status: view.price_status,
-            price_label: view.price_label,
-            can_order: view.can_order,
-          };
-        });
-      }),
+    ({ offer_ids }) => runTool("check_availability", () => offerAvailability(options, offer_ids)),
   );
 
   server.registerTool(
@@ -177,41 +121,105 @@ export function registerRawTools(
       inputSchema: { offer_ids: z.array(z.uuid()).min(2).max(5) },
       annotations: { readOnlyHint: true },
     },
-    ({ offer_ids }) =>
-      runTool("compare_offers", async () => {
-        const found = (await catalog.getOffers(ctx, offer_ids)).filter(
-          (o) => o.status === "active",
-        );
-        if (found.length < 2) {
-          throw new ServiceError("not_found", "At least two of the offers must exist");
-        }
-        await track?.("compare_offers", { offer_ids }, offer_ids);
-        const ordered = offer_ids.flatMap((id) => found.filter((o) => o.id === id));
-        const types = await catalog.listOfferTypes(ctx);
-        const labels = new Map<string, string>();
-        for (const type of types) {
-          for (const attr of type.attributeSchema as { key: string; label: string }[]) {
-            labels.set(attr.key, attr.label);
-          }
-        }
-        const keys = [
-          ...new Set(ordered.flatMap((o) => Object.keys(o.attributes as Record<string, unknown>))),
-        ];
-        return {
-          offers: ordered.map((o) => ({
-            offer_id: o.id,
-            title: o.title,
-            price_label: priceLabel(o),
-            availability: o.availability,
-          })),
-          attributes: keys.map((key) => ({
-            key,
-            label: labels.get(key) ?? key,
-            values: Object.fromEntries(
-              ordered.map((o) => [o.id, (o.attributes as Record<string, unknown>)[key] ?? null]),
-            ),
-          })),
-        };
-      }),
+    ({ offer_ids }) => runTool("compare_offers", () => offerComparison(options, offer_ids)),
   );
+}
+
+export async function offerDetails(
+  { ctx, catalog, knowledge, track }: RawToolsOptions,
+  offer_id: string,
+) {
+  const offer = await catalog.getOffer(ctx, offer_id);
+  if (!offer || offer.status !== "active") {
+    throw new ServiceError("not_found", "Offer not found");
+  }
+  await track?.("get_offer_details", { offer_id }, [offer_id]);
+  const group = offer.model === null ? null : (await catalog.groupOffers(ctx, [offer]))[0];
+  const family = group?.variants ?? [offer];
+  const found = await knowledge?.notesForOffers(
+    ctx,
+    family.map((v) => ({ id: v.id, model: v.model })),
+  );
+  const notes = found
+    ? pickNotes(
+        found,
+        family.map((v) => v.id),
+        offer.model,
+      )
+    : [];
+  const owner = notes.length > 0 ? { owner_notes: notes } : {};
+  if (!group || group.model === null) return { ...publicOffer(offer), ...owner };
+  const { sizes, unavailable_sizes, unknown_sizes, variants } = publicModel({
+    ...group,
+    model: group.model,
+  });
+  return {
+    ...publicOffer(offer),
+    sizes,
+    unavailable_sizes,
+    unknown_sizes,
+    variants,
+    ...owner,
+  };
+}
+
+export async function offerAvailability(
+  { ctx, catalog, track }: RawToolsOptions,
+  offer_ids: string[],
+) {
+  const found = await catalog.getOffers(ctx, offer_ids);
+  await track?.("check_availability", { offer_ids }, offer_ids);
+  const byId = new Map(found.filter((o) => o.status === "active").map((o) => [o.id, o]));
+  return offer_ids.map((id) => {
+    const offer = byId.get(id);
+    if (!offer) return { offer_id: id, found: false };
+    const view = publicOffer(offer);
+    return {
+      offer_id: id,
+      found: true,
+      title: view.title,
+      availability: view.availability,
+      availability_label: view.availability_label,
+      price_status: view.price_status,
+      price_label: view.price_label,
+      can_order: view.can_order,
+    };
+  });
+}
+
+export async function offerComparison(
+  { ctx, catalog, track }: RawToolsOptions,
+  offer_ids: string[],
+) {
+  const found = (await catalog.getOffers(ctx, offer_ids)).filter((o) => o.status === "active");
+  if (found.length < 2) {
+    throw new ServiceError("not_found", "At least two of the offers must exist");
+  }
+  await track?.("compare_offers", { offer_ids }, offer_ids);
+  const ordered = offer_ids.flatMap((id) => found.filter((o) => o.id === id));
+  const types = await catalog.listOfferTypes(ctx);
+  const labels = new Map<string, string>();
+  for (const type of types) {
+    for (const attr of type.attributeSchema as { key: string; label: string }[]) {
+      labels.set(attr.key, attr.label);
+    }
+  }
+  const keys = [
+    ...new Set(ordered.flatMap((o) => Object.keys(o.attributes as Record<string, unknown>))),
+  ];
+  return {
+    offers: ordered.map((o) => ({
+      offer_id: o.id,
+      title: o.title,
+      price_label: priceLabel(o),
+      availability: o.availability,
+    })),
+    attributes: keys.map((key) => ({
+      key,
+      label: labels.get(key) ?? key,
+      values: Object.fromEntries(
+        ordered.map((o) => [o.id, (o.attributes as Record<string, unknown>)[key] ?? null]),
+      ),
+    })),
+  };
 }

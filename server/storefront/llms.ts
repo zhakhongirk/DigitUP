@@ -1,5 +1,9 @@
 export const PLATFORM_NAME = "Agentic Storefront";
 
+export function platformMcpUrl(baseUrl: string): string {
+  return `${baseUrl}/mcp/public`;
+}
+
 export function publicMcpUrl(baseUrl: string, slug: string): string {
   return `${baseUrl}/mcp/public/${slug}`;
 }
@@ -57,7 +61,9 @@ export function platformLlmsTxt(baseUrl: string, rawTools = true): string {
     "",
     "## For shopper agents",
     "",
-    `Every store has its own public MCP endpoint: ${baseUrl}/mcp/public/<store-slug>`,
+    `One MCP endpoint for all stores of the platform (no credentials): ${platformMcpUrl(baseUrl)}`,
+    "It adds list_stores, takes a store slug in each store tool, and find_offers searches every store at once.",
+    `Each store also has its own public MCP endpoint: ${baseUrl}/mcp/public/<store-slug>`,
     `The store page is ${baseUrl}/s/<store-slug> and its own description is ${baseUrl}/s/<store-slug>/llms.txt`,
     "",
     "Tools:",

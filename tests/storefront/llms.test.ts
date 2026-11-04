@@ -8,6 +8,8 @@ describe("llms.txt", () => {
     const text = platformLlmsTxt(base);
     expect(text.startsWith("# Agentic Storefront")).toBe(true);
     expect(text).toContain(`${base}/mcp/public/<store-slug>`);
+    expect(text.indexOf(`${base}/mcp/public\n`)).toBeGreaterThan(-1);
+    expect(text.indexOf(`${base}/mcp/public\n`)).toBeLessThan(text.indexOf("<store-slug>"));
     expect(text).toContain("talk_to_store(message, session_id)");
     expect(text).toContain("find_offers(intent, lang?, session_id?)");
     expect(text).toContain("report_answer(intent_id, verdict, comment?)");

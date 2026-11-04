@@ -4,6 +4,7 @@ import { getServices } from "@/server/container";
 import { appBaseUrl } from "@/server/owner/base-url";
 import { formatWhen } from "@/server/owner/inbox";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
+import { platformMcpUrl } from "@/server/storefront/llms";
 import { ownerOnly } from "@/server/owner/access";
 import { currentOwner } from "@/server/owner/session";
 import { CopyButton } from "@/app/onboarding/done/copy-button";
@@ -66,6 +67,7 @@ export default async function AgentsPage() {
     appBaseUrl(),
   ]);
   const publicUrl = `${base}/mcp/public/${tenant.slug}`;
+  const platformUrl = platformMcpUrl(base);
   const customerUrl = `${base}/mcp/customer/${tenant.slug}`;
   const businessUrl = `${base}/mcp/business`;
   const now = new Date();
@@ -78,6 +80,14 @@ export default async function AgentsPage() {
       who: t("ag.pubWho"),
       url: publicUrl,
       tools: ["talk_to_store"],
+    },
+    {
+      title: t("ag.platTitle"),
+      auth: t("ag.pubAuth"),
+      text: t("ag.platText"),
+      who: t("ag.pubWho"),
+      url: platformUrl,
+      tools: ["list_stores", "find_offers", "talk_to_store"],
     },
     {
       title: t("ag.cusTitle"),
