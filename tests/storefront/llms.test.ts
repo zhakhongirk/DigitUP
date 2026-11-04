@@ -29,6 +29,7 @@ describe("llms.txt", () => {
     expect(text).toContain("> Running shoes and sneakers");
     expect(text).toContain(`${base}/mcp/public/stride-shoes`);
     expect(text).toContain(`${base}/s/stride-shoes`);
+    expect(text).toContain(`${base}/s/stride-shoes/feed.xml`);
     expect(text).toContain("talk_to_store");
     expect(text).toContain(`Platform: ${base}/llms.txt`);
   });

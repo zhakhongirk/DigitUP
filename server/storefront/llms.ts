@@ -111,6 +111,7 @@ export function storeLlmsTxt({
     "## Pages",
     "",
     `- [Store](${baseUrl}/s/${slug}): catalog and chat`,
+    `- [Product feed](${baseUrl}/s/${slug}/feed.xml): Google Merchant RSS feed with prices and availability`,
     `- [Sitemap](${baseUrl}/sitemap.xml): store pages and products`,
     "",
     `Platform: ${baseUrl}/llms.txt`,

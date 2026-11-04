@@ -35,6 +35,7 @@ The inbox and the audit log are paginated without a cap on the number of pages.
 - Anything the assistant cannot handle becomes a question (inquiry) for the owner, visible in the inbox.
 - After an order is confirmed, the chat links to the buyer order status page at `/s/:slug/orders/:orderId`. The link itself is the credential, so keep it private.
 - Offer images on the storefront are served through `next/image`.
+- `/s/:slug/feed.xml` is a Google Merchant RSS feed of the store: offers with a confirmed price and a known stock state (`in_stock` or `out_of_stock`) only, because the spec requires both. It is listed in the store `llms.txt`.
 - The owner can generate a storefront cover in Settings (Muse Image through the same API key and base URL; `LLM_IMAGE_MODEL` overrides the model, default `muse-image-1.0`). It is stored under `STORAGE_DIR`, limited to 10 generations per store per day, and shown behind the store name on `/s/:slug`. Nothing is generated automatically.
 - Storefront pages carry metadata, Open Graph tags and JSON-LD, and the app serves `/sitemap.xml` and `/robots.txt`. `APP_URL` sets the public base URL used for them (for example `https://shop.example.com`; defaults to the request host or `http://localhost:3000` locally).
 
