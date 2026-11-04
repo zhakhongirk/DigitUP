@@ -7,6 +7,7 @@ import { translator } from "@/shared/owner-copy";
 import { photoConcepts } from "./photo-concepts";
 import { langFromRequest } from "./lang-resolve";
 import { currentOwner } from "./session";
+import { OFFER_STATUSES, offerUpsertFrom } from "./catalog";
 import type { CatalogService, OfferView } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 
@@ -23,7 +24,7 @@ export function ownPhotoFile(slug: string, imageUrl: string | null): string | nu
 }
 
 type Deps = {
-  catalog: Pick<CatalogService, "getOffer" | "upsertOffers">;
+  catalog: Pick<CatalogService, "getOffer" | "upsertOffers" | "listVariants">;
   photos: PhotoService;
 };
 
@@ -36,25 +37,13 @@ async function load(catalog: Deps["catalog"], ctx: TenantContext, offerId: strin
 async function setImage(
   catalog: Deps["catalog"],
   ctx: TenantContext,
-  offer: OfferView,
+  offers: OfferView[],
   imageUrl: string,
 ): Promise<void> {
-  await catalog.upsertOffers(ctx, [
-    {
-      id: offer.id,
-      title: offer.title,
-      description: offer.description ?? "",
-      category: offer.category ?? null,
-      offer_type: offer.offerTypeKey,
-      attributes: (offer.attributes ?? {}) as Record<string, string | number | boolean | string[]>,
-      price: offer.price ?? null,
-      currency: offer.currency ?? null,
-      price_status: offer.priceStatus,
-      availability: offer.availability,
-      status: offer.status,
-      image_url: imageUrl,
-    },
-  ]);
+  await catalog.upsertOffers(
+    ctx,
+    offers.map((offer) => ({ ...offerUpsertFrom(offer), image_url: imageUrl })),
+  );
 }
 
 export async function uploadOfferPhoto(
@@ -66,8 +55,41 @@ export async function uploadOfferPhoto(
 ): Promise<string> {
   const offer = await load(catalog, ctx, offerId);
   const url = photoUrl(slug, await photos.save(ctx.tenantId, bytes));
-  await setImage(catalog, ctx, offer, url);
+  await setImage(catalog, ctx, [offer], url);
   return url;
+}
+
+export interface ModelPhotoResult {
+  imageUrl: string;
+  cleaned: boolean;
+  updated: number;
+}
+
+/** Saves one photo and sets it as the image of every variant of the model. */
+export async function uploadModelPhoto(
+  { catalog, photos }: Deps,
+  ctx: TenantContext,
+  slug: string,
+  model: string,
+  bytes: Uint8Array,
+  clean?: () => Promise<boolean>,
+): Promise<ModelPhotoResult> {
+  const variants = await catalog.listVariants(ctx, [model], OFFER_STATUSES);
+  if (variants.length === 0) throw new ServiceError("not_found", "Offer not found");
+  const saved = await photos.save(ctx.tenantId, bytes);
+  let file = saved;
+  let cleaned = false;
+  if (clean && (await clean())) {
+    try {
+      file = await photos.clean(ctx.tenantId, saved, photoConcepts(variants[0]!));
+      cleaned = true;
+    } catch (error) {
+      if (!(error instanceof PhotoError)) throw error;
+    }
+  }
+  const imageUrl = photoUrl(slug, file);
+  await setImage(catalog, ctx, variants, imageUrl);
+  return { imageUrl, cleaned, updated: variants.length };
 }
 
 export async function cleanOfferPhoto(
@@ -80,7 +102,7 @@ export async function cleanOfferPhoto(
   const file = ownPhotoFile(slug, offer.imageUrl ?? null);
   if (!file) throw new ServiceError("invalid", "Upload the photo first");
   const url = photoUrl(slug, await photos.clean(ctx.tenantId, file, photoConcepts(offer)));
-  await setImage(catalog, ctx, offer, url);
+  await setImage(catalog, ctx, [offer], url);
   return url;
 }
 
@@ -112,7 +134,9 @@ export async function handleOfferPhoto(request: Request, deps: PhotoRouteDeps): 
     return fail(t("ri.expectFile"), 400);
   }
   const id = form.get("id");
-  if (typeof id !== "string" || !z.uuid().safeParse(id).success) {
+  const model = form.get("model");
+  const byModel = typeof model === "string" && model.trim() !== "";
+  if (!byModel && (typeof id !== "string" || !z.uuid().safeParse(id).success)) {
     return fail(t("err.notFound"), 400);
   }
   const slug = await deps.slugOf(owner.tenantId);
@@ -123,18 +147,20 @@ export async function handleOfferPhoto(request: Request, deps: PhotoRouteDeps): 
     if (form.get("action") === "clean") {
       if (!deps.cleanAvailable) return fail(t("ct.photoCleanUnavailable"), 503);
       if (!(await deps.cleanLimit(owner.tenantId))) return fail(t("ct.photoCleanLimit"), 429);
-      const imageUrl = await cleanOfferPhoto(inner, owner, slug, id);
+      const imageUrl = await cleanOfferPhoto(inner, owner, slug, String(id));
       return Response.json({ imageUrl });
     }
     const file = form.get("file");
     if (!(file instanceof File) || file.size === 0) return fail(t("ct.photoChoose"), 400);
-    const imageUrl = await uploadOfferPhoto(
-      inner,
-      owner,
-      slug,
-      id,
-      new Uint8Array(await file.arrayBuffer()),
-    );
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (byModel) {
+      const wantsClean =
+        form.get("clean") === "1" && deps.cleanAvailable
+          ? () => deps.cleanLimit(owner.tenantId)
+          : undefined;
+      return Response.json(await uploadModelPhoto(inner, owner, slug, model, bytes, wantsClean));
+    }
+    const imageUrl = await uploadOfferPhoto(inner, owner, slug, String(id), bytes);
     return Response.json({ imageUrl });
   } catch (error) {
     if (error instanceof ServiceError) {

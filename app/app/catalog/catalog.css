@@ -355,3 +355,52 @@
   font: inherit;
   cursor: pointer;
 }
+
+.bp-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 20px;
+  border: 0;
+  border-radius: 20px;
+  color: inherit;
+  overflow: auto;
+}
+
+.bp-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.bp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bp-head h2 {
+  margin: 0;
+}
+
+.bp-body {
+  display: grid;
+  gap: 12px;
+}
+
+.bp-table {
+  max-height: 50vh;
+  overflow: auto;
+}
+
+.bp-file {
+  word-break: break-all;
+}
+
+.bp-hint {
+  display: block;
+  margin-top: 4px;
+}
+
+.bp-table select {
+  max-width: 100%;
+}

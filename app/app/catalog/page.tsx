@@ -24,6 +24,7 @@ import { isSegmentationConfigured } from "@/server/media/photo";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
 import { AddOfferButton } from "./add-offer-button";
+import { BulkPhotos } from "./bulk-photos";
 import { ModelRows } from "./model-rows";
 import { OfferForm } from "./offer-form";
 import "./catalog.css";
@@ -132,6 +133,7 @@ export default async function CatalogPage({
         </div>
         <div className="ct-head-actions">
           <AddOfferButton />
+          <BulkPhotos canClean={isSegmentationConfigured()} />
           <a href="/app/export/catalog" className="btn btn-sm btn-secondary" download>
             {t("ct.exportCsv")}
           </a>

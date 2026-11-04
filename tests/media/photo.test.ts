@@ -10,7 +10,7 @@ import {
   sniffPhotoType,
   type SegmentationClient,
 } from "@/server/media/photo";
-import { cleanOfferPhoto, uploadOfferPhoto } from "@/server/owner/offer-photo";
+import { cleanOfferPhoto, uploadModelPhoto, uploadOfferPhoto } from "@/server/owner/offer-photo";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError } from "@/server/services/context";
 import { createTestTenant, recordingEvents, testDb } from "../helpers/db";
@@ -180,5 +180,84 @@ describe("offer photo actions", () => {
     await expect(cleanOfferPhoto({ catalog, photos }, ctx, ctx.slug, offer.id)).rejects.toThrow(
       ServiceError,
     );
+  });
+
+  async function withModel() {
+    const base = await setup();
+    const sizes = [41, 42, 43].map((size) => ({
+      title: `Runner Pro ${size}`,
+      description: "Fast",
+      model: "Runner Pro",
+      offer_type: "shoe",
+      attributes: {},
+      price: 100,
+      currency: "USD",
+      price_status: "confirmed",
+      availability: "in_stock",
+      status: size === 43 ? "archived" : "active",
+    }));
+    await base.catalog.upsertOffers(base.ctx, sizes);
+    return base;
+  }
+
+  it("sets one saved photo on every variant of a model and keeps the model", async () => {
+    const { ctx, catalog, photos } = await withModel();
+    const result = await uploadModelPhoto(
+      { catalog, photos },
+      ctx,
+      ctx.slug,
+      "Runner Pro",
+      await scene(),
+    );
+    expect(result).toMatchObject({ cleaned: false, updated: 3 });
+    const variants = await catalog.listVariants(
+      ctx,
+      ["Runner Pro"],
+      ["active", "draft", "archived"],
+    );
+    expect(variants.map((v) => v.imageUrl)).toEqual([
+      result.imageUrl,
+      result.imageUrl,
+      result.imageUrl,
+    ]);
+    expect(variants.every((v) => v.model === "Runner Pro")).toBe(true);
+  });
+
+  it("cleans the model photo only when allowed", async () => {
+    const { ctx, catalog, photos } = await withModel();
+    const deps = { catalog, photos };
+    const denied = await uploadModelPhoto(
+      deps,
+      ctx,
+      ctx.slug,
+      "Runner Pro",
+      await scene(),
+      async () => false,
+    );
+    expect(denied.cleaned).toBe(false);
+    const allowed = await uploadModelPhoto(
+      deps,
+      ctx,
+      ctx.slug,
+      "Runner Pro",
+      await scene(),
+      async () => true,
+    );
+    expect(allowed.cleaned).toBe(true);
+    expect(allowed.imageUrl).not.toBe(denied.imageUrl);
+  });
+
+  it("rejects an unknown model", async () => {
+    const { ctx, catalog, photos } = await setup();
+    await expect(
+      uploadModelPhoto({ catalog, photos }, ctx, ctx.slug, "Nope", await scene()),
+    ).rejects.toThrow(ServiceError);
+  });
+
+  it("keeps the model of a single offer after a photo upload", async () => {
+    const { ctx, catalog, photos } = await withModel();
+    const [variant] = await catalog.listVariants(ctx, ["Runner Pro"]);
+    await uploadOfferPhoto({ catalog, photos }, ctx, ctx.slug, variant!.id, await scene());
+    expect((await catalog.getOffer(ctx, variant!.id))?.model).toBe("Runner Pro");
   });
 });
