@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { importBusinessModel, parsePrice, parseSizes } from "@/server/services/onboarding/import";
+import {
+  importBusinessModel,
+  parsePrice,
+  parseSizes,
+  unifyBrands,
+} from "@/server/services/onboarding/import";
 import { businessModelSchema } from "@/shared/business-model";
 
 function build(input: Parameters<typeof importBusinessModel>[0]) {
@@ -266,5 +271,84 @@ describe("size expansion", () => {
   it("parses letter ranges and rejects other text", () => {
     expect(parseSizes("S-L").map((s) => s.size)).toEqual(["S", "M", "L"]);
     expect(parseSizes("one size")).toEqual([]);
+  });
+});
+
+describe("messy price list", () => {
+  const header = ["Наименование", "Бренд", "Размеры", "Цена", "Наличие"];
+  const messy = table([
+    ["Прайс на ноябрь"],
+    [],
+    header,
+    ["Кроссовки Air Zoom", "Nike", "40-42", "45 000 ₸", "есть"],
+    ["Кроссовки Pegasus", "Найк", "41,42", "52000", "есть"],
+    ["", "", "", "", ""],
+    ["Кеды Chuck 70", "Converse", "EU 42", "22 000", "нет"],
+    ["Лоферы Classic", "Mokko", "42 р.", "", "есть"],
+    header,
+    ["Итого", "", "", "119000", ""],
+    [],
+  ]);
+
+  it("reads size formats with prefixes and suffixes", () => {
+    expect(parseSizes("EU 42").map((s) => s.size)).toEqual(["42"]);
+    expect(parseSizes("42 р.").map((s) => s.size)).toEqual(["42"]);
+    expect(parseSizes("размер 43").map((s) => s.size)).toEqual(["43"]);
+    expect(parseSizes("41,42,43").map((s) => s.size)).toEqual(["41", "42", "43"]);
+  });
+
+  it("skips repeated headers, totals and blank rows", () => {
+    const model = build({ businessName: "Shop", texts: [], tables: messy });
+    const titles = model.offers!.map((o) => o.title);
+    expect(titles).not.toContain("Наименование");
+    expect(titles).not.toContain("Итого");
+    expect(titles).toEqual([
+      "Кроссовки Air Zoom 40",
+      "Кроссовки Air Zoom 41",
+      "Кроссовки Air Zoom 42",
+      "Кроссовки Pegasus 41",
+      "Кроссовки Pegasus 42",
+      "Кеды Chuck 70",
+      "Лоферы Classic",
+    ]);
+  });
+
+  it("keeps one size per single-size row and one spelling per brand", () => {
+    const model = build({ businessName: "Shop", texts: [], tables: messy });
+    const byTitle = new Map(model.offers!.map((o) => [o.title, o]));
+    expect(byTitle.get("Кеды Chuck 70")?.attributes).toMatchObject({ size: "42" });
+    expect(byTitle.get("Лоферы Classic")?.attributes).toMatchObject({ size: "42" });
+    expect(new Set(model.offers!.slice(0, 5).map((o) => o.attributes?.brand))).toEqual(
+      new Set(["Nike"]),
+    );
+  });
+
+  it("makes unpriced rows price on request and lists the gaps", () => {
+    const model = build({ businessName: "Shop", texts: ["Доставка по городу."], tables: messy });
+    const loafers = model.offers!.find((o) => o.title === "Лоферы Classic");
+    expect(loafers).toMatchObject({ price: null, price_status: "on_request" });
+    expect(fields(model)).toContain("offers.price");
+    expect(fields(model)).toContain("policies.returns");
+  });
+});
+
+describe("unifyBrands", () => {
+  it("rewrites alias spellings to the Latin brand and leaves other attributes alone", () => {
+    const offers = [
+      { title: "A", attributes: { brand: "Nike", size: "42" } },
+      { title: "B", attributes: { brand: "Найк" } },
+      { title: "C", attributes: { brand: "mokko" } },
+      { title: "D", attributes: { brand: "Mokko" } },
+      { title: "E" },
+    ];
+    const out = unifyBrands(offers);
+    expect(out.map((o) => o.attributes?.brand)).toEqual([
+      "Nike",
+      "Nike",
+      "Mokko",
+      "Mokko",
+      undefined,
+    ]);
+    expect(out[0]?.attributes).toEqual({ brand: "Nike", size: "42" });
   });
 });

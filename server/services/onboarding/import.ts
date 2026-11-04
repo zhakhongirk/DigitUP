@@ -22,7 +22,15 @@ export interface ImportSources {
 }
 
 type Role =
-  "title" | "price" | "currency" | "category" | "description" | "availability" | "image" | "size";
+  | "title"
+  | "price"
+  | "currency"
+  | "category"
+  | "description"
+  | "availability"
+  | "image"
+  | "size"
+  | "brand";
 
 const ROLE_PATTERNS: [Role, RegExp][] = [
   [
@@ -42,7 +50,77 @@ const ROLE_PATTERNS: [Role, RegExp][] = [
   ],
   ["image", /^(image|photo|picture|image_url|фото|сурет)(?![\p{L}\d_])/iu],
   ["size", /^(sizes?|размер\p{L}*|өлшем\p{L}*)(?![\p{L}\d_])/iu],
+  ["brand", /^(brand|бренд|марка|производитель|бренд)(?![\p{L}\d_])/iu],
 ];
+
+const BRAND_ALIASES: Record<string, string[]> = {
+  Nike: ["найк", "найки"],
+  Adidas: ["адидас"],
+  Puma: ["пума"],
+  Reebok: ["рибок", "ризбок"],
+  "New Balance": ["ньюбаланс", "ньюбэланс"],
+  Converse: ["конверс", "конверсы"],
+  Vans: ["ванс", "вансы"],
+  Asics: ["асикс"],
+  Skechers: ["скетчерс", "скечерс"],
+  Timberland: ["тимберленд"],
+  Fila: ["фила"],
+  Jordan: ["джордан"],
+  Crocs: ["крокс"],
+  Salomon: ["саломон"],
+  Columbia: ["коламбия"],
+  "The North Face": ["нортфейс", "зенортфейс"],
+};
+
+const isCapitalized = (value: string) => value[0] !== value[0]?.toLowerCase();
+const brandKey = (value: string) => value.toLowerCase().replace(/[\s\-_.]+/g, "");
+
+/** One spelling per brand: known Cyrillic spellings map to the Latin name, others to the most common one. */
+function brandSpellings(values: string[]): Map<string, string> {
+  const known = new Map<string, string>();
+  for (const [name, aliases] of Object.entries(BRAND_ALIASES)) {
+    known.set(brandKey(name), name);
+    for (const alias of aliases) known.set(brandKey(alias), name);
+  }
+  const groups = new Map<string, { name: string | null; counts: Map<string, number> }>();
+  for (const value of values) {
+    const name = known.get(brandKey(value)) ?? null;
+    const key = name ?? brandKey(value);
+    const group = groups.get(key) ?? { name, counts: new Map<string, number>() };
+    group.counts.set(value, (group.counts.get(value) ?? 0) + 1);
+    groups.set(key, group);
+  }
+  const result = new Map<string, string>();
+  for (const { name, counts } of groups.values()) {
+    const best =
+      name ??
+      [...counts].sort(
+        (x, y) => y[1] - x[1] || Number(isCapitalized(y[0])) - Number(isCapitalized(x[0])),
+      )[0]![0];
+    for (const value of counts.keys()) result.set(value, best);
+  }
+  return result;
+}
+
+/** Rewrites `attributes.brand` of every offer to a single spelling per brand. */
+export function unifyBrands<T extends { attributes?: Record<string, unknown> | undefined }>(
+  offers: T[],
+): T[] {
+  const values = offers.flatMap((o) => {
+    const brand = o.attributes?.brand;
+    return typeof brand === "string" && brand.trim() !== "" ? [brand.trim()] : [];
+  });
+  const spellings = brandSpellings(values);
+  return offers.map((offer) => {
+    const brand = offer.attributes?.brand;
+    const unified = typeof brand === "string" ? spellings.get(brand.trim()) : undefined;
+    return unified && unified !== brand
+      ? { ...offer, attributes: { ...offer.attributes, brand: unified } }
+      : offer;
+  });
+}
+
+const TOTAL_ROW = /^(итого|итог|всего|total|subtotal|sum|барлығы|жиыны)(?![\p{L}\d_])/iu;
 
 const CURRENCY_HINTS: [RegExp, string][] = [
   [/₸|\bkzt\b|тенге|tenge|теңге/i, "KZT"],
@@ -128,7 +206,9 @@ interface ListedSize {
  * with stock per size ("40:2, 41:0"). Returns no sizes for anything else.
  */
 export function parseSizes(raw: string): ListedSize[] {
-  const text = clean(raw);
+  const text = clean(raw)
+    .replace(/^(?:eu|eur|size|размеры?|р-р|өлшем)\s*[:.]?\s*(?=\d)/i, "")
+    .replace(/(?<=\d)\s*(?:р\.?|eu|eur)$/i, "");
   if (text === "") return [];
   const range = text.match(/^(\d{2}(?:[.,]5)?)\s*[-\u2013\u2014]\s*(\d{2}(?:[.,]5)?)$/);
   if (range) {
@@ -208,7 +288,11 @@ function findCatalog(tables: ExtractedTable[]): Catalog | null {
       }
     });
     const titleCol = [...roles].find(([, role]) => role === "title")![0];
-    const rows = table.rows.slice(headerIndex + 1).filter((row) => clean(row[titleCol]) !== "");
+    const headerTitle = clean(header[titleCol]).toLowerCase();
+    const rows = table.rows.slice(headerIndex + 1).filter((row) => {
+      const title = clean(row[titleCol]);
+      return title !== "" && title.toLowerCase() !== headerTitle && !TOTAL_ROW.test(title);
+    });
     if (rows.length > 0 && (!best || rows.length > best.rows.length)) {
       best = { table, header, rows, roles };
     }
@@ -339,6 +423,10 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
     const availabilityCol = col("availability");
     const imageCol = col("image");
     const sizeCol = col("size");
+    const brandCol = col("brand");
+    const brands = brandSpellings(
+      brandCol === undefined ? [] : catalog.rows.map((r) => clean(r[brandCol])).filter(Boolean),
+    );
     const attrs = attributeDefinitions(catalog);
     const headerText = catalog.header.join(" ");
     const kind: OfferKind = SERVICE_HINT.test(headerText) ? "service" : "product";
@@ -356,6 +444,9 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
         kind,
         attributes: [
           ...attrs.map((a) => a.def),
+          ...(brandCol === undefined || brands.size === 0
+            ? []
+            : [{ key: "brand", label: "Brand", type: "text" as const, required: false }]),
           ...(sizeCol === undefined
             ? []
             : [{ key: "size", label: "Size", type: "text" as const, required: false }]),
@@ -386,6 +477,8 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
         const value = attributeValue(def, row[c] ?? "");
         if (value !== null) attributes[def.key] = value;
       }
+      const brand = brands.get(cell(brandCol));
+      if (brand) attributes.brand = brand;
       const image = cell(imageCol);
       const name = cell(titleCol).slice(0, 200);
       const rowAvailability =
@@ -402,7 +495,7 @@ export function importBusinessModel(sources: ImportSources): BusinessModelInput 
       const sizes = sizeCol === undefined ? [] : parseSizes(cell(sizeCol));
       const sharedName = (nameCounts.get(name) ?? 0) > 1;
       if (sizes.length === 0 || (sizes.length === 1 && !sharedName)) {
-        const raw = sizeCol === undefined ? "" : cell(sizeCol);
+        const raw = sizeCol === undefined ? "" : (sizes[0]?.size ?? cell(sizeCol));
         return [
           {
             ...base,

@@ -9,6 +9,7 @@ import type { Services } from "@/server/container";
 import { offerUpsertSchema, policiesPatchSchema } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 import { answerInquirySchema } from "@/server/services/orders";
+import { unifyBrands } from "@/server/services/onboarding/import";
 import { businessModelSchema, offerTypeSchema } from "@/shared/business-model";
 import { runTool } from "../tools";
 import { inquiryView, orderView, ownerOffer } from "../views";
@@ -164,7 +165,10 @@ export function createBusinessMcpServer({
     },
     ({ model }) =>
       runTool("propose_business_model", async () => {
-        const draft = await catalog.saveDraft(ctx, model);
+        const draft = await catalog.saveDraft(ctx, {
+          ...model,
+          ...(model.offers ? { offers: unifyBrands(model.offers) } : {}),
+        });
         return {
           draft_id: draft.id,
           status: draft.status,
