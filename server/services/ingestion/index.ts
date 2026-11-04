@@ -9,9 +9,12 @@ import {
   detectKind,
   ExtractionError,
   extractText,
+  imageMimeOf,
+  MAX_IMAGE_BYTES,
   MAX_UPLOAD_BYTES,
   type Extraction,
 } from "./extract";
+import type { ImageReader } from "./image";
 
 export type SourceAsset = typeof sourceAssets.$inferSelect;
 export type ProposalRun = typeof proposalRuns.$inferSelect;
@@ -54,6 +57,8 @@ export interface IngestionService {
   extractAsset(tenantId: string, assetId: string): Promise<SourceAsset | null>;
   /** Re-reads a stored spreadsheet or file; used by importers that need table structure. */
   readAsset(asset: SourceAsset): Promise<Extraction | null>;
+  /** Reads a photographed price list with the vision model. */
+  readImageFile(tenantId: string, filename: string, bytes: Uint8Array): Promise<Extraction>;
   /** Starts a fresh proposal run over the sources already uploaded. */
   startRun(ctx: TenantContext): Promise<ProposalRun>;
   getLatestRun(ctx: TenantContext): Promise<ProposalRun | null>;
@@ -68,9 +73,15 @@ export interface IngestionDeps {
   db: Db;
   events: EventPublisher;
   storage: FileStorage;
+  readImage?: ImageReader;
 }
 
-export function createIngestionService({ db, events, storage }: IngestionDeps): IngestionService {
+export function createIngestionService({
+  db,
+  events,
+  storage,
+  readImage,
+}: IngestionDeps): IngestionService {
   /**
    * Publishes `ingestion.completed` for the tenant's pending run once no file
    * is waiting for extraction. The run row lock serialises concurrent
@@ -140,8 +151,11 @@ export function createIngestionService({ db, events, storage }: IngestionDeps): 
         if (!detectKind(file.filename)) {
           throw new ServiceError(
             "invalid",
-            `${file.filename}: use XLSX, CSV, PDF, DOCX or TXT files`,
+            `${file.filename}: use XLSX, CSV, PDF, DOCX, TXT or image files`,
           );
+        }
+        if (imageMimeOf(file.filename) && file.bytes.byteLength > MAX_IMAGE_BYTES) {
+          throw new ServiceError("invalid", `${file.filename} is larger than 8 MB`);
         }
         if (file.bytes.byteLength === 0) {
           throw new ServiceError("invalid", `${file.filename} is empty`);
@@ -263,7 +277,17 @@ export function createIngestionService({ db, events, storage }: IngestionDeps): 
       }
       const kind = detectKind(asset.filename);
       if (!kind) return null;
-      return extractText(kind, await storage.read(asset.storagePath));
+      const bytes = await storage.read(asset.storagePath);
+      if (kind === "image") return service.readImageFile(asset.tenantId, asset.filename, bytes);
+      return extractText(kind, bytes);
+    },
+
+    async readImageFile(tenantId, filename, bytes) {
+      const mime = imageMimeOf(filename);
+      if (!mime) throw new ExtractionError("This file type is not supported");
+      if (!readImage)
+        throw new ExtractionError("Photos need the AI model, which is not configured.");
+      return readImage({ tenantId, mime, bytes });
     },
 
     async startRun(ctx) {

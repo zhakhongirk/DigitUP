@@ -3,9 +3,10 @@ import mammoth from "mammoth";
 import { extractText as extractPdfText, getDocumentProxy } from "unpdf";
 import { inspectZip } from "./zip-guard";
 
-export type SourceKind = "xlsx" | "csv" | "pdf" | "docx" | "txt";
+export type SourceKind = "xlsx" | "csv" | "pdf" | "docx" | "txt" | "image";
 
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
 const MAX_TEXT_CHARS = 200_000;
 const MIN_PDF_CHARS = 5;
@@ -44,7 +45,32 @@ const EXTENSIONS: Record<string, SourceKind> = {
   docx: "docx",
   txt: "txt",
   md: "txt",
+  jpg: "image",
+  jpeg: "image",
+  png: "image",
+  webp: "image",
 };
+
+const IMAGE_MIME: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+};
+
+/** MIME type of a supported image file name, or null. */
+export function imageMimeOf(filename: string): string | null {
+  const dot = filename.lastIndexOf(".");
+  if (dot < 0) return null;
+  return (
+    IMAGE_MIME[
+      filename
+        .slice(dot + 1)
+        .trim()
+        .toLowerCase()
+    ] ?? null
+  );
+}
 
 /** Kind from the file name extension, or null when unsupported. */
 export function detectKind(filename: string): SourceKind | null {
@@ -73,6 +99,8 @@ export async function extractText(kind: SourceKind, bytes: Uint8Array): Promise<
       return { text: await readDocx(bytes), tables: [] };
     case "txt":
       return { text: normalise(decodeUtf8(bytes)), tables: [] };
+    case "image":
+      throw new ExtractionError("Photos are read by the model, not as plain files.");
   }
 }
 

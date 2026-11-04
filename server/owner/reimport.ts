@@ -1,7 +1,13 @@
 import type { ApprovalsService, ChangeSetOp } from "@/server/services/approvals";
 import type { CatalogService, OfferView } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
-import { detectKind, extractText, ExtractionError } from "@/server/services/ingestion/extract";
+import {
+  detectKind,
+  extractText,
+  ExtractionError,
+  type Extraction,
+} from "@/server/services/ingestion/extract";
+import type { IngestionService } from "@/server/services/ingestion";
 import { importBusinessModel } from "@/server/services/onboarding/import";
 import type { BusinessModelInput } from "@/shared/business-model";
 
@@ -257,15 +263,20 @@ export async function readPriceList(
   filename: string,
   bytes: Uint8Array,
   currencyHint: string | null,
+  readImage?: (tenantId: string, filename: string, bytes: Uint8Array) => Promise<Extraction>,
+  tenantId = "",
 ): Promise<ImportedOffer[]> {
   const kind = detectKind(filename);
   if (!kind || kind === "txt") {
-    throw new ServiceError("invalid", "Use an XLSX, CSV, PDF or DOCX file");
+    throw new ServiceError("invalid", "Use an XLSX, CSV, PDF, DOCX or image file");
   }
   if (bytes.byteLength === 0) throw new ServiceError("invalid", "The file is empty");
   let extraction;
   try {
-    extraction = await extractText(kind, bytes);
+    extraction =
+      kind === "image" && readImage
+        ? await readImage(tenantId, filename, bytes)
+        : await extractText(kind, bytes);
   } catch (error) {
     if (error instanceof ExtractionError) throw new ServiceError("invalid", error.message);
     throw error;
@@ -306,13 +317,22 @@ export async function runReimport(
   services: {
     catalog: Pick<CatalogService, "searchOffers" | "listOfferTypes">;
     approvals: ApprovalsService;
+    ingestion?: Pick<IngestionService, "readImageFile">;
   },
   ctx: TenantContext,
   file: { filename: string; bytes: Uint8Array },
 ): Promise<ReimportResult> {
   const existing = await loadExistingOffers(services.catalog, ctx);
   const currencyHint = mostCommon(existing.flatMap((o) => (o.currency ? [o.currency] : [])));
-  const imported = await readPriceList(file.filename, file.bytes, currencyHint);
+  const imported = await readPriceList(
+    file.filename,
+    file.bytes,
+    currencyHint,
+    services.ingestion
+      ? (tenantId, name, bytes) => services.ingestion!.readImageFile(tenantId, name, bytes)
+      : undefined,
+    ctx.tenantId,
+  );
   const plan = buildPlan(existing, imported);
   if (planIsEmpty(plan)) return { status: "unchanged", plan };
 

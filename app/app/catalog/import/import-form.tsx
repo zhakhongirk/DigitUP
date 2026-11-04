@@ -83,7 +83,7 @@ export function ImportForm() {
             id="ri-file"
             type="file"
             name="file"
-            accept=".xlsx,.csv,.pdf,.docx"
+            accept=".xlsx,.csv,.pdf,.docx,.jpg,.jpeg,.png,.webp"
             required
             className="sr-only ri-file-input"
             aria-describedby="ri-file-name"

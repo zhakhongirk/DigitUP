@@ -47,7 +47,8 @@ export const onboarding = pair(
     "ob.aboutPlaceholder":
       "What you sell, where you are, how to reach you, delivery, payment and returns.",
     "ob.drop": "Drop price lists, catalogs or policies",
-    "ob.dropHint": "XLSX, CSV, PDF, DOCX or TXT · up to 20 MB each",
+    "ob.dropHint":
+      "XLSX, CSV, PDF, DOCX, TXT or a photo (JPG, PNG, WebP) · up to 20 MB each, photos up to 8 MB",
     "ob.selectedFiles": "Selected files",
     "ob.remove": "Remove {name}",
     "ob.publishHint": "Nothing is published until you confirm the review.",
@@ -191,7 +192,7 @@ export const onboarding = pair(
     "lp.create": "Create your store",
     "lp.how": "How it works",
     "lp.step1": "Upload",
-    "lp.step1Text": "Price lists, catalogs and policies as XLSX, CSV, PDF or Word.",
+    "lp.step1Text": "Price lists, catalogs and policies as XLSX, CSV, PDF, Word or a photo.",
     "lp.step2": "Review",
     "lp.step2Text": "A draft business model: profile, offers, policies and what is still missing.",
     "lp.step3": "Go live",
@@ -268,7 +269,8 @@ export const onboarding = pair(
     "ob.aboutPlaceholder":
       "Что продаёте, где находитесь, как с вами связаться, доставка, оплата и возврат.",
     "ob.drop": "Перетащите прайсы, каталоги или условия",
-    "ob.dropHint": "XLSX, CSV, PDF, DOCX или TXT · до 20 МБ каждый",
+    "ob.dropHint":
+      "XLSX, CSV, PDF, DOCX, TXT или фото (JPG, PNG, WebP) · до 20 МБ каждый, фото до 8 МБ",
     "ob.selectedFiles": "Выбранные файлы",
     "ob.remove": "Убрать {name}",
     "ob.publishHint": "Ничего не опубликуется, пока вы не подтвердите проверку.",
@@ -440,7 +442,7 @@ export const onboarding = pair(
     "lp.create": "Создать магазин",
     "lp.how": "Как это работает",
     "lp.step1": "Загрузка",
-    "lp.step1Text": "Прайсы, каталоги и условия в формате XLSX, CSV, PDF или Word.",
+    "lp.step1Text": "Прайсы, каталоги и условия в формате XLSX, CSV, PDF, Word или фото.",
     "lp.step2": "Проверка",
     "lp.step2Text": "Черновик модели бизнеса: профиль, позиции, условия и то, чего ещё не хватает.",
     "lp.step3": "Запуск",
@@ -517,7 +519,8 @@ export const onboarding = pair(
     "ob.aboutPlaceholder":
       "Не сатасыз, қайда орналасқансыз, сізбен қалай байланысуға болады, жеткізу, төлем және қайтару.",
     "ob.drop": "Прайстарды, каталогтарды немесе шарттарды осында тартыңыз",
-    "ob.dropHint": "XLSX, CSV, PDF, DOCX немесе TXT · әрқайсысы 20 МБ-қа дейін",
+    "ob.dropHint":
+      "XLSX, CSV, PDF, DOCX, TXT немесе сурет (JPG, PNG, WebP) · әрқайсысы 20 МБ-қа дейін, сурет 8 МБ-қа дейін",
     "ob.selectedFiles": "Таңдалған файлдар",
     "ob.remove": "Алып тастау: {name}",
     "ob.publishHint": "Тексеруді растамайынша, ештеңе жарияланбайды.",
@@ -681,7 +684,8 @@ export const onboarding = pair(
     "lp.create": "Дүкен жасау",
     "lp.how": "Бұл қалай жұмыс істейді",
     "lp.step1": "Жүктеу",
-    "lp.step1Text": "XLSX, CSV, PDF немесе Word форматындағы прайстар, каталогтар және шарттар.",
+    "lp.step1Text":
+      "XLSX, CSV, PDF, Word немесе сурет форматындағы прайстар, каталогтар және шарттар.",
     "lp.step2": "Тексеру",
     "lp.step2Text":
       "Бизнес моделінің жобасы: профиль, позициялар, шарттар және әлі жетіспейтін нәрселер.",

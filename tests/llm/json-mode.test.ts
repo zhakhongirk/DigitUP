@@ -109,3 +109,14 @@ describe("toJsonModeMessages", () => {
     expect(messages[1]).toEqual({ role: "user", content: "hi" });
   });
 });
+
+describe("toJsonModeMessages with images", () => {
+  it("keeps image parts of user messages", () => {
+    const content = [
+      { type: "text" as const, text: "read" },
+      { type: "image" as const, url: "data:image/png;base64,AAAA" },
+    ];
+    const out = toJsonModeMessages([{ role: "user", content }], []);
+    expect(out.find((m) => m.role === "user")).toEqual({ role: "user", content });
+  });
+});

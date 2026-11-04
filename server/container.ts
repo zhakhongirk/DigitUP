@@ -14,6 +14,7 @@ import {
   type IntentInterpreter,
   type IntentService,
 } from "./services/intent";
+import { defaultImageReader, type ImageReader } from "./services/ingestion/image";
 import { createIngestionService, type IngestionService } from "./services/ingestion";
 import { createNotificationsService, type NotificationsService } from "./services/notifications";
 import { createOrdersService, type OrdersService } from "./services/orders";
@@ -48,6 +49,7 @@ export interface ServiceDeps {
   storage?: FileStorage;
   telegram?: TelegramService;
   interpret?: IntentInterpreter;
+  readImage?: ImageReader;
 }
 
 function telegramFromEnv(db: Db): TelegramService {
@@ -68,6 +70,7 @@ export function createServices({
   storage,
   telegram,
   interpret,
+  readImage,
 }: ServiceDeps): Services {
   const catalog = createCatalogService({ db, events });
   return {
@@ -78,7 +81,12 @@ export function createServices({
     conversations: createConversationsService({ db, events }),
     approvals: createApprovalsService(db, events),
     audit: createAuditService(db),
-    ingestion: createIngestionService({ db, events, storage: storage ?? createFileStorage() }),
+    ingestion: createIngestionService({
+      db,
+      events,
+      storage: storage ?? createFileStorage(),
+      readImage: readImage ?? defaultImageReader,
+    }),
     notifications: createNotificationsService(db),
     telegram: telegram ?? telegramFromEnv(db),
     webhooks: createWebhookService(db),

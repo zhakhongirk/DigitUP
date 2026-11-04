@@ -127,7 +127,7 @@ describe("handleOnboardingUpload", () => {
   it("rejects unsupported files before signing up", async () => {
     const email = newEmail();
     const response = await handleOnboardingUpload(
-      uploadRequest(signUpFields({ email, files: new File(["x"], "photo.png") })),
+      uploadRequest(signUpFields({ email, files: new File(["x"], "photo.gif") })),
       services,
     );
     expect(response.status).toBe(400);

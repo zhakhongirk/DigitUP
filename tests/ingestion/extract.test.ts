@@ -75,7 +75,7 @@ describe("detectKind", () => {
   });
 
   it("returns null for unsupported names", () => {
-    expect(detectKind("photo.png")).toBeNull();
+    expect(detectKind("photo.gif")).toBeNull();
     expect(detectKind("noextension")).toBeNull();
     expect(detectKind("old.xls")).toBeNull();
   });

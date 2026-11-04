@@ -37,7 +37,7 @@ describe("validateFiles", () => {
   const { ingestion } = setup();
 
   it("rejects unsupported extensions", () => {
-    invalid(() => ingestion.validateFiles([file("photo.png")]), /photo\.png/);
+    invalid(() => ingestion.validateFiles([file("photo.gif")]), /photo\.gif/);
   });
 
   it("rejects empty files", () => {
@@ -120,7 +120,7 @@ describe("addSources", () => {
     const { ingestion } = setup();
     const ctx = await createTestTenant();
     await expect(
-      ingestion.addSources(ctx, { note: "x", files: [file("a.png")] }),
+      ingestion.addSources(ctx, { note: "x", files: [file("a.gif")] }),
     ).rejects.toMatchObject({ code: "invalid" });
     expect(await ingestion.listSourceAssets(ctx)).toEqual([]);
   });

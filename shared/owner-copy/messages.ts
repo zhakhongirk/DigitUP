@@ -42,17 +42,23 @@ export const messages = pair(
     "msg.Password was changed elsewhere. Try again": "Password was changed elsewhere. Try again",
     "msg.A valid email is required": "A valid email is required",
     "msg.Upload at most {n} files at a time": "Upload at most {n} files at a time",
-    "msg.{file}: use XLSX, CSV, PDF, DOCX or TXT files":
-      "{file}: use XLSX, CSV, PDF, DOCX or TXT files",
+    "msg.{file}: use XLSX, CSV, PDF, DOCX, TXT or image files":
+      "{file}: use XLSX, CSV, PDF, DOCX, TXT or image files",
     "msg.{file} is empty": "{file} is empty",
     "msg.{file} is larger than 20 MB": "{file} is larger than 20 MB",
+    "msg.{file} is larger than 8 MB": "{file} is larger than 8 MB",
+    "msg.Photos need the AI model, which is not configured.":
+      "Photos need the AI model, which is not configured.",
+    "msg.Could not read this photo.": "Could not read this photo.",
+    "msg.Could not read any text from this photo. Try a sharper, well lit picture.":
+      "Could not read any text from this photo. Try a sharper, well lit picture.",
     "msg.The description is too long": "The description is too long",
     "msg.Describe the business or upload at least one file":
       "Describe the business or upload at least one file",
     "msg.Upload at most 60 MB at a time": "Upload at most 60 MB at a time",
     "msg.This store is already live": "This store is already live",
     "msg.Expected a form upload": "Expected a form upload",
-    "msg.Use an XLSX, CSV, PDF or DOCX file": "Use an XLSX, CSV, PDF or DOCX file",
+    "msg.Use an XLSX, CSV, PDF, DOCX or image file": "Use an XLSX, CSV, PDF, DOCX or image file",
     "msg.The file is empty": "The file is empty",
     "msg.We could not find a price table in this file. Check that it has a name column and a price column.":
       "We could not find a price table in this file. Check that it has a name column and a price column.",
@@ -134,17 +140,23 @@ export const messages = pair(
       "Пароль уже изменили в другом месте. Повторите",
     "msg.A valid email is required": "Укажите корректную почту",
     "msg.Upload at most {n} files at a time": "Можно загрузить не больше {n} файлов за раз",
-    "msg.{file}: use XLSX, CSV, PDF, DOCX or TXT files":
-      "{file}: нужен файл XLSX, CSV, PDF, DOCX или TXT",
+    "msg.{file}: use XLSX, CSV, PDF, DOCX, TXT or image files":
+      "{file}: нужен файл XLSX, CSV, PDF, DOCX, TXT или фото",
     "msg.{file} is empty": "Файл {file} пустой",
     "msg.{file} is larger than 20 MB": "Файл {file} больше 20 МБ",
+    "msg.{file} is larger than 8 MB": "Файл {file} больше 8 МБ",
+    "msg.Photos need the AI model, which is not configured.":
+      "Для фото нужна ИИ-модель, она не подключена.",
+    "msg.Could not read this photo.": "Не удалось прочитать это фото.",
+    "msg.Could not read any text from this photo. Try a sharper, well lit picture.":
+      "На фото не удалось разобрать текст. Попробуйте более чёткий снимок при хорошем свете.",
     "msg.The description is too long": "Описание слишком длинное",
     "msg.Describe the business or upload at least one file":
       "Опишите бизнес или загрузите хотя бы один файл",
     "msg.Upload at most 60 MB at a time": "Можно загрузить не больше 60 МБ за раз",
     "msg.This store is already live": "Этот магазин уже запущен",
     "msg.Expected a form upload": "Ожидалась отправка формы",
-    "msg.Use an XLSX, CSV, PDF or DOCX file": "Загрузите файл XLSX, CSV, PDF или DOCX",
+    "msg.Use an XLSX, CSV, PDF, DOCX or image file": "Загрузите файл XLSX, CSV, PDF, DOCX или фото",
     "msg.The file is empty": "Файл пустой",
     "msg.We could not find a price table in this file. Check that it has a name column and a price column.":
       "В файле не нашлась таблица с ценами. Проверьте, что в ней есть столбцы с названием и ценой.",
@@ -233,17 +245,24 @@ export const messages = pair(
     "msg.Password was changed elsewhere. Try again": "Құпиясөз басқа жерде өзгертілген. Қайталаңыз",
     "msg.A valid email is required": "Дұрыс пошта көрсетіңіз",
     "msg.Upload at most {n} files at a time": "Бір мезетте {n} файлдан көп жүктеуге болмайды",
-    "msg.{file}: use XLSX, CSV, PDF, DOCX or TXT files":
-      "{file}: XLSX, CSV, PDF, DOCX немесе TXT файлы керек",
+    "msg.{file}: use XLSX, CSV, PDF, DOCX, TXT or image files":
+      "{file}: XLSX, CSV, PDF, DOCX, TXT немесе сурет файлы керек",
     "msg.{file} is empty": "{file} файлы бос",
     "msg.{file} is larger than 20 MB": "{file} файлы 20 МБ-тан үлкен",
+    "msg.{file} is larger than 8 MB": "{file} файлы 8 МБ-тан үлкен",
+    "msg.Photos need the AI model, which is not configured.":
+      "Суретке ЖИ моделі керек, ол қосылмаған.",
+    "msg.Could not read this photo.": "Бұл суретті оқу мүмкін болмады.",
+    "msg.Could not read any text from this photo. Try a sharper, well lit picture.":
+      "Суреттен мәтін оқылмады. Анығырақ, жарық жерде түсірілген сурет жүктеңіз.",
     "msg.The description is too long": "Сипаттама тым ұзын",
     "msg.Describe the business or upload at least one file":
       "Бизнесті сипаттаңыз немесе кемінде бір файл жүктеңіз",
     "msg.Upload at most 60 MB at a time": "Бір мезетте 60 МБ-тан көп жүктеуге болмайды",
     "msg.This store is already live": "Бұл дүкен іске қосылып қойған",
     "msg.Expected a form upload": "Форма жіберу күтілген",
-    "msg.Use an XLSX, CSV, PDF or DOCX file": "XLSX, CSV, PDF немесе DOCX файлын жүктеңіз",
+    "msg.Use an XLSX, CSV, PDF, DOCX or image file":
+      "XLSX, CSV, PDF, DOCX немесе сурет файлын жүктеңіз",
     "msg.The file is empty": "Файл бос",
     "msg.We could not find a price table in this file. Check that it has a name column and a price column.":
       "Файлдан бағалар кестесі табылмады. Онда атау және баға бағандары бар екенін тексеріңіз.",

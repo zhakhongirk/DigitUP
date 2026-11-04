@@ -6,7 +6,7 @@ import { useT } from "@/app/i18n-provider";
 import type { OnboardingStatus } from "@/server/onboarding/flow";
 import type { Translator } from "@/shared/owner-copy";
 
-const ACCEPT = ".xlsx,.csv,.pdf,.docx,.txt,.md";
+const ACCEPT = ".xlsx,.csv,.pdf,.docx,.txt,.md,.jpg,.jpeg,.png,.webp";
 const POLL_MS = 1500;
 const SLOW_AFTER_MS = 45_000;
 
