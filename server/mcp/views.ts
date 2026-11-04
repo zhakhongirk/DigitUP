@@ -116,7 +116,7 @@ export function publicModel(group: OfferGroup & { model: string }) {
   const base = publicOffer(group.lead);
   const price = groupPrice(group);
   const availability = groupAvailability(group);
-  const { available, unavailable } = groupSizes(group);
+  const { available, unavailable, unknown } = groupSizes(group);
   const attributes = Object.fromEntries(
     Object.entries(group.lead.attributes as Record<string, unknown>).filter(
       ([key]) => key !== "size",
@@ -131,7 +131,7 @@ export function publicModel(group: OfferGroup & { model: string }) {
   const orderable = group.variants.some(
     (v) => v.priceStatus === "confirmed" && v.availability === "in_stock",
   );
-  const withSizes = available.length > 0 || unavailable.length > 0;
+  const withSizes = available.length + unavailable.length + unknown.length > 0;
   return {
     ...base,
     title: group.model,
@@ -148,6 +148,7 @@ export function publicModel(group: OfferGroup & { model: string }) {
     can_order: orderable,
     sizes: available,
     unavailable_sizes: unavailable,
+    unknown_sizes: unknown,
     variants: group.variants.map((v) => ({
       offer_id: v.id,
       title: v.title,

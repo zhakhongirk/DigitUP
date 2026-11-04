@@ -101,11 +101,11 @@ export function registerRawTools(
         if (offer.model === null) return publicOffer(offer);
         const [group] = await catalog.groupOffers(ctx, [offer]);
         if (!group || group.model === null) return publicOffer(offer);
-        const { sizes, unavailable_sizes, variants } = publicModel({
+        const { sizes, unavailable_sizes, unknown_sizes, variants } = publicModel({
           ...group,
           model: group.model,
         });
-        return { ...publicOffer(offer), sizes, unavailable_sizes, variants };
+        return { ...publicOffer(offer), sizes, unavailable_sizes, unknown_sizes, variants };
       }),
   );
 

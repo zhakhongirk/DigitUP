@@ -215,7 +215,7 @@ export function toOfferChips(data: unknown): OfferChip[] {
       availabilityLabel: typeof o.availability_label === "string" ? o.availability_label : "",
       imageUrl: safeChatImage(o.image_url),
       canOrder: o.can_order === true,
-      sizes: stringList(o.sizes),
+      sizes: [...stringList(o.sizes), ...stringList(o.unknown_sizes)],
       unavailableSizes: stringList(o.unavailable_sizes),
     });
   }

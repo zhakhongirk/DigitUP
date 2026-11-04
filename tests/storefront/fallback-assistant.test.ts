@@ -402,6 +402,20 @@ describe("decide", () => {
       expect(reply(decide([...asked, user("50")], "k"))).toBe("Which size? Available: 41, 42.");
       expect(reply(decide([...asked, user("no")], "k"))).toContain("did not place the order");
     });
+
+    it("names an out-of-stock size answered to the size question and lists the rest", () => {
+      const sold = { ...runner, unavailable_sizes: ["43"] };
+      const history = [
+        user("I'd like to order 2 Runner"),
+        ...toolTurn("search_offers", {}, { total: 1, offers: [sold] }),
+        assistant("Which size? Available: 41, 42."),
+        user("43"),
+      ];
+      const text = reply(decide(history, "k"));
+      expect(text).toContain("43");
+      expect(text).toContain("out of stock");
+      expect(text).toContain("41, 42");
+    });
   });
 
   it("shows the size in the draft and passes it as a note", () => {

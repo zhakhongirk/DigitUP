@@ -1,4 +1,5 @@
 import type { Services } from "@/server/container";
+import type { Availability } from "@/shared/business-model";
 import { policiesWithStates, publicOffer } from "@/server/mcp/views";
 import {
   groupAvailability,
@@ -66,7 +67,7 @@ export interface OfferCardData {
   /** Product name when the card stands for several per-size offers. */
   model: string | null;
   /** Per-size offers of the model; empty for a standalone offer. */
-  sizes: { id: string; size: string; available: boolean }[];
+  sizes: { id: string; size: string; available: boolean; availability: Availability }[];
 }
 
 export type OfferDetailData = OfferCardData;
@@ -214,7 +215,6 @@ function toGroupCard(group: OfferGroup, defs: TypeDefs, limit?: number): OfferCa
       ? formatPrice(price.min, price.currency)
       : `${formatPrice(price.min, price.currency)} – ${formatPrice(price.max, price.currency)}`
     : "Price on request";
-  const { available } = groupSizes(group);
   return {
     ...card,
     title: group.model,
@@ -239,7 +239,16 @@ function toGroupCard(group: OfferGroup, defs: TypeDefs, limit?: number): OfferCa
     model: group.model,
     sizes: group.variants.flatMap((v) => {
       const size = sizeOf(v);
-      return size === null ? [] : [{ id: v.id, size, available: available.includes(size) }];
+      return size === null
+        ? []
+        : [
+            {
+              id: v.id,
+              size,
+              available: v.availability !== "out_of_stock",
+              availability: v.availability,
+            },
+          ];
     }),
   };
 }

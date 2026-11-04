@@ -8,6 +8,7 @@ import {
   groupSizes,
   type OfferView,
 } from "@/server/services/catalog";
+import { publicModel } from "@/server/mcp/views";
 import { createCustomerMcpServer } from "@/server/mcp/customer/server";
 import { buildMerchantFeed } from "@/server/storefront/feed";
 import { loadOffer, searchCatalog } from "@/server/storefront/data";
@@ -120,6 +121,29 @@ describe("offer model field", () => {
   });
 });
 
+describe("sizes with unknown availability", () => {
+  const all = [
+    variant("41"),
+    variant("42", { availability: "unknown" }),
+    variant("43", { availability: "out_of_stock" }),
+  ];
+  const [group] = buildGroups([all[0]!], all);
+
+  it("keeps them apart from sold-out sizes", () => {
+    expect(groupSizes(group!)).toEqual({
+      available: ["41"],
+      unavailable: ["43"],
+      unknown: ["42"],
+    });
+  });
+
+  it("does not mark them as out of stock on the storefront", () => {
+    const model = publicModel({ ...group!, model: MODEL });
+    expect(model.unknown_sizes).toEqual(["42"]);
+    expect(model.unavailable_sizes).toEqual(["43"]);
+  });
+});
+
 describe("grouping", () => {
   const all = [
     variant("43", { availability: "out_of_stock", price: 91000 }),
@@ -143,7 +167,11 @@ describe("grouping", () => {
   it("reports price range, availability and sizes", () => {
     expect(groupPrice(group!)).toEqual({ min: 89000, max: 91000, currency: "KZT" });
     expect(groupAvailability(group!)).toBe("in_stock");
-    expect(groupSizes(group!)).toEqual({ available: ["41", "42"], unavailable: ["43"] });
+    expect(groupSizes(group!)).toEqual({
+      available: ["41", "42"],
+      unavailable: ["43"],
+      unknown: [],
+    });
   });
 
   it("keeps offers without a model as their own group", () => {

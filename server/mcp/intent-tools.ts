@@ -77,7 +77,11 @@ function offerRow({ group, matched }: Row, store: IntentToolsOptions["store"]) {
     can_order: view.can_order,
     sizes: "sizes" in view ? view.sizes : sizesOf(view.attributes),
     ...("unavailable_sizes" in view
-      ? { unavailable_sizes: view.unavailable_sizes, variant_ids: view.variant_ids }
+      ? {
+          unavailable_sizes: view.unavailable_sizes,
+          unknown_sizes: view.unknown_sizes,
+          variant_ids: view.variant_ids,
+        }
       : {}),
     matched,
     url: offerUrl(store, group.lead.id),

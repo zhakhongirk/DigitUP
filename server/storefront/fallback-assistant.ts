@@ -659,6 +659,7 @@ export type Pending =
       offerId: string;
       quantity: number;
       sizes: string[];
+      outOfStock: string[];
       title: string;
       draft: Draft | null;
     }
@@ -857,6 +858,7 @@ export function readContext(history: LlmMessage[]): FallbackContext {
         offerId: offer.offer_id,
         quantity: buy ? parseIntent(buy).quantity : 1,
         sizes: listed.split(", "),
+        outOfStock: offer.unavailable_sizes ?? [],
         title: offer.title,
         draft: addedBefore(history, lastIndex) ? draft : null,
       };
@@ -1254,7 +1256,10 @@ function startDecision(
         ],
       };
     }
-    if (size) return { reply: copy.sizeAsk(pending.sizes.join(", ")) };
+    if (size) {
+      const out = pending.outOfStock.includes(size) ? size : undefined;
+      return { reply: copy.sizeAsk(pending.sizes.join(", "), out) };
+    }
     if (intent.kind === "no") {
       return { reply: pending.draft ? copy.orderWaiting : copy.orderCancelled };
     }

@@ -95,13 +95,24 @@ export function groupAvailability(group: OfferGroup): OfferView["availability"] 
   return "unknown";
 }
 
-export function groupSizes(group: OfferGroup): { available: string[]; unavailable: string[] } {
+export function groupSizes(group: OfferGroup): {
+  available: string[];
+  unavailable: string[];
+  unknown: string[];
+} {
   const available: string[] = [];
   const unavailable: string[] = [];
+  const unknown: string[] = [];
   for (const variant of group.variants) {
     const size = sizeOf(variant);
     if (size === null) continue;
-    (variant.availability === "in_stock" ? available : unavailable).push(size);
+    const bucket =
+      variant.availability === "in_stock"
+        ? available
+        : variant.availability === "unknown"
+          ? unknown
+          : unavailable;
+    bucket.push(size);
   }
-  return { available, unavailable };
+  return { available, unavailable, unknown };
 }
