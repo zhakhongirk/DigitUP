@@ -30,7 +30,8 @@
     "eval": "tsx scripts/eval/run.ts",
     "eval:gold": "tsx scripts/eval/build-gold.ts",
     "eval:report": "tsx scripts/eval/report.ts",
-    "cost:measure": "tsx scripts/measure-cost.ts"
+    "cost:measure": "tsx scripts/measure-cost.ts",
+    "eval:setup": "tsx scripts/eval/setup.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

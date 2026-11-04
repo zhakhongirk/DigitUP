@@ -92,10 +92,10 @@ Run `pnpm llm:probe` to test your provider and see which tool call mode it recom
 `scripts/eval` measures how well a shopper agent does on the seeded stores in three setups: A uses only the raw customer tools, B uses `find_offers` and `get_business_info`, C uses `find_offers`, the raw tools and `report_answer`. The shopper model is the main tier at temperature 0. The run reads the stores through the keyed customer MCP endpoint and writes only analytics rows (intent events, search misses, LLM usage); no orders or inquiries are created.
 
 ```bash
-pnpm db:seed                      # once; prints a customer-agent key per store
-pnpm eval:gold                    # resolves queries.jsonl to offer ids and copies prices and availability from the database
-export EVAL_CUSTOMER_KEY=...      # or EVAL_CUSTOMER_KEY_STRIDE_SHOES / EVAL_CUSTOMER_KEY_FADE_FACTORY
+pnpm db:seed                      # once
 pnpm dev                          # in another terminal
+pnpm eval:setup                   # creates a customer-agent key per store, writes EVAL_CUSTOMER_KEY_<STORE> to .env, checks the MCP tools
+pnpm eval:gold                    # resolves queries.jsonl to offer ids and copies prices and availability from the database
 pnpm eval -- --config B --runs 1 --limit 3     # quick check
 pnpm eval                         # all configs, 3 runs per query
 ```
