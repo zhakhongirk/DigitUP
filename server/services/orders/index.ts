@@ -21,6 +21,7 @@ import { recordAudit } from "../audit";
 import { detectTextLang, ORDER_CANCELLED_PREFIX, STORE_ANSWER_PREFIX } from "@/shared/text-lang";
 import { parseOrThrow } from "../catalog/ops";
 import { assertOwner, ServiceError, type TenantContext } from "../context";
+import { recordInquiryNote } from "../knowledge";
 import { inquirySearchCondition, orderSearchCondition, parseSearch } from "./search";
 
 export type Order = typeof orders.$inferSelect;
@@ -240,7 +241,12 @@ export interface OrdersService {
     status: InquiryStatus,
   ): Promise<Inquiry>;
   /** Owner-only. Stores the reply and completes the inquiry. */
-  answerInquiry(ctx: TenantContext, inquiryId: string, answer: string): Promise<Inquiry>;
+  answerInquiry(
+    ctx: TenantContext,
+    inquiryId: string,
+    answer: string,
+    options?: { remember?: boolean },
+  ): Promise<Inquiry>;
 }
 
 export interface OrdersDeps {
@@ -1104,7 +1110,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
       });
     },
 
-    async answerInquiry(ctx, inquiryId, rawAnswer) {
+    async answerInquiry(ctx, inquiryId, rawAnswer, options = {}) {
       assertOwner(ctx);
       assertUuid(inquiryId, "Inquiry not found");
       const answer = parseOrThrow(answerInquirySchema, rawAnswer, "answer");
@@ -1130,6 +1136,7 @@ export function createOrdersService({ db, events }: OrdersDeps): OrdersService {
         if (before.conversationId && before.answer !== answer) {
           await postAnswerToConversation(tx, before.conversationId, answer);
         }
+        await recordInquiryNote(tx, ctx, before, answer, options.remember);
         await publishInquiryStatus(tx, ctx, before, updated!.status);
         return updated!;
       });

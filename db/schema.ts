@@ -150,6 +150,8 @@ export const businessProfiles = pgTable("business_profiles", {
   missingInfo: jsonb("missing_info").notNull().default([]),
   /** Synonyms, categories, facet values and size grid derived from the catalog. */
   vocabulary: jsonb("vocabulary"),
+  /** Owner-defined terms linked to products; kept apart so a rebuild never drops them. */
+  vocabularyManual: jsonb("vocabulary_manual").notNull().default({}),
   updatedAt: updatedAt(),
 });
 
@@ -458,6 +460,10 @@ export const intentEvents = pgTable(
     afterIntentId: uuid("after_intent_id"),
     /** The fast model's reading of the phrase, computed after the answer was sent. */
     rewrite: jsonb("rewrite"),
+    /** Set when the owner dealt with a wrong report. */
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    /** How a wrong report was handled: linked or dismissed. */
+    resolution: text("resolution"),
     createdAt: createdAt(),
   },
   (t) => [
@@ -465,5 +471,25 @@ export const intentEvents = pgTable(
     index("intent_events_session_idx").on(t.tenantId, t.sessionKey, t.createdAt),
     index("intent_events_client_idx").on(t.tenantId, t.clientKey, t.createdAt),
     index("intent_events_after_idx").on(t.afterIntentId),
+  ],
+);
+
+export const storeNotes = pgTable(
+  "store_notes",
+  {
+    id: id(),
+    tenantId: tenantId(),
+    offerId: uuid("offer_id").references(() => offers.id, { onDelete: "cascade" }),
+    model: text("model"),
+    text: text("text").notNull(),
+    sourceInquiryId: uuid("source_inquiry_id").references(() => inquiries.id, {
+      onDelete: "set null",
+    }),
+    answeredAt: timestamp("answered_at", { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("store_notes_tenant_idx").on(t.tenantId, t.answeredAt),
+    uniqueIndex("store_notes_inquiry_idx").on(t.sourceInquiryId),
   ],
 );

@@ -75,6 +75,7 @@ export const inbox = pair(
     "ib.replyHint":
       "Saved to this question. Agents can read it; contact the customer directly using the contact details for this question.",
     "ib.answerSaved": "Answer saved",
+    "ib.remember": "Remember for other shoppers",
     "ib.cancelOrder": "Cancel order",
     "ib.reasonLabel": "Cancellation reason",
     "ib.reasonPlaceholder": "Reason shown to the customer",
@@ -166,6 +167,7 @@ export const inbox = pair(
     "ib.replyHint":
       "Ответ сохранится в вопросе, агенты смогут его прочитать. Покупателю напишите напрямую по его контактам.",
     "ib.answerSaved": "Ответ сохранён",
+    "ib.remember": "Запомнить для других покупателей",
     "ib.cancelOrder": "Отменить заказ",
     "ib.reasonLabel": "Причина отмены",
     "ib.reasonPlaceholder": "Причина, которую увидит покупатель",
@@ -262,6 +264,7 @@ export const inbox = pair(
     "ib.replyHint":
       "Жауап сұрақта сақталады, агенттер оны оқи алады. Сатып алушыға байланыс деректері бойынша тікелей жазыңыз.",
     "ib.answerSaved": "Жауап сақталды",
+    "ib.remember": "Басқа сатып алушылар үшін есте сақтау",
     "ib.cancelOrder": "Тапсырыстан бас тарту",
     "ib.reasonLabel": "Бас тарту себебі",
     "ib.reasonPlaceholder": "Сатып алушы көретін себеп",

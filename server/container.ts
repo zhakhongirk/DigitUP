@@ -7,6 +7,7 @@ import { createApprovalsService, type ApprovalsService } from "./services/approv
 import { createAuditService, type AuditService } from "./services/audit";
 import { createCatalogService, type CatalogService } from "./services/catalog";
 import { createConversationsService, type ConversationsService } from "./services/conversations";
+import { createKnowledgeService, type KnowledgeService } from "./services/knowledge";
 import { getOptionalLlmClient } from "./llm";
 import {
   createIntentService,
@@ -32,6 +33,7 @@ export interface Services {
   tenancy: TenancyService;
   catalog: CatalogService;
   intent: IntentService;
+  knowledge: KnowledgeService;
   orders: OrdersService;
   conversations: ConversationsService;
   approvals: ApprovalsService;
@@ -77,6 +79,7 @@ export function createServices({
     tenancy: createTenancyService(db, { authSecret }),
     catalog,
     intent: createIntentService({ db, catalog, interpret }),
+    knowledge: createKnowledgeService(db),
     orders: createOrdersService({ db, events }),
     conversations: createConversationsService({ db, events }),
     approvals: createApprovalsService(db, events),

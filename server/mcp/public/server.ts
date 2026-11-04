@@ -3,6 +3,7 @@
  * report_answer), the read-only catalog tools and a tool that talks to the
  * store's Customer Agent. Orders and inquiries go through that agent only.
  */
+import { OWNER_NOTES_RULE } from "@/server/services/knowledge";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CustomerAgent } from "@/server/agents/customer";
@@ -23,7 +24,7 @@ export interface PublicMcpOptions {
   ctx: TenantContext;
   storeName: string;
   agent: CustomerAgent;
-  services: Pick<Services, "catalog" | "intent" | "conversations">;
+  services: Pick<Services, "catalog" | "intent" | "knowledge" | "conversations">;
   store?: { slug: string; baseUrl?: string };
   /** Identifies the calling client for the limit on submitted orders and inquiries. */
   clientKey?: string;
@@ -43,7 +44,8 @@ export function createPublicMcpServer({
       instructions:
         `Talk to the sales assistant of "${storeName}" on behalf of a shopper. ` +
         "Use find_offers to look for products from the shopper's own words, report_answer if its result is wrong, " +
-        "and talk_to_store for questions, orders and anything else. Keep the same session_id for the whole conversation.",
+        "and talk_to_store for questions, orders and anything else. Keep the same session_id for the whole conversation. " +
+        OWNER_NOTES_RULE,
     },
   );
 
@@ -55,6 +57,7 @@ export function createPublicMcpServer({
     ctx,
     intent: services.intent,
     catalog: services.catalog,
+    knowledge: services.knowledge,
     track,
     store,
     logSearch,
@@ -63,6 +66,7 @@ export function createPublicMcpServer({
     registerRawTools(server, {
       ctx,
       catalog: services.catalog,
+      knowledge: services.knowledge,
       logSearch,
       track: async (tool, args, resultIds) => {
         await services.intent

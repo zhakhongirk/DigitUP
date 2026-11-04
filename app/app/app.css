@@ -1028,6 +1028,15 @@
   border-radius: 999px;
 }
 
+.ib-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 4px 0;
+  color: var(--text-4);
+  font-size: 13px;
+}
+
 .ib-reply-hint {
   margin: 0 4px;
   color: var(--text-4);

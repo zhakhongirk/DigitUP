@@ -12,6 +12,7 @@ import { createFileStorage } from "@/server/storage";
 import { SESSION_COOKIE } from "@/server/mcp/http";
 import type { TenantContext } from "@/server/services/context";
 import type { BusinessModelInput } from "@/shared/business-model";
+import { createKnowledgeService } from "@/server/services/knowledge";
 import { createIntentService } from "@/server/services/intent";
 import { createWebhookService } from "@/server/services/webhooks";
 import { createTelegramService } from "@/server/services/telegram";
@@ -31,6 +32,7 @@ export function testServices(): Services {
       tenancy: createTenancyService(db, { authSecret: TEST_AUTH_SECRET, bcryptRounds: 4 }),
       catalog,
       intent: createIntentService({ db, catalog }),
+      knowledge: createKnowledgeService(db),
       orders: createOrdersService({ db, events }),
       conversations: createConversationsService({ db, events }),
       approvals: createApprovalsService(db),

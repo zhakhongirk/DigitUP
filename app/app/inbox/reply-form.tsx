@@ -22,7 +22,7 @@ export function ReplyForm({
 
   return (
     <div className="ib-reply-wrap">
-      <form action={action} className="composer ib-reply">
+      <form action={action} id={`reply-${id}`} className="composer ib-reply">
         <input type="hidden" name="id" value={id} />
         <label className="sr-only" htmlFor={`answer-${id}`}>
           {t(answered ? "ib.editAnswer" : "ib.answer")}
@@ -41,6 +41,10 @@ export function ReplyForm({
           {pending ? t("common.saving") : t("ib.saveAnswer")}
         </button>
       </form>
+      <label className="ib-remember">
+        <input type="checkbox" name="remember" form={`reply-${id}`} defaultChecked />
+        {t("ib.remember")}
+      </label>
       <p className="ib-reply-hint">{t("ib.replyHint")}</p>
       {saved && !pending ? (
         <span className="ib-chip ib-chip-completed" role="status">

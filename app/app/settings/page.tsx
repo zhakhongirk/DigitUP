@@ -17,6 +17,9 @@ import {
   SignOutEverywhereForm,
   TelegramPanel,
 } from "./settings-forms";
+import { KnowledgePanel } from "./knowledge-panel";
+import { NOTE_MAX_AGE_DAYS } from "@/server/services/knowledge";
+import { formatDay } from "@/server/time";
 import { StaffSection } from "./staff-section";
 import "./settings.css";
 
@@ -28,12 +31,14 @@ export default async function SettingsPage() {
   if (!owner) redirect("/signin?next=/app/settings");
   ownerOnly(owner);
 
-  const [model, telegram, cover, [tenant]] = await Promise.all([
+  const [model, telegram, cover, [tenant], notes] = await Promise.all([
     services.catalog.getBusinessModel(owner),
     services.telegram.status(owner),
     defaultCoverService().get(owner.tenantId),
     getDb().select({ slug: tenants.slug }).from(tenants).where(eq(tenants.id, owner.tenantId)),
+    services.knowledge.list(owner),
   ]);
+  const cutoff = new Date().getTime() - NOTE_MAX_AGE_DAYS * 24 * 3600 * 1000;
 
   return (
     <>
@@ -59,6 +64,15 @@ export default async function SettingsPage() {
             connected: telegram.connected,
             linkUrl: telegram.link?.url ?? null,
           }}
+        />
+        <KnowledgePanel
+          notes={notes.map((n) => ({
+            id: n.id,
+            text: n.text,
+            about: n.offerTitle ?? n.model,
+            day: formatDay(n.answeredAt, undefined, lang),
+            expired: n.answeredAt.getTime() < cutoff,
+          }))}
         />
         <StaffSection owner={owner} />
         <PasswordForm />

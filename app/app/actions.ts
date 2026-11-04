@@ -75,7 +75,9 @@ export async function answerInquiry(_prev: ActionState, form: FormData): Promise
   if (typeof answer !== "string" || !answer.trim()) return { error: t("ib.writeAnswer") };
 
   try {
-    await services.orders.answerInquiry(owner, id, answer);
+    await services.orders.answerInquiry(owner, id, answer, {
+      remember: form.get("remember") === "on",
+    });
   } catch (error) {
     if (error instanceof ServiceError) return { error: msg(error.message) };
     throw error;

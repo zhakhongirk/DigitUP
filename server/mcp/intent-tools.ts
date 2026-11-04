@@ -13,11 +13,13 @@ import { runTool } from "./tools";
 import { listGroup } from "./views";
 import type { CatalogService, OfferGroup } from "@/server/services/catalog";
 import { buildGroups } from "@/server/services/catalog";
+import { pickNotes, type KnowledgeService } from "@/server/services/knowledge";
 
 export interface IntentToolsOptions {
   ctx: TenantContext;
   intent: IntentService;
   catalog: Pick<CatalogService, "listVariants">;
+  knowledge?: Pick<KnowledgeService, "notesForOffers">;
   /** Who is calling; binds the session when the server, not the model, knows it. */
   track: IntentTracking;
   store?: { slug: string; baseUrl?: string };
@@ -46,10 +48,15 @@ function mergeMatched(items: MatchedOffer[]): MatchedOffer["matched"] {
   };
 }
 
-type Row = { group: OfferGroup; matched: MatchedOffer["matched"] };
+type Row = {
+  group: OfferGroup;
+  matched: MatchedOffer["matched"];
+  notes: { text: string; date: string }[];
+};
 
 async function rowsOf(
   catalog: IntentToolsOptions["catalog"],
+  knowledge: IntentToolsOptions["knowledge"],
   ctx: TenantContext,
   found: MatchedOffer[],
 ): Promise<Row[]> {
@@ -59,13 +66,22 @@ async function rowsOf(
     found.map((m) => m.offer),
     siblings,
   );
+  const notes = await knowledge?.notesForOffers(
+    ctx,
+    groups.flatMap((g) => g.variants.map((v) => ({ id: v.id, model: v.model }))),
+  );
   return groups.map((group) => {
     const own = found.filter((m) => (m.offer.model ?? m.offer.id) === group.key);
-    return { group, matched: mergeMatched(own) };
+    const ids = [group.lead.id, ...group.variants.map((v) => v.id)];
+    return {
+      group,
+      matched: mergeMatched(own),
+      notes: notes ? pickNotes(notes, ids, group.model) : [],
+    };
   });
 }
 
-function offerRow({ group, matched }: Row, store: IntentToolsOptions["store"]) {
+function offerRow({ group, matched, notes }: Row, store: IntentToolsOptions["store"]) {
   const view = listGroup(group);
   return {
     offer_id: view.offer_id,
@@ -92,6 +108,7 @@ function offerRow({ group, matched }: Row, store: IntentToolsOptions["store"]) {
     category: view.category,
     attributes: view.attributes,
     image_url: view.image_url,
+    ...(notes.length > 0 ? { owner_notes: notes } : {}),
   };
 }
 
@@ -106,10 +123,11 @@ export async function findOffersView(
   store: IntentToolsOptions["store"],
   catalog: IntentToolsOptions["catalog"],
   ctx: TenantContext,
+  knowledge?: IntentToolsOptions["knowledge"],
 ) {
   const [offers, onRequest] = await Promise.all([
-    rowsOf(catalog, ctx, result.offers),
-    rowsOf(catalog, ctx, result.onRequest),
+    rowsOf(catalog, knowledge, ctx, result.offers),
+    rowsOf(catalog, knowledge, ctx, result.onRequest),
   ]);
   return {
     intent_id: result.intentId,
@@ -131,7 +149,7 @@ export async function findOffersView(
 /** find_offers and report_answer: the intent layer as MCP tools. */
 export function registerIntentTools(
   server: McpServer,
-  { ctx, intent, catalog, track, store, logSearch }: IntentToolsOptions,
+  { ctx, intent, catalog, knowledge, track, store, logSearch }: IntentToolsOptions,
 ): void {
   server.registerTool(
     "find_offers",
@@ -168,7 +186,7 @@ export function registerIntentTools(
           sessionKey: track.sessionKey ?? session_id,
           track: { ...track, sessionKey: track.sessionKey ?? session_id },
         });
-        const view = await findOffersView(result, store, catalog, ctx);
+        const view = await findOffersView(result, store, catalog, ctx, knowledge);
         await logSearch?.(
           { query: text, titles: view.offers.map((o) => o.title), total: view.offers.length },
           session_id,

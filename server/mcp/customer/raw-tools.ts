@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { CatalogService } from "@/server/services/catalog";
+import { pickNotes, type KnowledgeService } from "@/server/services/knowledge";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 import type { RawTool } from "@/server/services/intent";
 import { attributeValueSchema } from "@/shared/business-model";
@@ -21,6 +22,7 @@ export interface RawToolsOptions {
     | "recordSearchMiss"
     | "groupOffers"
   >;
+  knowledge?: Pick<KnowledgeService, "notesForOffers">;
   /** Called after each tool returns; used to measure raw calls that follow find_offers. */
   track?: RawCallTracker;
   logSearch?: SearchLogger;
@@ -29,7 +31,7 @@ export interface RawToolsOptions {
 /** The read-only catalog tools shared by the keyed customer endpoint and the public endpoint. */
 export function registerRawTools(
   server: McpServer,
-  { ctx, catalog, track, logSearch }: RawToolsOptions,
+  { ctx, catalog, knowledge, track, logSearch }: RawToolsOptions,
 ): void {
   server.registerTool(
     "search_offers",
@@ -107,14 +109,33 @@ export function registerRawTools(
           throw new ServiceError("not_found", "Offer not found");
         }
         await track?.("get_offer_details", { offer_id }, [offer_id]);
-        if (offer.model === null) return publicOffer(offer);
-        const [group] = await catalog.groupOffers(ctx, [offer]);
-        if (!group || group.model === null) return publicOffer(offer);
+        const group = offer.model === null ? null : (await catalog.groupOffers(ctx, [offer]))[0];
+        const family = group?.variants ?? [offer];
+        const found = await knowledge?.notesForOffers(
+          ctx,
+          family.map((v) => ({ id: v.id, model: v.model })),
+        );
+        const notes = found
+          ? pickNotes(
+              found,
+              family.map((v) => v.id),
+              offer.model,
+            )
+          : [];
+        const owner = notes.length > 0 ? { owner_notes: notes } : {};
+        if (!group || group.model === null) return { ...publicOffer(offer), ...owner };
         const { sizes, unavailable_sizes, unknown_sizes, variants } = publicModel({
           ...group,
           model: group.model,
         });
-        return { ...publicOffer(offer), sizes, unavailable_sizes, unknown_sizes, variants };
+        return {
+          ...publicOffer(offer),
+          sizes,
+          unavailable_sizes,
+          unknown_sizes,
+          variants,
+          ...owner,
+        };
       }),
   );
 

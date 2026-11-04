@@ -2,6 +2,7 @@
  * Customer MCP: read-only catalog access plus order and inquiry creation for
  * the Customer Agent. There are no tools that change the catalog.
  */
+import { OWNER_NOTES_RULE } from "@/server/services/knowledge";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { Services } from "@/server/container";
@@ -26,7 +27,7 @@ import { inquiryView, orderView, policiesWithStates } from "../views";
 
 export interface CustomerMcpOptions {
   ctx: TenantContext;
-  services: Pick<Services, "catalog" | "orders" | "intent">;
+  services: Pick<Services, "catalog" | "orders" | "intent" | "knowledge">;
   /** Where the conversation happens; recorded on orders. */
   source: OrderSource;
   /** Conversation the agent is serving, bound by the server, never taken from the model. */
@@ -91,7 +92,8 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     {
       instructions:
         "Tools of one store. Never state a price or availability that a tool did not return. " +
-        "When can_order is false, offer the shopper to send an inquiry.",
+        "When can_order is false, offer the shopper to send an inquiry. " +
+        OWNER_NOTES_RULE,
     },
   );
 
@@ -125,6 +127,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     ctx,
     intent: services.intent,
     catalog,
+    knowledge: services.knowledge,
     track: tracking,
     store: options.store,
     logSearch: options.logSearch,
@@ -132,6 +135,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
   registerRawTools(server, {
     ctx,
     catalog,
+    knowledge: services.knowledge,
     logSearch: options.logSearch,
     track: options.trackRaw
       ? async (tool, args, resultIds) => {
@@ -146,15 +150,16 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
     "get_business_info",
     {
       description:
-        "Store profile, contacts, policies (delivery, payment, returns, working hours) and categories.",
+        "Store profile, contacts, policies (delivery, payment, returns, working hours), categories and recent general remarks of the owner (owner_notes).",
       inputSchema: {},
       annotations: { readOnlyHint: true },
     },
     () =>
       runTool("get_business_info", async () => {
-        const [model, categories] = await Promise.all([
+        const [model, categories, notes] = await Promise.all([
           catalog.getBusinessModel(ctx),
           catalog.listCategories(ctx),
+          services.knowledge.generalNotes(ctx),
         ]);
         return {
           name: model.profile.name,
@@ -163,6 +168,7 @@ export function createCustomerMcpServer(options: CustomerMcpOptions): McpServer 
           contacts: model.profile.contacts,
           policies: policiesWithStates(model.policies),
           categories,
+          ...(notes.length > 0 ? { owner_notes: notes } : {}),
         };
       }),
   );
