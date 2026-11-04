@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { addOffer, archiveOffer, saveOffer } from "@/app/app/catalog/actions";
+import { addOffer, archiveOffer, saveOffer, setAvailability } from "@/app/app/catalog/actions";
 import {
   expectRedirect,
   form,
@@ -169,7 +169,7 @@ describe("archiveOffer", () => {
 
 describe("addOffer", () => {
   it("redirects to sign-in without a session", async () => {
-    await expectRedirect(addOffer(), "/signin?next=/app/catalog");
+    await expectRedirect(addOffer(prev, form({})), "/signin?next=/app/catalog");
   });
 
   it("creates a draft offer and opens its edit panel", async () => {
@@ -177,7 +177,7 @@ describe("addOffer", () => {
     const before = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
     expect(before.total).toBe(0);
 
-    const redirected = await addOffer().catch((error: Error) => error.message);
+    const redirected = await addOffer(prev, form({})).catch((error: Error) => error.message);
     const drafts = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
     expect(drafts.items).toHaveLength(1);
     expect(drafts.items[0]).toMatchObject({
@@ -187,5 +187,44 @@ describe("addOffer", () => {
       offerTypeKey: "item",
     });
     expect(redirected).toBe(`REDIRECT:/app/catalog?status=draft&offer=${drafts.items[0]!.id}`);
+  });
+});
+
+describe("addOffer in an empty store", () => {
+  it("creates the default offer type and opens a draft", async () => {
+    const { ctx, token } = await signUpOwner();
+    session.token = token;
+    expect(await testServices().catalog.listOfferTypes(ctx)).toHaveLength(0);
+
+    const redirected = await addOffer(prev, form({})).catch((error: Error) => error.message);
+    const types = await testServices().catalog.listOfferTypes(ctx);
+    expect(types.map((type) => type.key)).toEqual(["item"]);
+    const drafts = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
+    expect(drafts.items).toHaveLength(1);
+    expect(redirected).toBe(`REDIRECT:/app/catalog?status=draft&offer=${drafts.items[0]!.id}`);
+
+    await addOffer(prev, form({})).catch(() => undefined);
+    expect(await testServices().catalog.listOfferTypes(ctx)).toHaveLength(1);
+  });
+});
+
+describe("setAvailability", () => {
+  it("reports an unknown offer", async () => {
+    await shop();
+    const result = await setAvailability(prev, form({ id: MISSING, availability: "out_of_stock" }));
+    expect(result.saved).toBe(false);
+    expect(result.error).toEqual(expect.any(String));
+  });
+
+  it("flips availability", async () => {
+    const { ctx, ids } = await shop();
+    const result = await setAvailability(
+      prev,
+      form({ id: ids.Alpha!, availability: "out_of_stock" }),
+    );
+    expect(result).toEqual({ error: null, saved: true });
+    expect((await testServices().catalog.getOffer(ctx, ids.Alpha!))?.availability).toBe(
+      "out_of_stock",
+    );
   });
 });

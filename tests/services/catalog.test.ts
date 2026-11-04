@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { businessProfiles } from "@/db/schema";
+import { defaultOfferType, newOfferInput } from "@/server/owner/catalog";
 import { createAuditService } from "@/server/services/audit";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
@@ -907,5 +908,24 @@ describe("catalogStats", () => {
       priceOnRequest: 0,
       availabilityUnknown: 0,
     });
+  });
+});
+
+describe("first offer in a store without offer types", () => {
+  it("creates the default type and a draft offer, with audit", async () => {
+    const { catalog, audit } = setup();
+    const ctx = await createTestTenant();
+    expect(await catalog.listOfferTypes(ctx)).toHaveLength(0);
+
+    const [type] = await catalog.upsertOfferTypes(ctx, [defaultOfferType("ru")]);
+    expect(type).toMatchObject({ key: "item", name: "Позиция" });
+    const [created] = await catalog.upsertOffers(ctx, [newOfferInput("item", "ru")]);
+    const view = await catalog.getOffer(ctx, created!.id);
+    expect(view).toMatchObject({ status: "draft", offerTypeKey: "item" });
+
+    const logged = await audit.list(ctx, { limit: 50 });
+    const actions = logged.map((entry) => entry.action);
+    expect(actions).toContain("offer_type.created");
+    expect(actions).toContain("offer.created");
   });
 });

@@ -22,7 +22,7 @@ import {
 } from "@/server/owner/catalog";
 import { ownerMeta, ownerT } from "@/server/owner/lang";
 import { currentOwner } from "@/server/owner/session";
-import { addOffer } from "./actions";
+import { AddOfferButton } from "./add-offer-button";
 import { ModelRows } from "./model-rows";
 import { OfferForm } from "./offer-form";
 import "./catalog.css";
@@ -130,17 +130,15 @@ export default async function CatalogPage({
           <p className="ws-sub">{tn("ct.count", result.total)}</p>
         </div>
         <div className="ct-head-actions">
-          <form action={addOffer} className="ct-add">
-            <button type="submit" className="btn btn-sm">
-              {t("ct.addOffer")}
-            </button>
-          </form>
+          <AddOfferButton />
           <a href="/app/export/catalog" className="btn btn-sm btn-secondary" download>
             {t("ct.exportCsv")}
           </a>
-          <Link href="/app/catalog/import" className="btn btn-sm btn-secondary">
-            {t("ct.updateFromFile")}
-          </Link>
+          {owner.role === "staff" ? null : (
+            <Link href="/app/catalog/import" className="btn btn-sm btn-secondary">
+              {t("ct.updateFromFile")}
+            </Link>
+          )}
         </div>
       </div>
 

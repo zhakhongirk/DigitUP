@@ -189,6 +189,18 @@ export function commonOfferType(
   return best;
 }
 
+export const DEFAULT_OFFER_TYPE_KEY = "item";
+
+/** Generic offer type for a store that has none yet. */
+export function defaultOfferType(lang: Lang = "en"): Record<string, unknown> {
+  return {
+    key: DEFAULT_OFFER_TYPE_KEY,
+    name: tr(lang, "ct.defaultTypeName"),
+    kind: "other",
+    attributes: [],
+  };
+}
+
 export function newOfferInput(offerType: string, lang: Lang = "en"): Record<string, unknown> {
   return {
     title: tr(lang, "ct.newOfferTitle"),

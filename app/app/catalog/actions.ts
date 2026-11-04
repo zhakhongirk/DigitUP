@@ -8,6 +8,7 @@ import {
   buildOfferInput,
   catalogHref,
   commonOfferType,
+  defaultOfferType,
   applyModelFields,
   newOfferInput,
   offerUpsertFrom,
@@ -75,42 +76,57 @@ export async function saveOffer(
   return { error: null, saved: true };
 }
 
-export async function setAvailability(form: FormData): Promise<void> {
+export async function setAvailability(
+  _prev: CatalogActionState,
+  form: FormData,
+): Promise<CatalogActionState> {
   const services = await getServices();
+  const { t, msg } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/catalog");
 
   const id = offerId(form);
   const value = form.get("availability");
-  if (!id || !isUuid(id) || (value !== "in_stock" && value !== "out_of_stock")) return;
+  if (!id || !isUuid(id) || (value !== "in_stock" && value !== "out_of_stock")) {
+    return { error: t("err.notFound"), saved: false };
+  }
   try {
     const current = await services.catalog.getOffer(owner, id);
-    if (!current) return;
+    if (!current) return { error: t("ct.errGone"), saved: false };
     await services.catalog.upsertOffers(owner, [offerUpsertFrom(current, { availability: value })]);
   } catch (error) {
-    if (!(error instanceof ServiceError)) throw error;
+    if (error instanceof ServiceError) return { error: msg(error.message), saved: false };
+    throw error;
   }
   revalidatePath("/app", "layout");
+  return { error: null, saved: true };
 }
 
-export async function addOffer(): Promise<void> {
+export async function addOffer(
+  _prev: CatalogActionState,
+  _form: FormData,
+): Promise<CatalogActionState> {
   const services = await getServices();
-  const { lang } = await ownerT();
+  const { t, msg, lang } = await ownerT();
   const owner = await currentOwner(services);
   if (!owner) redirect("/signin?next=/app/catalog");
 
-  let target = "/app/catalog";
+  let target: string;
   try {
     const [types, existing] = await Promise.all([
       services.catalog.listOfferTypes(owner),
       services.catalog.searchOffers(owner, { statuses: statusesFor("all"), limit: 100 }),
     ]);
-    const type = commonOfferType(types, existing.items);
-    if (!type) redirect("/app/catalog");
+    const type =
+      commonOfferType(types, existing.items) ??
+      (await services.catalog.upsertOfferTypes(owner, [defaultOfferType(lang)]))[0]!.key;
     const [created] = await services.catalog.upsertOffers(owner, [newOfferInput(type, lang)]);
     target = catalogHref({ status: "draft", offerId: created!.id });
   } catch (error) {
-    if (!(error instanceof ServiceError)) throw error;
+    if (error instanceof ServiceError) {
+      return { error: msg(error.message) || t("ct.errAdd"), saved: false };
+    }
+    throw error;
   }
   revalidatePath("/app", "layout");
   redirect(target);

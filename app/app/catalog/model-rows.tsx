@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { useT } from "@/app/i18n-provider";
 import type { ModelGroupRow } from "@/server/owner/catalog";
-import { setAvailability } from "./actions";
+import { setAvailability, type CatalogActionState } from "./actions";
+
+const INITIAL: CatalogActionState = { error: null, saved: false };
 
 export function ModelRows({
   group,
@@ -17,6 +19,7 @@ export function ModelRows({
 }) {
   const { t } = useT();
   const [open, setOpen] = useState(group.selected);
+  const [stock, toggleStock] = useActionState(setAvailability, INITIAL);
   const model = group.model ?? "";
   return (
     <tbody className="ct-model">
@@ -54,7 +57,7 @@ export function ModelRows({
               <td className="ct-wide ct-muted">{row.category}</td>
               <td className="ct-num">{row.price}</td>
               <td>
-                <form action={setAvailability} className="ct-stock">
+                <form action={toggleStock} className="ct-stock">
                   <input type="hidden" name="id" value={row.id} />
                   <input
                     type="hidden"
@@ -79,6 +82,13 @@ export function ModelRows({
             </tr>
           ))
         : null}
+      {open && stock.error ? (
+        <tr>
+          <td colSpan={5} className="ct-muted" role="alert">
+            {stock.error}
+          </td>
+        </tr>
+      ) : null}
     </tbody>
   );
 }
