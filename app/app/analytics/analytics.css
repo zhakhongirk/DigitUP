@@ -301,3 +301,49 @@
   font-size: 13px;
   font-weight: 600;
 }
+
+.an-calls-summary {
+  margin: 8px 0 4px;
+  font-size: 14px;
+}
+
+.an-calls-paths {
+  margin-bottom: 8px;
+}
+
+.an-calls-scroll {
+  overflow-x: auto;
+}
+
+.an-call {
+  display: grid;
+  grid-template-columns: minmax(90px, 1.1fr) 60px minmax(120px, 2fr) 80px 80px minmax(130px, 1.2fr);
+  gap: 10px;
+  min-width: 620px;
+}
+
+.an-call.an-list-head {
+  display: grid;
+  padding-bottom: 4px;
+}
+
+.an-path {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 3px;
+  background: var(--text-4);
+}
+
+.an-path-fast_path {
+  background: #34c759;
+}
+
+.an-path-fallback {
+  background: #ff9500;
+}
+
+.an-path-loop {
+  background: var(--accent);
+}

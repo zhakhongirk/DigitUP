@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { getDb } from "@/db/client";
 import { getServices } from "@/server/container";
+import { formatWhen } from "@/server/owner/inbox";
+import { loadModelCalls, type CallPath } from "@/server/owner/model-calls";
 import {
   ANALYTICS_RANGES,
   loadAnalytics,
@@ -20,6 +23,13 @@ export const generateMetadata = (): Promise<Metadata> => ownerMeta("nav.analytic
 function percent(share: number | null, t: Translator["t"]): string {
   return share === null ? t("an.noData") : `${Math.round(share * 100)}%`;
 }
+
+const PATH_LABEL = {
+  loop: "an.pathLoop",
+  fast_path: "an.pathFast_path",
+  rewrite: "an.pathRewrite",
+  fallback: "an.pathFallback",
+} as const satisfies Record<CallPath, string>;
 
 function dayLabel(day: string, lang: Lang): string {
   return new Intl.DateTimeFormat(LOCALES[lang], {
@@ -113,7 +123,11 @@ export default async function AnalyticsPage({
   ownerOnly(owner);
   const { t, lang } = tr;
 
-  const view = await loadAnalytics(services, owner, range, undefined, lang);
+  const now = new Date();
+  const [view, calls] = await Promise.all([
+    loadAnalytics(services, owner, range, now, lang),
+    loadModelCalls(getDb(), owner, new Date(now.getTime() - range * 24 * 3600 * 1000)),
+  ]);
   const { outcome } = view;
   const maxQuery = Math.max(1, ...view.queries.map((q) => q.count));
   const maxMissed = Math.max(1, ...view.missedQueries.map((q) => q.count));
@@ -284,6 +298,56 @@ export default async function AnalyticsPage({
               <dd>{percent(view.answers.rawShare, t)}</dd>
             </div>
           </dl>
+        )}
+      </section>
+
+      <section className="an-card an-wide an-list glass" aria-labelledby="an-calls">
+        <h2 id="an-calls">{t("an.calls")}</h2>
+        <p className="an-q-meta">{t("an.callsNote")}</p>
+        {calls.total === 0 ? (
+          <p className="an-empty">{t("an.callsNone")}</p>
+        ) : (
+          <>
+            <p className="an-calls-summary">
+              {calls.averageMs === null
+                ? t("an.callsSummaryNoMs", { n: calls.total })
+                : t("an.callsSummary", { n: calls.total, ms: calls.averageMs })}
+            </p>
+            <div className="an-legend an-calls-paths">
+              {calls.byPath
+                .filter((p) => p.count > 0)
+                .map((p) => (
+                  <span key={p.path}>
+                    <i className={`an-path an-path-${p.path}`} />
+                    {t(PATH_LABEL[p.path])}: {p.count}
+                  </span>
+                ))}
+            </div>
+            <div className="an-calls-scroll">
+              <div className="an-call an-list-head">
+                <span>{t("an.colWhen")}</span>
+                <span>{t("an.colTier")}</span>
+                <span>{t("an.colModel")}</span>
+                <span className="an-num">{t("an.colMs")}</span>
+                <span className="an-num">{t("an.colTokens")}</span>
+                <span>{t("an.colPath")}</span>
+              </div>
+              {calls.recent.map((call) => (
+                <div key={call.id} className="an-call an-list-row">
+                  <span>{formatWhen(call.at, now, undefined, lang)}</span>
+                  <span>{call.tier}</span>
+                  <span className="an-text">{call.model}</span>
+                  <span className="an-num">
+                    {call.ms === null ? t("an.noData") : t("an.ms", { ms: call.ms })}
+                  </span>
+                  <span className="an-num">{call.inputTokens + call.outputTokens}</span>
+                  <span>
+                    <i className={`an-path an-path-${call.path}`} /> {t(PATH_LABEL[call.path])}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
