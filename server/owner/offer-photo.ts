@@ -4,25 +4,13 @@ import { BodyTooLargeError, boundedFormData } from "@/server/http/bounded-form";
 import { log } from "@/server/log";
 import { MAX_PHOTO_BYTES, PhotoError, type PhotoService } from "@/server/media/photo";
 import { translator } from "@/shared/owner-copy";
+import { photoConcepts } from "./photo-concepts";
 import { langFromRequest } from "./lang-resolve";
 import { currentOwner } from "./session";
 import type { CatalogService, OfferView } from "@/server/services/catalog";
 import { ServiceError, type TenantContext } from "@/server/services/context";
 
-const GENERIC_TYPES = new Set(["product", "products", "item", "items", "offer", "goods"]);
-
-/** What to look for in the photo, best guess first: the offer type, the category, the title. */
-export function photoConcepts(
-  offer: Pick<OfferView, "offerTypeKey" | "category" | "title">,
-): string[] {
-  const type = offer.offerTypeKey.replace(/[_-]+/g, " ").trim();
-  const guesses = [
-    GENERIC_TYPES.has(type.toLowerCase()) ? "" : type,
-    offer.category ?? "",
-    offer.title,
-  ];
-  return [...new Set(guesses.map((guess) => guess.trim()).filter(Boolean))];
-}
+export { photoConcepts };
 
 export function photoUrl(slug: string, file: string): string {
   return `/s/${slug}/photo/${file}`;

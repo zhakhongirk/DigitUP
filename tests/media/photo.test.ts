@@ -10,7 +10,7 @@ import {
   sniffPhotoType,
   type SegmentationClient,
 } from "@/server/media/photo";
-import { cleanOfferPhoto, photoConcepts, uploadOfferPhoto } from "@/server/owner/offer-photo";
+import { cleanOfferPhoto, uploadOfferPhoto } from "@/server/owner/offer-photo";
 import { createCatalogService } from "@/server/services/catalog";
 import { ServiceError } from "@/server/services/context";
 import { createTestTenant, recordingEvents, testDb } from "../helpers/db";
@@ -130,19 +130,6 @@ describe("photo service", () => {
     await expect(none.clean("t1", file, ["a", "b"])).rejects.toMatchObject({ code: "not_found" });
     const off = createPhotoService({ storage, sam: null });
     await expect(off.clean("t1", file, ["a"])).rejects.toMatchObject({ code: "unavailable" });
-  });
-});
-
-describe("photoConcepts", () => {
-  it("prefers the offer type, then category and title", () => {
-    expect(photoConcepts({ offerTypeKey: "shoe", category: "Boots", title: "Altai" })).toEqual([
-      "shoe",
-      "Boots",
-      "Altai",
-    ]);
-    expect(photoConcepts({ offerTypeKey: "product", category: null, title: "Altai" })).toEqual([
-      "Altai",
-    ]);
   });
 });
 
