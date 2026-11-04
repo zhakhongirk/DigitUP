@@ -24,6 +24,7 @@ export async function openNotification(form: FormData): Promise<void> {
     target = notificationView(item, await ownerLang()).href;
   } catch (error) {
     if (!(error instanceof ServiceError)) throw error;
+    target = "/app/notifications?err=open";
   }
   revalidatePath("/app", "layout");
   redirect(target);

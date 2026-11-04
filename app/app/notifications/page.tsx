@@ -52,6 +52,11 @@ export default async function NotificationsPage({
           </form>
         ) : null}
       </div>
+      {params.err === "open" ? (
+        <p className="ib-error" role="alert">
+          {t("nt.openFailed")}
+        </p>
+      ) : null}
       {items.length === 0 ? (
         <section className="nt-empty glass">
           <h2>{t("nt.emptyTitle")}</h2>
