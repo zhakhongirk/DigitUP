@@ -4,7 +4,6 @@ import { policiesWithStates, publicOffer } from "@/server/mcp/views";
 import {
   groupAvailability,
   groupPrice,
-  groupSizes,
   sizeOf,
   type OfferGroup,
   type OfferView,

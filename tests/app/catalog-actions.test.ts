@@ -169,7 +169,7 @@ describe("archiveOffer", () => {
 
 describe("addOffer", () => {
   it("redirects to sign-in without a session", async () => {
-    await expectRedirect(addOffer(prev, form({})), "/signin?next=/app/catalog");
+    await expectRedirect(addOffer(), "/signin?next=/app/catalog");
   });
 
   it("creates a draft offer and opens its edit panel", async () => {
@@ -177,7 +177,7 @@ describe("addOffer", () => {
     const before = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
     expect(before.total).toBe(0);
 
-    const redirected = await addOffer(prev, form({})).catch((error: Error) => error.message);
+    const redirected = await addOffer().catch((error: Error) => error.message);
     const drafts = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
     expect(drafts.items).toHaveLength(1);
     expect(drafts.items[0]).toMatchObject({
@@ -196,14 +196,14 @@ describe("addOffer in an empty store", () => {
     session.token = token;
     expect(await testServices().catalog.listOfferTypes(ctx)).toHaveLength(0);
 
-    const redirected = await addOffer(prev, form({})).catch((error: Error) => error.message);
+    const redirected = await addOffer().catch((error: Error) => error.message);
     const types = await testServices().catalog.listOfferTypes(ctx);
     expect(types.map((type) => type.key)).toEqual(["item"]);
     const drafts = await testServices().catalog.searchOffers(ctx, { statuses: ["draft"] });
     expect(drafts.items).toHaveLength(1);
     expect(redirected).toBe(`REDIRECT:/app/catalog?status=draft&offer=${drafts.items[0]!.id}`);
 
-    await addOffer(prev, form({})).catch(() => undefined);
+    await addOffer().catch(() => undefined);
     expect(await testServices().catalog.listOfferTypes(ctx)).toHaveLength(1);
   });
 });

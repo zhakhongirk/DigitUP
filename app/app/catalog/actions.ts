@@ -102,10 +102,7 @@ export async function setAvailability(
   return { error: null, saved: true };
 }
 
-export async function addOffer(
-  _prev: CatalogActionState,
-  _form: FormData,
-): Promise<CatalogActionState> {
+export async function addOffer(): Promise<CatalogActionState> {
   const services = await getServices();
   const { t, msg, lang } = await ownerT();
   const owner = await currentOwner(services);
